@@ -36,7 +36,7 @@ kale/
 │   ├── adrlog.md
 │   └── prd.md
 ├── mockups/
-│   └── main.md
+│   └── main.html
 ├── src/
 │   ├── index.css
 │   ├── main.ts
