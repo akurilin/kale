@@ -24,36 +24,9 @@ What is not implemented yet:
 - Package app: `npm run package`
 - Build distributables: `npm run make`
 
-## Repository Structure
+## Folder Overview
 
-```text
-kale/
-├── data/
-│   ├── AGENTS.md
-│   ├── CLAUDE.md -> AGENTS.md
-│   └── what-the-best-looks-like.md
-├── docs/
-│   ├── adrlog.md
-│   └── prd.md
-├── mockups/
-│   └── main.html
-├── src/
-│   ├── index.css
-│   ├── main.ts
-│   ├── preload.ts
-│   └── renderer.ts
-├── forge.config.ts
-├── index.html
-├── package.json
-├── tsconfig.json
-├── vite.main.config.ts
-├── vite.preload.config.ts
-└── vite.renderer.config.ts
-```
-
-### Directory Notes
-
-- `src/`: Electron app source (main process, preload, renderer entry).
-- `docs/`: product documentation and planning artifacts.
-- `mockups/`: UI mockups/prototypes.
-- `data/`: content and agent policy files used for writing/editor workflow experiments.
+- `src/`: application source code for the Electron main process, preload layer, and renderer entry.
+- `docs/`: product and architecture documentation (requirements, decisions, planning notes).
+- `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.
+- `data/`: writing samples and agent instruction/context files used for content and workflow experiments.
