@@ -102,3 +102,11 @@ body {
 .editor .cm-focused {
   outline: none;
 }
+
+.editor .cm-line.cm-live-quote-line {
+  border-left: 1px solid #9a9488;
+  padding-left: 18px;
+  margin-left: 18px;
+  color: #3f3d38;
+  font-style: italic;
+}

@@ -116,7 +116,7 @@ const markerNodes = new Set([
   'CodeMark',
 ]);
 
-const livePreviewExtension = (): Extension =>
+const livePreviewMarkersExtension = (): Extension =>
   ViewPlugin.fromClass(
     class {
       decorations;
@@ -162,7 +162,60 @@ const livePreviewExtension = (): Extension =>
 
               decorations.push(Decoration.replace({}).range(from, hideTo));
             }
+          },
+        });
 
+        return Decoration.set(decorations, true);
+      }
+    },
+    {
+      decorations: (v) => v.decorations,
+    },
+  );
+
+const quoteLineDecorationExtension = (): Extension =>
+  ViewPlugin.fromClass(
+    class {
+      decorations;
+
+      constructor(view: EditorView) {
+        this.decorations = this.buildDecorations(view);
+      }
+
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+
+      buildDecorations(view: EditorView) {
+        const decorations: Range<Decoration>[] = [];
+        const { state } = view;
+        const tree = syntaxTree(state);
+        const lineStarts = new Set<number>();
+
+        tree.iterate({
+          enter: (node) => {
+            if (node.name !== 'Blockquote') {
+              return;
+            }
+
+            let line = state.doc.lineAt(node.from);
+            while (line.from <= node.to) {
+              if (!lineStarts.has(line.from)) {
+                lineStarts.add(line.from);
+                decorations.push(
+                  Decoration.line({ class: 'cm-live-quote-line' }).range(
+                    line.from,
+                  ),
+                );
+              }
+
+              if (line.to >= node.to || line.number >= state.doc.lines) {
+                break;
+              }
+              line = state.doc.line(line.number + 1);
+            }
           },
         });
 
@@ -185,7 +238,8 @@ const bootstrap = async () => {
     extensions: [
       basicSetup,
       markdown(),
-      livePreviewExtension(),
+      quoteLineDecorationExtension(),
+      livePreviewMarkersExtension(),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) {
