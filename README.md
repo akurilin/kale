@@ -2,12 +2,13 @@
 
 ## Current State
 
-This repository is currently an Electron Forge + Vite + TypeScript scaffold.
+This repository is an Electron Forge + Vite + TypeScript desktop app.
 
 What works right now:
-- `npm start` runs Electron Forge and opens a single desktop window.
-- The renderer loads a basic static `index.html` page with a "Hello World" message.
-- DevTools opens automatically on app launch.
+- `npm start` runs Electron Forge and opens a single-window markdown workspace.
+- The app is hardcoded to edit and save `data/what-the-best-looks-like.md`.
+- Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
+- Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
 - Packaging/making is configured through Electron Forge for:
   - Windows (`squirrel`)
   - macOS (`zip`)
@@ -15,7 +16,7 @@ What works right now:
 - Electron fuses are configured for a more locked-down packaged app profile.
 
 What is not implemented yet:
-- The core product workflows described in `docs/prd.md` (WYSIWYG Markdown editing, agent orchestration, snapshots, comments sidecars, skills, etc.) are not yet wired into `src/`.
+- The broader workflows from `docs/prd.md` (agent orchestration, snapshots, comment sidecars, skills, multi-doc project handling) are not yet wired into `src/`.
 
 ## Run Commands
 

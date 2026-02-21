@@ -1,4 +1,5 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 
@@ -7,11 +8,27 @@ if (started) {
   app.quit();
 }
 
+const TARGET_MARKDOWN_FILE = path.resolve(
+  app.getAppPath(),
+  'data',
+  'what-the-best-looks-like.md',
+);
+
+ipcMain.handle('editor:load-markdown', async () => {
+  const content = await fs.readFile(TARGET_MARKDOWN_FILE, 'utf8');
+  return { content, filePath: TARGET_MARKDOWN_FILE };
+});
+
+ipcMain.handle('editor:save-markdown', async (_event, content: string) => {
+  await fs.writeFile(TARGET_MARKDOWN_FILE, content, 'utf8');
+  return { ok: true };
+});
+
 const createWindow = () => {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width: 1400,
+    height: 900,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
