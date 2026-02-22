@@ -13,10 +13,14 @@ const BUNDLED_SAMPLE_MARKDOWN_FILE = path.resolve(
   'data',
   'what-the-best-looks-like.md',
 );
+// We store the active document in userData by default so packaged apps never try
+// to write back into the app bundle / asar.
 const DEFAULT_USER_FILE_NAME = 'what-the-best-looks-like.md';
 const SETTINGS_FILE_NAME = 'settings.json';
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
+// In-memory cache for the active file path. We still re-validate on use because
+// the file can be moved/deleted outside the app between operations.
 let currentMarkdownFilePath: string | null = null;
 
 type AppSettings = {
@@ -46,6 +50,7 @@ const readSettings = async (): Promise<AppSettings> => {
     const parsed = JSON.parse(raw) as AppSettings;
     return parsed ?? {};
   } catch {
+    // Treat missing/corrupt settings as first-run and recover automatically.
     return {};
   }
 };
@@ -73,9 +78,12 @@ const ensureDefaultUserFile = async () => {
 
   await fs.mkdir(path.dirname(targetFilePath), { recursive: true });
   try {
+    // Seed from the bundled sample so the first run opens useful content while
+    // still writing to a user-writable location.
     const sampleContent = await fs.readFile(BUNDLED_SAMPLE_MARKDOWN_FILE, 'utf8');
     await fs.writeFile(targetFilePath, sampleContent, 'utf8');
   } catch {
+    // If the bundled sample is unavailable, still create an empty writable file.
     await fs.writeFile(targetFilePath, '', 'utf8');
   }
 
@@ -96,10 +104,12 @@ const ensureCurrentMarkdownFilePath = async () => {
 
   const settings = await readSettings();
   if (settings.lastOpenedFilePath && (await canReadFile(settings.lastOpenedFilePath))) {
+    // Restore the last file the user worked on across app restarts.
     currentMarkdownFilePath = settings.lastOpenedFilePath;
     return currentMarkdownFilePath;
   }
 
+  // Fall back to a guaranteed writable file if the remembered file is gone.
   const defaultFilePath = await ensureDefaultUserFile();
   await setCurrentMarkdownFilePath(defaultFilePath);
   return defaultFilePath;
@@ -125,6 +135,8 @@ ipcMain.handle(
   'editor:open-markdown-file',
   async (): Promise<OpenMarkdownFileResponse> => {
     const browserWindow = BrowserWindow.getFocusedWindow();
+    // The native dialog lives in the main process; the renderer only requests it
+    // via IPC to keep filesystem access out of browser code.
     const { canceled, filePaths } = await dialog.showOpenDialog(browserWindow ?? undefined, {
       title: 'Open Markdown File',
       properties: ['openFile'],
@@ -140,6 +152,7 @@ ipcMain.handle(
 
     const filePath = filePaths[0];
     const content = await fs.readFile(filePath, 'utf8');
+    // Persist immediately so restarting the app reopens the newly selected file.
     await setCurrentMarkdownFilePath(filePath);
     return { canceled: false, content, filePath };
   },

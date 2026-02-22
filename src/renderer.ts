@@ -48,7 +48,9 @@ let view: EditorView | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedContent = '';
 let isSaving = false;
+// Prevent programmatic document replacement from being treated as user edits.
 let isApplyingLoadedDocument = false;
+// Prevent duplicate dialog opens / overlapping file-switch flows.
 let isOpeningFile = false;
 
 const setStatus = (text: string) => {
@@ -101,6 +103,7 @@ const flushPendingSave = async () => {
     return;
   }
 
+  // File switching should not discard edits waiting on the debounce timer.
   clearSaveTimer();
   await saveNow(view.state.doc.toString());
 };
@@ -284,6 +287,8 @@ const applyLoadedDocument = ({ content, filePath }: LoadMarkdownResponse) => {
     return;
   }
 
+  // Reuse the existing editor instance so extensions/DOM wiring stay stable
+  // while swapping in the newly opened file contents.
   isApplyingLoadedDocument = true;
   try {
     view.dispatch({
@@ -304,6 +309,7 @@ const openMarkdownFile = async () => {
   isOpeningFile = true;
   openFileButtonEl.disabled = true;
   try {
+    // Save first so "Open..." behaves like a document switch, not a discard.
     await flushPendingSave();
     setStatus('Opening...');
     const response = await window.markdownApi.openMarkdownFile();
@@ -343,6 +349,8 @@ window.addEventListener('beforeunload', () => {
   if (!view) {
     return;
   }
+  // Best-effort flush on close. This is async and can still race teardown
+  // (tracked in docs/todos.md), but it reduces losses during normal exits.
   void saveNow(view.state.doc.toString());
 });
 

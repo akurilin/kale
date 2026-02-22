@@ -9,6 +9,8 @@ type OpenMarkdownFileResponse =
   | { canceled: true }
   | ({ canceled: false } & LoadMarkdownResponse);
 
+// Expose a narrow, explicit bridge instead of raw ipcRenderer so the renderer
+// stays constrained to just the file operations this app supports.
 contextBridge.exposeInMainWorld('markdownApi', {
   loadMarkdown: (): Promise<LoadMarkdownResponse> =>
     ipcRenderer.invoke('editor:load-markdown'),
