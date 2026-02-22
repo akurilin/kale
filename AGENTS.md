@@ -16,3 +16,9 @@ The agent must keep `README.md` updated with the latest changes to the repositor
 ## GitHub Tooling
 
 The agent can use the `gh` tool to interact with GitHub in general.
+
+## Testing
+
+- Never use Playwright or Playwright MCP
+- Do not use Playwright to test the app, instead use the scripts/capture_npm_start_window.sh script
+  to take a screenshot and verify your changes visually. Kill the app process after you're done verifying
