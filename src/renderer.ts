@@ -35,7 +35,8 @@ declare global {
 
 const SAVE_DELAY_MS = 5000;
 
-const openFileButtonEl = document.querySelector<HTMLButtonElement>('#open-file');
+const openFileButtonEl =
+  document.querySelector<HTMLButtonElement>('#open-file');
 const filePathEl = document.querySelector<HTMLElement>('#file-path');
 const statusEl = document.querySelector<HTMLElement>('#save-status');
 const editorEl = document.querySelector<HTMLElement>('#editor');
@@ -115,7 +116,11 @@ const overlaps = (
   toB: number,
 ): boolean => fromA < toB && toA > fromB;
 
-const isActiveContext = (state: EditorView['state'], from: number, to: number): boolean => {
+const isActiveContext = (
+  state: EditorView['state'],
+  from: number,
+  to: number,
+): boolean => {
   for (const range of state.selection.ranges) {
     if (overlaps(from, to, range.from, range.to)) {
       return true;

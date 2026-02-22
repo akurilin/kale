@@ -71,7 +71,10 @@ const canReadFile = async (filePath: string) => {
 };
 
 const ensureDefaultUserFile = async () => {
-  const targetFilePath = path.join(app.getPath('userData'), DEFAULT_USER_FILE_NAME);
+  const targetFilePath = path.join(
+    app.getPath('userData'),
+    DEFAULT_USER_FILE_NAME,
+  );
   if (await canReadFile(targetFilePath)) {
     return targetFilePath;
   }
@@ -80,7 +83,10 @@ const ensureDefaultUserFile = async () => {
   try {
     // Seed from the bundled sample so the first run opens useful content while
     // still writing to a user-writable location.
-    const sampleContent = await fs.readFile(BUNDLED_SAMPLE_MARKDOWN_FILE, 'utf8');
+    const sampleContent = await fs.readFile(
+      BUNDLED_SAMPLE_MARKDOWN_FILE,
+      'utf8',
+    );
     await fs.writeFile(targetFilePath, sampleContent, 'utf8');
   } catch {
     // If the bundled sample is unavailable, still create an empty writable file.
@@ -103,7 +109,10 @@ const ensureCurrentMarkdownFilePath = async () => {
   }
 
   const settings = await readSettings();
-  if (settings.lastOpenedFilePath && (await canReadFile(settings.lastOpenedFilePath))) {
+  if (
+    settings.lastOpenedFilePath &&
+    (await canReadFile(settings.lastOpenedFilePath))
+  ) {
     // Restore the last file the user worked on across app restarts.
     currentMarkdownFilePath = settings.lastOpenedFilePath;
     return currentMarkdownFilePath;
@@ -137,14 +146,20 @@ ipcMain.handle(
     const browserWindow = BrowserWindow.getFocusedWindow();
     // The native dialog lives in the main process; the renderer only requests it
     // via IPC to keep filesystem access out of browser code.
-    const { canceled, filePaths } = await dialog.showOpenDialog(browserWindow ?? undefined, {
-      title: 'Open Markdown File',
-      properties: ['openFile'],
-      filters: [
-        { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'] },
-        { name: 'All Files', extensions: ['*'] },
-      ],
-    });
+    const { canceled, filePaths } = await dialog.showOpenDialog(
+      browserWindow ?? undefined,
+      {
+        title: 'Open Markdown File',
+        properties: ['openFile'],
+        filters: [
+          {
+            name: 'Markdown',
+            extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'],
+          },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      },
+    );
 
     if (canceled || filePaths.length === 0) {
       return { canceled: true };

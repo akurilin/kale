@@ -5,7 +5,9 @@
 This repository is an Electron Forge + Vite + TypeScript desktop app.
 
 What works right now:
+
 - `npm start` runs Electron Forge and opens a single-window markdown workspace.
+- Prettier is configured for repository formatting (`npm run format`, `npm run format:check`).
 - Startup window size defaults to `2560x1440` and can be overridden with `KALE_WINDOW_WIDTH` / `KALE_WINDOW_HEIGHT`.
 - The app can open a markdown file from the UI (`Open...`) and remembers the last opened file across restarts.
 - On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
@@ -18,6 +20,7 @@ What works right now:
 - Electron fuses are configured for a more locked-down packaged app profile.
 
 What is not implemented yet:
+
 - The broader workflows from `docs/prd.md` (agent orchestration, snapshots, comment sidecars, skills, multi-doc project handling) are not yet wired into `src/`.
 - The known editor persistence issues tracked in `docs/todos.md` are not fixed yet (packaged save path and close/save race).
 
@@ -26,6 +29,8 @@ What is not implemented yet:
 - Start in development: `npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp`: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
+- Format files: `npm run format`
+- Check formatting: `npm run format:check`
 - Lint: `npm run lint`
 - Package app: `npm run package`
 - Build distributables: `npm run make`
@@ -36,5 +41,5 @@ What is not implemented yet:
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.
-- `data/`: writing samples
+- `data/`: example markdown files the app can edit
 - `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).
