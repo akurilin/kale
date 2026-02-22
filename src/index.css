@@ -1,8 +1,139 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial,
-    sans-serif;
-  margin: auto;
-  max-width: 38rem;
-  padding: 2rem;
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #faf9f7;
+  color: #1f1f1f;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  height: 48px;
+  flex: 0 0 48px;
+  border-bottom: 1px solid #e5e1da;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  background: #fffdf9;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.topbar-title {
+  font-weight: 600;
+}
+
+.topbar-button {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d8d2c7;
+  border-radius: 8px;
+  background: #fff;
+  color: #2a2a2a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topbar-button:hover:not(:disabled) {
+  background: #f6f2ea;
+}
+
+.topbar-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.file-path {
+  flex: 1;
+  font-size: 13px;
+  color: #5e5e5e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.save-status {
+  font-size: 12px;
+  color: #555;
+  min-width: 92px;
+  text-align: right;
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-title {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid #ece8e0;
+  font-size: 12px;
+  color: #4d4d4d;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #fffdfa;
+}
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #fcfbf8;
+}
+
+.editor .cm-editor {
+  height: 100%;
+}
+
+.editor .cm-scroller {
+  padding: 0;
+  font-size: 18px;
+  line-height: 1.7;
+}
+
+.editor .cm-content {
+  max-width: 920px;
+  caret-color: #1f1f1f;
+}
+
+.editor .cm-focused {
+  outline: none;
+}
+
+.editor .cm-line.cm-live-quote-line {
+  border-left: 1px solid #9a9488;
+  padding-left: 18px;
+  margin-left: 18px;
+  color: #3f3d38;
+  font-style: italic;
 }

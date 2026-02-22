@@ -1,0 +1,7 @@
+*.md
+data/
+mockups/
+.vite/
+out/
+node_modules/
+package-lock.json
