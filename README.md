@@ -17,6 +17,7 @@ What works right now:
 
 What is not implemented yet:
 - The broader workflows from `docs/prd.md` (agent orchestration, snapshots, comment sidecars, skills, multi-doc project handling) are not yet wired into `src/`.
+- The known editor persistence issues tracked in `docs/todos.md` are not fixed yet (packaged save path and close/save race).
 
 ## Run Commands
 
@@ -29,5 +30,7 @@ What is not implemented yet:
 
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
+- `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.
-- `data/`: writing samples and agent instruction/context files used for content and workflow experiments.
+- `data/`: writing samples
+- `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).
