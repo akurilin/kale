@@ -21,6 +21,13 @@ body {
   flex-direction: column;
 }
 
+#root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .topbar {
   height: 48px;
   flex: 0 0 48px;
