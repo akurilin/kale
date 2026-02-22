@@ -6,6 +6,7 @@
 import type {
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
+  RestoreMarkdownFromGitResponse,
   SaveMarkdownResponse,
 } from '../shared-types';
 
@@ -13,6 +14,7 @@ type MarkdownApi = {
   loadMarkdown: () => Promise<LoadMarkdownResponse>;
   openMarkdownFile: () => Promise<OpenMarkdownFileResponse>;
   saveMarkdown: (content: string) => Promise<SaveMarkdownResponse>;
+  restoreCurrentMarkdownFromGit: () => Promise<RestoreMarkdownFromGitResponse>;
 };
 
 declare global {

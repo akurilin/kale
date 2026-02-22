@@ -21,6 +21,7 @@ import {
 
 type MarkdownEditorPaneProps = {
   loadedDocumentContent: string | null;
+  loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
 };
 
@@ -31,7 +32,11 @@ export type MarkdownEditorPaneHandle = {
 // forwardRef lets the app shell ask for current editor content during blur,
 // file switching, and close events without pushing every keystroke into React.
 const MarkdownEditorPaneImpl = (
-  { loadedDocumentContent, onUserEditedDocument }: MarkdownEditorPaneProps,
+  {
+    loadedDocumentContent,
+    loadedDocumentRevision,
+    onUserEditedDocument,
+  }: MarkdownEditorPaneProps,
   ref: ForwardedRef<MarkdownEditorPaneHandle>,
 ) => {
   const editorContainerElementRef = useRef<HTMLDivElement | null>(null);
@@ -119,7 +124,7 @@ const MarkdownEditorPaneImpl = (
     } finally {
       isApplyingLoadedDocumentRef.current = false;
     }
-  }, [loadedDocumentContent]);
+  }, [loadedDocumentContent, loadedDocumentRevision]);
 
   return <div id="editor" className="editor" ref={editorContainerElementRef} />;
 };

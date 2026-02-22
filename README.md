@@ -11,6 +11,7 @@ What works right now:
 - Prettier is configured for repository formatting (`npm run format`, `npm run format:check`).
 - Startup window size defaults to `2560x1440` and can be overridden with `KALE_WINDOW_WIDTH` / `KALE_WINDOW_HEIGHT`.
 - The app can open a markdown file from the UI (`Open...`) and remembers the last opened file across restarts.
+- The top bar includes a `Restore Git` action that discards local changes for the current file and restores it from the repository `HEAD` version (requires `git` on `PATH`).
 - On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
 - Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
 - The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.

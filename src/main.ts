@@ -3,13 +3,16 @@
 // filesystem-backed markdown load/open/save IPC handlers for the renderer.
 //
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import started from 'electron-squirrel-startup';
 
 import type {
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
+  RestoreMarkdownFromGitResponse,
 } from './shared-types';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -31,6 +34,7 @@ const DEFAULT_WINDOW_HEIGHT = 1440;
 // In-memory cache for the active file path. We still re-validate on use because
 // the file can be moved/deleted outside the app between operations.
 let currentMarkdownFilePath: string | null = null;
+const execFileAsync = promisify(execFile);
 
 type AppSettings = {
   lastOpenedFilePath?: string;
@@ -130,6 +134,73 @@ const loadCurrentMarkdown = async (): Promise<LoadMarkdownResponse> => {
   return { content, filePath };
 };
 
+// Git path-scoped restore needs a repository root so the command can target the
+// current file deterministically and return actionable errors to the renderer.
+const resolveGitRepositoryRoot = async (filePath: string) => {
+  const { stdout } = await execFileAsync(
+    'git',
+    ['-C', path.dirname(filePath), 'rev-parse', '--show-toplevel'],
+    {
+      windowsHide: true,
+    },
+  );
+  return stdout.trim();
+};
+
+// Restoring to HEAD is intentionally destructive for the current file only, so
+// this helper centralizes the safest non-shell command invocation and fallback.
+const restoreFileFromGitHead = async (filePath: string) => {
+  const repositoryRoot = await resolveGitRepositoryRoot(filePath);
+  const repositoryRelativeFilePath = path.relative(repositoryRoot, filePath);
+
+  try {
+    await execFileAsync(
+      'git',
+      [
+        '-C',
+        repositoryRoot,
+        'restore',
+        '--source=HEAD',
+        '--staged',
+        '--worktree',
+        '--',
+        repositoryRelativeFilePath,
+      ],
+      {
+        windowsHide: true,
+      },
+    );
+    return;
+  } catch (error) {
+    const gitCommandError = error as NodeJS.ErrnoException & {
+      stderr?: string;
+    };
+    const stderr = gitCommandError.stderr ?? '';
+    const looksLikeUnsupportedRestoreCommand =
+      stderr.includes('not a git command') ||
+      stderr.includes("unknown switch `s'") ||
+      stderr.includes('unknown subcommand');
+    if (!looksLikeUnsupportedRestoreCommand) {
+      throw error;
+    }
+  }
+
+  await execFileAsync(
+    'git',
+    [
+      '-C',
+      repositoryRoot,
+      'checkout',
+      'HEAD',
+      '--',
+      repositoryRelativeFilePath,
+    ],
+    {
+      windowsHide: true,
+    },
+  );
+};
+
 ipcMain.handle('editor:load-markdown', async () => {
   return loadCurrentMarkdown();
 });
@@ -139,6 +210,22 @@ ipcMain.handle('editor:save-markdown', async (_event, content: string) => {
   await fs.writeFile(filePath, content, 'utf8');
   return { ok: true };
 });
+
+ipcMain.handle(
+  'editor:restore-current-markdown-from-git',
+  async (): Promise<RestoreMarkdownFromGitResponse> => {
+    try {
+      const filePath = await ensureCurrentMarkdownFilePath();
+      await restoreFileFromGitHead(filePath);
+      const content = await fs.readFile(filePath, 'utf8');
+      return { ok: true, filePath, content };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown Git restore error';
+      return { ok: false, errorMessage };
+    }
+  },
+);
 
 ipcMain.handle(
   'editor:open-markdown-file',

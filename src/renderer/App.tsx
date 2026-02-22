@@ -22,12 +22,15 @@ const INITIAL_SAVE_STATUS_TEXT = 'Ready';
 export const App = () => {
   const [loadedDocument, setLoadedDocument] =
     useState<LoadMarkdownResponse | null>(null);
+  const [loadedDocumentRevision, setLoadedDocumentRevision] = useState(0);
   const [saveStatusText, setSaveStatusText] = useState(
     INITIAL_SAVE_STATUS_TEXT,
   );
   const [isOpeningFile, setIsOpeningFile] = useState(false);
+  const [isRestoringFromGit, setIsRestoringFromGit] = useState(false);
 
   const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
+  const isSuppressingLifecycleSaveRef = useRef(false);
   const saveControllerRef = useRef<ReturnType<
     typeof createSaveController
   > | null>(null);
@@ -52,6 +55,7 @@ export const App = () => {
   const applyLoadedDocument = (nextLoadedDocument: LoadMarkdownResponse) => {
     saveController.markContentAsSavedFromLoad(nextLoadedDocument.content);
     setLoadedDocument(nextLoadedDocument);
+    setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
     setSaveStatusText('Saved');
   };
 
@@ -81,6 +85,10 @@ export const App = () => {
   // controller so users are less likely to lose changes during lifecycle edges.
   useEffect(() => {
     const saveCurrentEditorContent = () => {
+      if (isSuppressingLifecycleSaveRef.current) {
+        return;
+      }
+
       const currentContent = markdownEditorPaneRef.current?.getCurrentContent();
       if (currentContent === null || currentContent === undefined) {
         return;
@@ -129,6 +137,45 @@ export const App = () => {
     }
   };
 
+  // This action intentionally discards local edits, so the flow confirms first
+  // and then reloads the editor from the Git-restored file on disk.
+  const restoreCurrentFileFromGit = async () => {
+    if (!loadedDocument || isRestoringFromGit) {
+      return;
+    }
+
+    isSuppressingLifecycleSaveRef.current = true;
+    const confirmed = window.confirm(
+      `Restore this file from Git HEAD and discard local changes?\n\n${loadedDocument.filePath}`,
+    );
+    if (!confirmed) {
+      isSuppressingLifecycleSaveRef.current = false;
+      return;
+    }
+
+    setIsRestoringFromGit(true);
+    saveController.clearPendingSaveTimer();
+    setSaveStatusText('Restoring from Git...');
+    try {
+      const response = await getMarkdownApi().restoreCurrentMarkdownFromGit();
+      if (!response.ok) {
+        setSaveStatusText('Git restore failed');
+        window.alert(
+          `Could not restore file from Git.\n\n${response.errorMessage}`,
+        );
+        return;
+      }
+
+      applyLoadedDocument(response);
+    } catch (error) {
+      setSaveStatusText('Git restore failed');
+      console.error(error);
+    } finally {
+      isSuppressingLifecycleSaveRef.current = false;
+      setIsRestoringFromGit(false);
+    }
+  };
+
   return (
     <>
       <header className="topbar">
@@ -143,6 +190,16 @@ export const App = () => {
         >
           Open...
         </button>
+        <button
+          className="topbar-button"
+          type="button"
+          onClick={() => {
+            void restoreCurrentFileFromGit();
+          }}
+          disabled={!loadedDocument || isRestoringFromGit}
+        >
+          {isRestoringFromGit ? 'Restoring...' : 'Restore Git'}
+        </button>
         <div className="file-path">{loadedDocument?.filePath ?? ''}</div>
         <div className="save-status">{saveStatusText}</div>
       </header>
@@ -152,6 +209,7 @@ export const App = () => {
           <MarkdownEditorPane
             ref={markdownEditorPaneRef}
             loadedDocumentContent={loadedDocument?.content ?? null}
+            loadedDocumentRevision={loadedDocumentRevision}
             onUserEditedDocument={(content) => {
               saveController.scheduleSave(content);
             }}
