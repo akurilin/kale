@@ -13,6 +13,13 @@ const TARGET_MARKDOWN_FILE = path.resolve(
   'data',
   'what-the-best-looks-like.md',
 );
+const DEFAULT_WINDOW_WIDTH = 2560;
+const DEFAULT_WINDOW_HEIGHT = 1440;
+
+const parseWindowDimension = (value: string | undefined, fallback: number) => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
 
 ipcMain.handle('editor:load-markdown', async () => {
   const content = await fs.readFile(TARGET_MARKDOWN_FILE, 'utf8');
@@ -25,10 +32,19 @@ ipcMain.handle('editor:save-markdown', async (_event, content: string) => {
 });
 
 const createWindow = () => {
+  const windowWidth = parseWindowDimension(
+    process.env.KALE_WINDOW_WIDTH,
+    DEFAULT_WINDOW_WIDTH,
+  );
+  const windowHeight = parseWindowDimension(
+    process.env.KALE_WINDOW_HEIGHT,
+    DEFAULT_WINDOW_HEIGHT,
+  );
+
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: windowWidth,
+    height: windowHeight,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
