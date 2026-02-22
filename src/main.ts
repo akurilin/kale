@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
@@ -8,28 +8,142 @@ if (started) {
   app.quit();
 }
 
-const TARGET_MARKDOWN_FILE = path.resolve(
+const BUNDLED_SAMPLE_MARKDOWN_FILE = path.resolve(
   app.getAppPath(),
   'data',
   'what-the-best-looks-like.md',
 );
+const DEFAULT_USER_FILE_NAME = 'what-the-best-looks-like.md';
+const SETTINGS_FILE_NAME = 'settings.json';
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
+let currentMarkdownFilePath: string | null = null;
+
+type AppSettings = {
+  lastOpenedFilePath?: string;
+};
+
+type LoadMarkdownResponse = {
+  content: string;
+  filePath: string;
+};
+
+type OpenMarkdownFileResponse =
+  | { canceled: true }
+  | ({ canceled: false } & LoadMarkdownResponse);
 
 const parseWindowDimension = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const getSettingsFilePath = () =>
+  path.join(app.getPath('userData'), SETTINGS_FILE_NAME);
+
+const readSettings = async (): Promise<AppSettings> => {
+  try {
+    const raw = await fs.readFile(getSettingsFilePath(), 'utf8');
+    const parsed = JSON.parse(raw) as AppSettings;
+    return parsed ?? {};
+  } catch {
+    return {};
+  }
+};
+
+const writeSettings = async (settings: AppSettings) => {
+  const settingsPath = getSettingsFilePath();
+  await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+};
+
+const canReadFile = async (filePath: string) => {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const ensureDefaultUserFile = async () => {
+  const targetFilePath = path.join(app.getPath('userData'), DEFAULT_USER_FILE_NAME);
+  if (await canReadFile(targetFilePath)) {
+    return targetFilePath;
+  }
+
+  await fs.mkdir(path.dirname(targetFilePath), { recursive: true });
+  try {
+    const sampleContent = await fs.readFile(BUNDLED_SAMPLE_MARKDOWN_FILE, 'utf8');
+    await fs.writeFile(targetFilePath, sampleContent, 'utf8');
+  } catch {
+    await fs.writeFile(targetFilePath, '', 'utf8');
+  }
+
+  return targetFilePath;
+};
+
+const setCurrentMarkdownFilePath = async (filePath: string) => {
+  currentMarkdownFilePath = filePath;
+  const settings = await readSettings();
+  settings.lastOpenedFilePath = filePath;
+  await writeSettings(settings);
+};
+
+const ensureCurrentMarkdownFilePath = async () => {
+  if (currentMarkdownFilePath && (await canReadFile(currentMarkdownFilePath))) {
+    return currentMarkdownFilePath;
+  }
+
+  const settings = await readSettings();
+  if (settings.lastOpenedFilePath && (await canReadFile(settings.lastOpenedFilePath))) {
+    currentMarkdownFilePath = settings.lastOpenedFilePath;
+    return currentMarkdownFilePath;
+  }
+
+  const defaultFilePath = await ensureDefaultUserFile();
+  await setCurrentMarkdownFilePath(defaultFilePath);
+  return defaultFilePath;
+};
+
+const loadCurrentMarkdown = async (): Promise<LoadMarkdownResponse> => {
+  const filePath = await ensureCurrentMarkdownFilePath();
+  const content = await fs.readFile(filePath, 'utf8');
+  return { content, filePath };
+};
+
 ipcMain.handle('editor:load-markdown', async () => {
-  const content = await fs.readFile(TARGET_MARKDOWN_FILE, 'utf8');
-  return { content, filePath: TARGET_MARKDOWN_FILE };
+  return loadCurrentMarkdown();
 });
 
 ipcMain.handle('editor:save-markdown', async (_event, content: string) => {
-  await fs.writeFile(TARGET_MARKDOWN_FILE, content, 'utf8');
+  const filePath = await ensureCurrentMarkdownFilePath();
+  await fs.writeFile(filePath, content, 'utf8');
   return { ok: true };
 });
+
+ipcMain.handle(
+  'editor:open-markdown-file',
+  async (): Promise<OpenMarkdownFileResponse> => {
+    const browserWindow = BrowserWindow.getFocusedWindow();
+    const { canceled, filePaths } = await dialog.showOpenDialog(browserWindow ?? undefined, {
+      title: 'Open Markdown File',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Markdown', extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+
+    if (canceled || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const filePath = filePaths[0];
+    const content = await fs.readFile(filePath, 'utf8');
+    await setCurrentMarkdownFilePath(filePath);
+    return { canceled: false, content, filePath };
+  },
+);
 
 const createWindow = () => {
   const windowWidth = parseWindowDimension(

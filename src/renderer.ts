@@ -19,10 +19,15 @@ type SaveMarkdownResponse = {
   ok: boolean;
 };
 
+type OpenMarkdownFileResponse =
+  | { canceled: true }
+  | ({ canceled: false } & LoadMarkdownResponse);
+
 declare global {
   interface Window {
     markdownApi: {
       loadMarkdown: () => Promise<LoadMarkdownResponse>;
+      openMarkdownFile: () => Promise<OpenMarkdownFileResponse>;
       saveMarkdown: (content: string) => Promise<SaveMarkdownResponse>;
     };
   }
@@ -30,11 +35,12 @@ declare global {
 
 const SAVE_DELAY_MS = 5000;
 
+const openFileButtonEl = document.querySelector<HTMLButtonElement>('#open-file');
 const filePathEl = document.querySelector<HTMLElement>('#file-path');
 const statusEl = document.querySelector<HTMLElement>('#save-status');
 const editorEl = document.querySelector<HTMLElement>('#editor');
 
-if (!filePathEl || !statusEl || !editorEl) {
+if (!openFileButtonEl || !filePathEl || !statusEl || !editorEl) {
   throw new Error('Missing required UI elements');
 }
 
@@ -42,9 +48,19 @@ let view: EditorView | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let lastSavedContent = '';
 let isSaving = false;
+let isApplyingLoadedDocument = false;
+let isOpeningFile = false;
 
 const setStatus = (text: string) => {
   statusEl.textContent = text;
+};
+
+const clearSaveTimer = () => {
+  if (!saveTimer) {
+    return;
+  }
+  clearTimeout(saveTimer);
+  saveTimer = null;
 };
 
 const saveNow = async (content: string) => {
@@ -73,12 +89,20 @@ const saveNow = async (content: string) => {
 
 const scheduleSave = (content: string) => {
   setStatus('Unsaved changes');
-  if (saveTimer) {
-    clearTimeout(saveTimer);
-  }
+  clearSaveTimer();
   saveTimer = setTimeout(() => {
+    saveTimer = null;
     void saveNow(content);
   }, SAVE_DELAY_MS);
+};
+
+const flushPendingSave = async () => {
+  if (!view) {
+    return;
+  }
+
+  clearSaveTimer();
+  await saveNow(view.state.doc.toString());
 };
 
 const overlaps = (
@@ -227,12 +251,8 @@ const quoteLineDecorationExtension = (): Extension =>
     },
   );
 
-const bootstrap = async () => {
-  setStatus('Loading...');
-  const { content, filePath } = await window.markdownApi.loadMarkdown();
-  filePathEl.textContent = filePath;
-  lastSavedContent = content;
-
+const createEditorView = (content: string) => {
+  view?.destroy();
   view = new EditorView({
     doc: content,
     extensions: [
@@ -242,7 +262,7 @@ const bootstrap = async () => {
       livePreviewMarkersExtension(),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
-        if (!update.docChanged) {
+        if (!update.docChanged || isApplyingLoadedDocument) {
           return;
         }
         const nextContent = update.state.doc.toString();
@@ -251,9 +271,66 @@ const bootstrap = async () => {
     ],
     parent: editorEl,
   });
+};
+
+const applyLoadedDocument = ({ content, filePath }: LoadMarkdownResponse) => {
+  clearSaveTimer();
+  filePathEl.textContent = filePath;
+  lastSavedContent = content;
+
+  if (!view) {
+    createEditorView(content);
+    setStatus('Saved');
+    return;
+  }
+
+  isApplyingLoadedDocument = true;
+  try {
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: content },
+    });
+  } finally {
+    isApplyingLoadedDocument = false;
+  }
 
   setStatus('Saved');
 };
+
+const openMarkdownFile = async () => {
+  if (isOpeningFile) {
+    return;
+  }
+
+  isOpeningFile = true;
+  openFileButtonEl.disabled = true;
+  try {
+    await flushPendingSave();
+    setStatus('Opening...');
+    const response = await window.markdownApi.openMarkdownFile();
+    if (response.canceled) {
+      setStatus(view ? 'Saved' : 'Ready');
+      return;
+    }
+
+    applyLoadedDocument(response);
+  } catch (error) {
+    setStatus('Open failed');
+    console.error(error);
+  } finally {
+    isOpeningFile = false;
+    openFileButtonEl.disabled = false;
+  }
+};
+
+const bootstrap = async () => {
+  setStatus('Loading...');
+  const document = await window.markdownApi.loadMarkdown();
+  applyLoadedDocument(document);
+};
+
+openFileButtonEl.addEventListener('click', () => {
+  void openMarkdownFile();
+});
 
 window.addEventListener('blur', () => {
   if (!view) {

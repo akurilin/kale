@@ -34,6 +34,27 @@ body {
   font-weight: 600;
 }
 
+.topbar-button {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #d8d2c7;
+  border-radius: 8px;
+  background: #fff;
+  color: #2a2a2a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topbar-button:hover:not(:disabled) {
+  background: #f6f2ea;
+}
+
+.topbar-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .file-path {
   flex: 1;
   font-size: 13px;
