@@ -10,18 +10,11 @@ import {
 } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 
-type LoadMarkdownResponse = {
-  content: string;
-  filePath: string;
-};
-
-type SaveMarkdownResponse = {
-  ok: boolean;
-};
-
-type OpenMarkdownFileResponse =
-  | { canceled: true }
-  | ({ canceled: false } & LoadMarkdownResponse);
+import type {
+  LoadMarkdownResponse,
+  OpenMarkdownFileResponse,
+  SaveMarkdownResponse,
+} from './shared-types';
 
 declare global {
   interface Window {

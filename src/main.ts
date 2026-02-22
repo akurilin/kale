@@ -3,6 +3,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 
+import type {
+  LoadMarkdownResponse,
+  OpenMarkdownFileResponse,
+} from './shared-types';
+
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
@@ -26,15 +31,6 @@ let currentMarkdownFilePath: string | null = null;
 type AppSettings = {
   lastOpenedFilePath?: string;
 };
-
-type LoadMarkdownResponse = {
-  content: string;
-  filePath: string;
-};
-
-type OpenMarkdownFileResponse =
-  | { canceled: true }
-  | ({ canceled: false } & LoadMarkdownResponse);
 
 const parseWindowDimension = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
