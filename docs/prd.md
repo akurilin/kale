@@ -38,6 +38,7 @@ my-writing-project/
 ```
 
 **Key properties:**
+
 - Every document is a standard Markdown file. Open it in any editor, it works.
 - Comments live in a sidecar `.comments.md` (or `.comments.json`) file with a structured format linking annotations to text anchors.
 - Skills are Markdown files containing prompt templates. The agent can read them, the user can edit them, and — crucially — the user can ask the agent to write new skills.
@@ -171,6 +172,7 @@ interface AgentAdapter {
 ```
 
 **Adapters to build:**
+
 - **Claude Code:** Invoke via `claude -p "prompt" --directory /path/to/project` or via the SDK
 - **Codex:** Invoke via `codex "prompt"` or equivalent CLI
 - **Fallback / direct API:** If no local agent is installed, fall back to a direct API call with a simple `str_replace` tool (as described in the SaaS PRD). This ensures the editor works even without a full coding agent, just with an API key.
@@ -199,16 +201,16 @@ interface AgentAdapter {
 
 ## What Makes This Different from Just Using Cursor
 
-| Capability | Cursor | This Editor |
-|---|---|---|
-| WYSIWYG prose rendering | ❌ Raw text / Markdown preview | ✅ Full WYSIWYG |
-| Margin comments / annotations | ❌ | ✅ With sidecar storage |
-| Writing-specific skills (de-slop, flow, etc.) | ❌ (could use .cursor/rules) | ✅ Purpose-built |
-| Prose-optimized diff view | ❌ Line-based code diffs | ✅ Word-level prose diffs |
-| Agent integration | ✅ Built-in | ✅ Wraps the same agents |
-| Non-technical user accessible | ❌ It's a code editor | ⚠️ Better, but still requires local agent setup |
-| Git-based versioning | ✅ | ✅ |
-| Extension ecosystem | ✅ VS Code extensions | ❌ |
+| Capability                                    | Cursor                         | This Editor                                     |
+| --------------------------------------------- | ------------------------------ | ----------------------------------------------- |
+| WYSIWYG prose rendering                       | ❌ Raw text / Markdown preview | ✅ Full WYSIWYG                                 |
+| Margin comments / annotations                 | ❌                             | ✅ With sidecar storage                         |
+| Writing-specific skills (de-slop, flow, etc.) | ❌ (could use .cursor/rules)   | ✅ Purpose-built                                |
+| Prose-optimized diff view                     | ❌ Line-based code diffs       | ✅ Word-level prose diffs                       |
+| Agent integration                             | ✅ Built-in                    | ✅ Wraps the same agents                        |
+| Non-technical user accessible                 | ❌ It's a code editor          | ⚠️ Better, but still requires local agent setup |
+| Git-based versioning                          | ✅                             | ✅                                              |
+| Extension ecosystem                           | ✅ VS Code extensions          | ❌                                              |
 
 ---
 

@@ -11,3 +11,5 @@
    - The renderer `beforeunload` handler triggers an async save but does not block teardown while the IPC save completes.
    - If the user closes/quits before autosave fires, the renderer may be destroyed before the final save finishes, causing data loss risk.
    - Deferred for now; needs explicit close/quit interception and flush coordination.
+
+3. It would be neat to figure out agentic QA of the changes with something like Playwright MCP. Couldn't find official support for that.
