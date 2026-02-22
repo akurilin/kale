@@ -38,6 +38,8 @@ What is not implemented yet:
 ## Folder Overview
 
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
+- `src/renderer.ts`: renderer composition entry that wires UI events, file loading, and editor behavior together.
+- `src/renderer/`: extracted renderer modules for CodeMirror extensions and save/autosave controller logic.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.

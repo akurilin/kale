@@ -1,3 +1,7 @@
+//
+// This is the Electron main process entry that owns window lifecycle and
+// filesystem-backed markdown load/open/save IPC handlers for the renderer.
+//
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

@@ -1,3 +1,8 @@
+//
+// This preload file exposes a narrow, typed bridge from renderer to main
+// so UI code can request file operations without direct Electron/Node access.
+//
+
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type {

@@ -1,3 +1,7 @@
+//
+// This is the Electron Forge build/package configuration that defines
+// makers, Vite entry points, and fuse hardening for packaged app output.
+//
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';

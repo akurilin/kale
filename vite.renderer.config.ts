@@ -1,3 +1,7 @@
+//
+// This Vite config defines how the renderer bundle is built/served for the
+// Electron Forge Vite plugin, even while using mostly default behavior.
+//
 import { defineConfig } from 'vite';
 
 // https://vitejs.dev/config

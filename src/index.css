@@ -137,3 +137,7 @@ body {
   color: #3f3d38;
   font-style: italic;
 }
+
+.editor .cm-line {
+  padding-left: 12px;
+}

@@ -1,21 +1,27 @@
+//
+// This is the renderer entry point that composes the editor UI, save
+// behavior, and file-open lifecycle into one startup/wiring module.
+//
+
 import './index.css';
 import { markdown } from '@codemirror/lang-markdown';
-import { syntaxTree } from '@codemirror/language';
-import { type Extension, type Range } from '@codemirror/state';
-import {
-  Decoration,
-  EditorView,
-  ViewPlugin,
-  type ViewUpdate,
-} from '@codemirror/view';
+import { EditorView } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 
+import {
+  livePreviewMarkersExtension,
+  quoteLineDecorationExtension,
+} from './renderer/codemirror-extensions';
+import { createSaveController } from './renderer/save-controller';
 import type {
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   SaveMarkdownResponse,
 } from './shared-types';
 
+// The renderer process owns the interactive editor UI only.
+// It does not touch the filesystem directly; all file I/O goes through the
+// preload bridge (`window.markdownApi`) which delegates to the main process.
 declare global {
   interface Window {
     markdownApi: {
@@ -26,8 +32,7 @@ declare global {
   }
 }
 
-const SAVE_DELAY_MS = 5000;
-
+// Cache the shell UI elements up front so later logic can assume they exist.
 const openFileButtonEl =
   document.querySelector<HTMLButtonElement>('#open-file');
 const filePathEl = document.querySelector<HTMLElement>('#file-path');
@@ -38,220 +43,31 @@ if (!openFileButtonEl || !filePathEl || !statusEl || !editorEl) {
   throw new Error('Missing required UI elements');
 }
 
+// Renderer state:
+// - `view` is the CodeMirror instance
+// - `isApplyingLoadedDocument` prevents programmatic loads from triggering autosave
+// - `isOpeningFile` prevents overlapping native file-picker flows
 let view: EditorView | null = null;
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let lastSavedContent = '';
-let isSaving = false;
-// Prevent programmatic document replacement from being treated as user edits.
 let isApplyingLoadedDocument = false;
-// Prevent duplicate dialog opens / overlapping file-switch flows.
 let isOpeningFile = false;
 
+// all user-visible save state flows through one helper so wording stays
+// consistent across autosave, manual flushes, file loading, and errors.
 const setStatus = (text: string) => {
   statusEl.textContent = text;
 };
 
-const clearSaveTimer = () => {
-  if (!saveTimer) {
-    return;
-  }
-  clearTimeout(saveTimer);
-  saveTimer = null;
-};
-
-const saveNow = async (content: string) => {
-  if (isSaving) {
-    return;
-  }
-
-  if (content === lastSavedContent) {
-    setStatus('Saved');
-    return;
-  }
-
-  isSaving = true;
-  setStatus('Saving...');
-  try {
+const saveController = createSaveController({
+  // the controller owns debounced autosave behavior while renderer.ts
+  // remains focused on composition and event wiring.
+  saveMarkdownContent: async (content) => {
     await window.markdownApi.saveMarkdown(content);
-    lastSavedContent = content;
-    setStatus('Saved');
-  } catch (error) {
-    setStatus('Save failed');
-    console.error(error);
-  } finally {
-    isSaving = false;
-  }
-};
+  },
+  setSaveStatusText: setStatus,
+});
 
-const scheduleSave = (content: string) => {
-  setStatus('Unsaved changes');
-  clearSaveTimer();
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    void saveNow(content);
-  }, SAVE_DELAY_MS);
-};
-
-const flushPendingSave = async () => {
-  if (!view) {
-    return;
-  }
-
-  // File switching should not discard edits waiting on the debounce timer.
-  clearSaveTimer();
-  await saveNow(view.state.doc.toString());
-};
-
-const overlaps = (
-  fromA: number,
-  toA: number,
-  fromB: number,
-  toB: number,
-): boolean => fromA < toB && toA > fromB;
-
-const isActiveContext = (
-  state: EditorView['state'],
-  from: number,
-  to: number,
-): boolean => {
-  for (const range of state.selection.ranges) {
-    if (overlaps(from, to, range.from, range.to)) {
-      return true;
-    }
-
-    const headLine = state.doc.lineAt(range.head);
-    if (overlaps(from, to, headLine.from, headLine.to + 1)) {
-      return true;
-    }
-
-    const anchorLine = state.doc.lineAt(range.anchor);
-    if (overlaps(from, to, anchorLine.from, anchorLine.to + 1)) {
-      return true;
-    }
-  }
-
-  return false;
-};
-
-const markerNodes = new Set([
-  'HeaderMark',
-  'QuoteMark',
-  'ListMark',
-  'EmphasisMark',
-  'CodeMark',
-]);
-
-const livePreviewMarkersExtension = (): Extension =>
-  ViewPlugin.fromClass(
-    class {
-      decorations;
-
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
-      }
-
-      update(update: ViewUpdate) {
-        if (
-          update.docChanged ||
-          update.selectionSet ||
-          update.viewportChanged ||
-          update.focusChanged
-        ) {
-          this.decorations = this.buildDecorations(update.view);
-        }
-      }
-
-      buildDecorations(view: EditorView) {
-        const decorations: Range<Decoration>[] = [];
-        const { state } = view;
-        const tree = syntaxTree(state);
-
-        tree.iterate({
-          enter: (node) => {
-            const { name, from, to } = node;
-            if (from >= to) {
-              return;
-            }
-
-            if (markerNodes.has(name) && !isActiveContext(state, from, to)) {
-              let hideTo = to;
-
-              if (
-                (name === 'HeaderMark' ||
-                  name === 'QuoteMark' ||
-                  name === 'ListMark') &&
-                state.sliceDoc(to, to + 1) === ' '
-              ) {
-                hideTo = to + 1;
-              }
-
-              decorations.push(Decoration.replace({}).range(from, hideTo));
-            }
-          },
-        });
-
-        return Decoration.set(decorations, true);
-      }
-    },
-    {
-      decorations: (v) => v.decorations,
-    },
-  );
-
-const quoteLineDecorationExtension = (): Extension =>
-  ViewPlugin.fromClass(
-    class {
-      decorations;
-
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
-      }
-
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged) {
-          this.decorations = this.buildDecorations(update.view);
-        }
-      }
-
-      buildDecorations(view: EditorView) {
-        const decorations: Range<Decoration>[] = [];
-        const { state } = view;
-        const tree = syntaxTree(state);
-        const lineStarts = new Set<number>();
-
-        tree.iterate({
-          enter: (node) => {
-            if (node.name !== 'Blockquote') {
-              return;
-            }
-
-            let line = state.doc.lineAt(node.from);
-            while (line.from <= node.to) {
-              if (!lineStarts.has(line.from)) {
-                lineStarts.add(line.from);
-                decorations.push(
-                  Decoration.line({ class: 'cm-live-quote-line' }).range(
-                    line.from,
-                  ),
-                );
-              }
-
-              if (line.to >= node.to || line.number >= state.doc.lines) {
-                break;
-              }
-              line = state.doc.line(line.number + 1);
-            }
-          },
-        });
-
-        return Decoration.set(decorations, true);
-      }
-    },
-    {
-      decorations: (v) => v.decorations,
-    },
-  );
-
+// editor construction is isolated so startup and later document switches
+// reuse the same setup and keep renderer.ts focused on app composition.
 const createEditorView = (content: string) => {
   view?.destroy();
   view = new EditorView({
@@ -263,21 +79,22 @@ const createEditorView = (content: string) => {
       livePreviewMarkersExtension(),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
+        // Ignore programmatic file loads so they do not trigger autosave.
         if (!update.docChanged || isApplyingLoadedDocument) {
           return;
         }
-        const nextContent = update.state.doc.toString();
-        scheduleSave(nextContent);
+        saveController.scheduleSave(update.state.doc.toString());
       }),
     ],
     parent: editorEl,
   });
 };
 
+// loading a file updates both editor content and surrounding shell UI, so
+// startup and "Open..." share one implementation and remain behaviorally aligned.
 const applyLoadedDocument = ({ content, filePath }: LoadMarkdownResponse) => {
-  clearSaveTimer();
+  saveController.markContentAsSavedFromLoad(content);
   filePathEl.textContent = filePath;
-  lastSavedContent = content;
 
   if (!view) {
     createEditorView(content);
@@ -285,7 +102,7 @@ const applyLoadedDocument = ({ content, filePath }: LoadMarkdownResponse) => {
     return;
   }
 
-  // Reuse the existing editor instance so extensions/DOM wiring stay stable
+  // Reuse the existing editor instance so extensions and DOM wiring stay stable
   // while swapping in the newly opened file contents.
   isApplyingLoadedDocument = true;
   try {
@@ -299,6 +116,8 @@ const applyLoadedDocument = ({ content, filePath }: LoadMarkdownResponse) => {
   setStatus('Saved');
 };
 
+// opening another file should behave like switching documents in an editor
+// and not allow duplicate dialogs or lost edits due to debounce timing.
 const openMarkdownFile = async () => {
   if (isOpeningFile) {
     return;
@@ -307,8 +126,13 @@ const openMarkdownFile = async () => {
   isOpeningFile = true;
   openFileButtonEl.disabled = true;
   try {
-    // Save first so "Open..." behaves like a document switch, not a discard.
-    await flushPendingSave();
+    const activeView = view;
+    if (activeView) {
+      // Save first so "Open..." behaves like a document switch, not a discard.
+      await saveController.flushPendingSave(() =>
+        activeView.state.doc.toString(),
+      );
+    }
     setStatus('Opening...');
     const response = await window.markdownApi.openMarkdownFile();
     if (response.canceled) {
@@ -326,21 +150,27 @@ const openMarkdownFile = async () => {
   }
 };
 
+// startup is async because the main process decides which file to restore
+// (remembered file vs writable fallback) and returns both path and contents.
 const bootstrap = async () => {
   setStatus('Loading...');
   const document = await window.markdownApi.loadMarkdown();
   applyLoadedDocument(document);
 };
 
+// `void` makes it explicit that event handlers intentionally fire async
+// work without awaiting on the DOM event call stack.
 openFileButtonEl.addEventListener('click', () => {
   void openMarkdownFile();
 });
 
+// blur-triggered saves reduce the chance of losing edits when users switch
+// apps or windows before the debounce timer expires.
 window.addEventListener('blur', () => {
   if (!view) {
     return;
   }
-  void saveNow(view.state.doc.toString());
+  void saveController.saveNow(view.state.doc.toString());
 });
 
 window.addEventListener('beforeunload', () => {
@@ -349,7 +179,9 @@ window.addEventListener('beforeunload', () => {
   }
   // Best-effort flush on close. This is async and can still race teardown
   // (tracked in docs/todos.md), but it reduces losses during normal exits.
-  void saveNow(view.state.doc.toString());
+  void saveController.saveNow(view.state.doc.toString());
 });
 
+// startup runs after handlers/helpers are registered so lifecycle behavior
+// is in place before the initial async load completes.
 void bootstrap();
