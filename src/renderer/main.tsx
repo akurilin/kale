@@ -3,11 +3,11 @@
 // delegating editor internals to a dedicated CodeMirror wrapper component.
 //
 
-import './index.css';
+import '../index.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { App } from './renderer/App';
+import { App } from './App';
 
 // centralizing root lookup/mount keeps startup failure explicit when the
 // HTML shell and renderer entry drift out of sync during refactors.
