@@ -8,11 +8,17 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import started from 'electron-squirrel-startup';
+import * as nodePty from 'node-pty';
 
 import type {
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
+  ResizeTerminalSessionRequest,
   RestoreMarkdownFromGitResponse,
+  StartTerminalSessionRequest,
+  StartTerminalSessionResponse,
+  TerminalBootstrapResponse,
+  TerminalProcessExitEvent,
 } from './shared-types';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -35,6 +41,7 @@ const DEFAULT_WINDOW_HEIGHT = 1440;
 // the file can be moved/deleted outside the app between operations.
 let currentMarkdownFilePath: string | null = null;
 const execFileAsync = promisify(execFile);
+const terminalSessionsById = new Map<string, nodePty.IPty>();
 
 type AppSettings = {
   lastOpenedFilePath?: string;
@@ -127,6 +134,125 @@ const ensureCurrentMarkdownFilePath = async () => {
   await setCurrentMarkdownFilePath(defaultFilePath);
   return defaultFilePath;
 };
+
+// The isolated terminal view needs a stable, known markdown target during
+// development even when the persisted "last opened" file points elsewhere.
+const getBundledSampleMarkdownFilePath = () => BUNDLED_SAMPLE_MARKDOWN_FILE;
+
+// Terminal sessions are keyed in main so the renderer never gets direct access
+// to process objects and can only control them through narrow IPC methods.
+const createTerminalSessionId = () =>
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+// The terminal prototype should prefer the bundled sample file for isolated
+// testing while still allowing a fallback to the app's current file path.
+const resolveTerminalBootstrapContext =
+  async (): Promise<TerminalBootstrapResponse> => {
+    const sampleFilePath = getBundledSampleMarkdownFilePath();
+    if (await canReadFile(sampleFilePath)) {
+      return {
+        targetFilePath: sampleFilePath,
+        cwd: path.dirname(sampleFilePath),
+        source: 'sample',
+      };
+    }
+
+    const currentFilePath = await ensureCurrentMarkdownFilePath();
+    return {
+      targetFilePath: currentFilePath,
+      cwd: path.dirname(currentFilePath),
+      source: 'current',
+    };
+  };
+
+// The terminal prototype should default to the user's shell so we can validate
+// PTY terminal behavior before layering in app-specific terminal workflows.
+const resolveTerminalLaunchCommand = () => {
+  const override = process.env.KALE_TERMINAL_COMMAND?.trim();
+  if (override) {
+    return {
+      command: override,
+      args: process.env.KALE_TERMINAL_ARGS
+        ? process.env.KALE_TERMINAL_ARGS.split(' ').filter(Boolean)
+        : [],
+    };
+  }
+
+  return {
+    command: process.env.SHELL?.trim() || '/bin/zsh',
+    args: [] as string[],
+  };
+};
+
+// Main owns process spawning so the renderer can stream terminal I/O without
+// gaining raw local process execution access.
+const startTerminalSession = async (
+  request: StartTerminalSessionRequest,
+): Promise<StartTerminalSessionResponse> => {
+  const { command, args } = resolveTerminalLaunchCommand();
+  const sessionId = createTerminalSessionId();
+
+  try {
+    const terminalProcess = nodePty.spawn(command, args, {
+      cwd: request.cwd,
+      env: process.env,
+      name: 'xterm-color',
+      cols: 120,
+      rows: 40,
+    });
+
+    terminalSessionsById.set(sessionId, terminalProcess);
+
+    const sendChunkToRenderers = (chunkText: string) => {
+      for (const browserWindow of BrowserWindow.getAllWindows()) {
+        browserWindow.webContents.send('terminal:process-data', {
+          sessionId,
+          chunk: chunkText,
+        });
+      }
+    };
+
+    terminalProcess.onData((chunkText) => {
+      sendChunkToRenderers(chunkText);
+    });
+
+    terminalProcess.onExit(({ exitCode, signal }) => {
+      terminalSessionsById.delete(sessionId);
+      const exitEvent: TerminalProcessExitEvent = {
+        sessionId,
+        exitCode,
+        signal: signal ?? null,
+      };
+      for (const browserWindow of BrowserWindow.getAllWindows()) {
+        browserWindow.webContents.send('terminal:process-exit', exitEvent);
+      }
+    });
+
+    return {
+      ok: true,
+      sessionId,
+      pid: terminalProcess.pid,
+      cwd: request.cwd,
+      targetFilePath: request.targetFilePath,
+      command,
+      args,
+    };
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown terminal start error';
+    return {
+      ok: false,
+      errorMessage,
+      command,
+      args,
+    };
+  }
+};
+
+// Centralized session lookup keeps renderer IPC failure modes predictable and
+// avoids throwing uncaught errors when the user presses controls after exit.
+const getTerminalSession = (sessionId: string) =>
+  terminalSessionsById.get(sessionId);
 
 const loadCurrentMarkdown = async (): Promise<LoadMarkdownResponse> => {
   const filePath = await ensureCurrentMarkdownFilePath();
@@ -260,6 +386,58 @@ ipcMain.handle(
   },
 );
 
+ipcMain.handle('terminal:get-bootstrap-context', async () => {
+  return resolveTerminalBootstrapContext();
+});
+
+ipcMain.handle(
+  'terminal:start-session',
+  async (
+    _event,
+    request: StartTerminalSessionRequest,
+  ): Promise<StartTerminalSessionResponse> => {
+    return startTerminalSession(request);
+  },
+);
+
+ipcMain.handle(
+  'terminal:send-input',
+  async (_event, sessionId: string, data: string) => {
+    const terminalSession = getTerminalSession(sessionId);
+    if (!terminalSession) {
+      return { ok: false, errorMessage: 'No active terminal session' };
+    }
+
+    terminalSession.write(data);
+    return { ok: true };
+  },
+);
+
+ipcMain.handle(
+  'terminal:resize-session',
+  async (_event, request: ResizeTerminalSessionRequest) => {
+    const terminalSession = getTerminalSession(request.sessionId);
+    if (!terminalSession) {
+      return { ok: false, errorMessage: 'No active terminal session' };
+    }
+
+    const safeColumns = Math.max(1, Math.floor(request.cols));
+    const safeRows = Math.max(1, Math.floor(request.rows));
+    terminalSession.resize(safeColumns, safeRows);
+    return { ok: true };
+  },
+);
+
+ipcMain.handle('terminal:kill-session', async (_event, sessionId: string) => {
+  const terminalSession = getTerminalSession(sessionId);
+  if (!terminalSession) {
+    return { ok: false, errorMessage: 'No active terminal session' };
+  }
+
+  terminalSession.kill();
+  return { ok: true };
+});
+
 const createWindow = () => {
   const windowWidth = parseWindowDimension(
     process.env.KALE_WINDOW_WIDTH,
@@ -301,6 +479,10 @@ app.on('ready', createWindow);
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
+  for (const terminalSession of terminalSessionsById.values()) {
+    terminalSession.kill('SIGTERM');
+  }
+  terminalSessionsById.clear();
   if (process.platform !== 'darwin') {
     app.quit();
   }

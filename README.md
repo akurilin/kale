@@ -16,6 +16,9 @@ What works right now:
 - Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
 - The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
+- A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
+- The terminal prototype now uses a PTY-backed process session for interactive CLI compatibility, while the UI is still a temporary line-input prototype (not `xterm.js` yet).
+- The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
 - Packaging/making is configured through Electron Forge for:
   - Windows (`squirrel`)
   - macOS (`zip`)
@@ -30,6 +33,7 @@ What is not implemented yet:
 ## Run Commands
 
 - Start in development: `npm start`
+- Start isolated terminal prototype view: `VITE_KALE_VIEW=terminal npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp`: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Format files: `npm run format`
@@ -43,6 +47,7 @@ What is not implemented yet:
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
 - `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
 - `src/renderer/`: extracted renderer modules for CodeMirror extensions and save/autosave controller logic.
+- `src/renderer/TerminalView.tsx`: isolated terminal prototype view for PTY terminal integration work.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.

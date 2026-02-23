@@ -4,10 +4,12 @@
 //
 
 import '../index.css';
+import 'xterm/css/xterm.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
+import { TerminalView } from './TerminalView';
 
 // centralizing root lookup/mount keeps startup failure explicit when the
 // HTML shell and renderer entry drift out of sync during refactors.
@@ -19,6 +21,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    {import.meta.env.VITE_KALE_VIEW === 'terminal' ? <TerminalView /> : <App />}
   </StrictMode>,
 );
