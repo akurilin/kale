@@ -6,20 +6,7 @@
     <title>kale</title>
   </head>
   <body>
-    <header class="topbar">
-      <div class="topbar-title">kale</div>
-      <button id="open-file" class="topbar-button" type="button">
-        Open...
-      </button>
-      <div id="file-path" class="file-path"></div>
-      <div id="save-status" class="save-status"></div>
-    </header>
-    <main class="workspace">
-      <section class="pane">
-        <div class="pane-title">Document</div>
-        <div id="editor" class="editor"></div>
-      </section>
-    </main>
-    <script type="module" src="/src/renderer.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/renderer/main.tsx"></script>
   </body>
 </html>

@@ -8,6 +8,14 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
+  ResizeTerminalSessionRequest,
+  RestoreMarkdownFromGitResponse,
+  StartTerminalSessionRequest,
+  StartTerminalSessionResponse,
+  TerminalSessionActionResponse,
+  TerminalBootstrapResponse,
+  TerminalProcessDataEvent,
+  TerminalProcessExitEvent,
 } from './shared-types';
 
 // Expose a narrow, explicit bridge instead of raw ipcRenderer so the renderer
@@ -19,4 +27,56 @@ contextBridge.exposeInMainWorld('markdownApi', {
     ipcRenderer.invoke('editor:open-markdown-file'),
   saveMarkdown: (content: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('editor:save-markdown', content),
+  restoreCurrentMarkdownFromGit: (): Promise<RestoreMarkdownFromGitResponse> =>
+    ipcRenderer.invoke('editor:restore-current-markdown-from-git'),
+});
+
+// The terminal view uses a separate bridge so process control stays explicit
+// and we can evolve it independently from the editor file-API contract.
+contextBridge.exposeInMainWorld('terminalApi', {
+  getBootstrapContext: (): Promise<TerminalBootstrapResponse> =>
+    ipcRenderer.invoke('terminal:get-bootstrap-context'),
+  startSession: (
+    request: StartTerminalSessionRequest,
+  ): Promise<StartTerminalSessionResponse> =>
+    ipcRenderer.invoke('terminal:start-session', request),
+  sendInput: (
+    sessionId: string,
+    data: string,
+  ): Promise<TerminalSessionActionResponse> =>
+    ipcRenderer.invoke('terminal:send-input', sessionId, data),
+  resizeSession: (
+    request: ResizeTerminalSessionRequest,
+  ): Promise<TerminalSessionActionResponse> =>
+    ipcRenderer.invoke('terminal:resize-session', request),
+  killSession: (sessionId: string): Promise<TerminalSessionActionResponse> =>
+    ipcRenderer.invoke('terminal:kill-session', sessionId),
+  onProcessData: (
+    handler: (event: TerminalProcessDataEvent) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: TerminalProcessDataEvent,
+    ) => {
+      handler(payload);
+    };
+    ipcRenderer.on('terminal:process-data', listener);
+    return () => {
+      ipcRenderer.removeListener('terminal:process-data', listener);
+    };
+  },
+  onProcessExit: (
+    handler: (event: TerminalProcessExitEvent) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: TerminalProcessExitEvent,
+    ) => {
+      handler(payload);
+    };
+    ipcRenderer.on('terminal:process-exit', listener);
+    return () => {
+      ipcRenderer.removeListener('terminal:process-exit', listener);
+    };
+  },
 });

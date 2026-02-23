@@ -2,7 +2,8 @@
 
 ## Current State
 
-This repository is an Electron Forge + Vite + TypeScript desktop app.
+This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a
+React renderer shell.
 
 What works right now:
 
@@ -10,9 +11,16 @@ What works right now:
 - Prettier is configured for repository formatting (`npm run format`, `npm run format:check`).
 - Startup window size defaults to `2560x1440` and can be overridden with `KALE_WINDOW_WIDTH` / `KALE_WINDOW_HEIGHT`.
 - The app can open a markdown file from the UI (`Open...`) and remembers the last opened file across restarts.
+- The top bar includes a `Restore Git` action that discards local changes for the current file and restores it from the repository `HEAD` version (requires `git` on `PATH`).
 - On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
 - Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
+- The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
+- The project now targets TypeScript `5.9.3` for modern type-system features and improved React typing support.
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
+- A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
+- The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
+- The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
+- Terminal prototype error paths were hardened so failed session starts and failed input sends report correctly in the `xterm.js` output/status UI without crashing.
 - Packaging/making is configured through Electron Forge for:
   - Windows (`squirrel`)
   - macOS (`zip`)
@@ -27,6 +35,7 @@ What is not implemented yet:
 ## Run Commands
 
 - Start in development: `npm start`
+- Start isolated terminal prototype view: `VITE_KALE_VIEW=terminal npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp`: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Format files: `npm run format`
@@ -38,8 +47,9 @@ What is not implemented yet:
 ## Folder Overview
 
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
-- `src/renderer.ts`: renderer composition entry that wires UI events, file loading, and editor behavior together.
+- `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
 - `src/renderer/`: extracted renderer modules for CodeMirror extensions and save/autosave controller logic.
+- `src/renderer/TerminalView.tsx`: isolated terminal prototype view for PTY terminal integration work.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.

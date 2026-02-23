@@ -5,4 +5,12 @@
 import { defineConfig } from 'vite';
 
 // https://vitejs.dev/config
-export default defineConfig({});
+export default defineConfig({
+  // Native modules like node-pty must stay external so Electron loads their
+  // compiled `.node` bindings from node_modules instead of bundling them.
+  build: {
+    rollupOptions: {
+      external: ['node-pty'],
+    },
+  },
+});
