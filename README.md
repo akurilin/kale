@@ -2,7 +2,7 @@
 
 ## Current State
 
-This repository is an Electron Forge + Vite + TypeScript desktop app with a
+This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a
 React renderer shell.
 
 What works right now:
@@ -15,6 +15,7 @@ What works right now:
 - On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
 - Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
 - The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
+- The project now targets TypeScript `5.9.3` for modern type-system features and improved React typing support.
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
 - A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
 - The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.

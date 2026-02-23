@@ -231,14 +231,24 @@ export const TerminalView = () => {
 
     const normalizedRequestedWorkingDirectory =
       requestedWorkingDirectory?.trim() ?? workingDirectoryInput.trim();
-
-    const startResponse = await getTerminalApi().startSession({
-      cwd: normalizedRequestedWorkingDirectory || currentBootstrapContext.cwd,
-      targetFilePath: currentBootstrapContext.targetFilePath,
-    });
-
-    setIsStartingSession(false);
-    handleStartSessionResponse(startResponse);
+    try {
+      const startResponse = await getTerminalApi().startSession({
+        cwd: normalizedRequestedWorkingDirectory || currentBootstrapContext.cwd,
+        targetFilePath: currentBootstrapContext.targetFilePath,
+      });
+      handleStartSessionResponse(startResponse);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown terminal start error';
+      setStatusText('Failed to start terminal');
+      setLaunchErrorText(errorMessage);
+      xtermRef.current?.writeln('');
+      xtermRef.current?.writeln(`[launch failed] IPC request rejected`);
+      xtermRef.current?.writeln(errorMessage);
+      xtermRef.current?.writeln('');
+    } finally {
+      setIsStartingSession(false);
+    }
   };
 
   // The start response drives both status UI and the active-session id used to
