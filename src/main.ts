@@ -195,6 +195,10 @@ const startTerminalSession = async (
   try {
     const terminalProcess = nodePty.spawn(command, args, {
       cwd: request.cwd,
+      // TODO(terminal-prototype): This prototype passes the full Electron process
+      // environment through so the user's shell starts with familiar PATH/tooling.
+      // Before shipping a broader terminal surface, build a sanitized env because
+      // this inherits Electron/dev-process vars and any sensitive shell vars.
       env: process.env,
       name: 'xterm-color',
       cols: 120,
@@ -204,6 +208,12 @@ const startTerminalSession = async (
     terminalSessionsById.set(sessionId, terminalProcess);
 
     const sendChunkToRenderers = (chunkText: string) => {
+      // TODO(terminal-prototype): We intentionally broadcast terminal events to
+      // every window during the single-window prototype phase and rely on the
+      // renderer to filter by sessionId. This becomes a footgun in multi-window
+      // flows because non-owner windows receive terminal output/session metadata.
+      // Track session owner webContents and send only to that window before
+      // enabling editor+terminal multi-window usage.
       for (const browserWindow of BrowserWindow.getAllWindows()) {
         browserWindow.webContents.send('terminal:process-data', {
           sessionId,
@@ -223,6 +233,9 @@ const startTerminalSession = async (
         exitCode,
         signal: signal ?? null,
       };
+      // TODO(terminal-prototype): Same broadcast limitation as process-data above.
+      // Route exits only to the session owner webContents once sessions are
+      // tracked per-window in main.
       for (const browserWindow of BrowserWindow.getAllWindows()) {
         browserWindow.webContents.send('terminal:process-exit', exitEvent);
       }
@@ -403,6 +416,10 @@ ipcMain.handle(
 ipcMain.handle(
   'terminal:send-input',
   async (_event, sessionId: string, data: string) => {
+    // TODO(terminal-prototype): Session control IPC currently trusts any renderer
+    // that knows a sessionId. This is acceptable for the isolated prototype, but
+    // terminal control is security-sensitive. When we support multiple windows or
+    // broader renderer surfaces, authorize by event.sender/webContents ownership.
     const terminalSession = getTerminalSession(sessionId);
     if (!terminalSession) {
       return { ok: false, errorMessage: 'No active terminal session' };
