@@ -12,6 +12,7 @@ import type {
   RestoreMarkdownFromGitResponse,
   StartTerminalSessionRequest,
   StartTerminalSessionResponse,
+  TerminalSessionActionResponse,
   TerminalBootstrapResponse,
   TerminalProcessDataEvent,
   TerminalProcessExitEvent,
@@ -39,15 +40,16 @@ contextBridge.exposeInMainWorld('terminalApi', {
     request: StartTerminalSessionRequest,
   ): Promise<StartTerminalSessionResponse> =>
     ipcRenderer.invoke('terminal:start-session', request),
-  sendInput: (sessionId: string, data: string): Promise<{ ok: boolean }> =>
+  sendInput: (
+    sessionId: string,
+    data: string,
+  ): Promise<TerminalSessionActionResponse> =>
     ipcRenderer.invoke('terminal:send-input', sessionId, data),
   resizeSession: (
     request: ResizeTerminalSessionRequest,
-  ): Promise<{ ok: boolean; errorMessage?: string }> =>
+  ): Promise<TerminalSessionActionResponse> =>
     ipcRenderer.invoke('terminal:resize-session', request),
-  killSession: (
-    sessionId: string,
-  ): Promise<{ ok: boolean; errorMessage?: string }> =>
+  killSession: (sessionId: string): Promise<TerminalSessionActionResponse> =>
     ipcRenderer.invoke('terminal:kill-session', sessionId),
   onProcessData: (
     handler: (event: TerminalProcessDataEvent) => void,

@@ -208,7 +208,10 @@ export const TerminalView = () => {
 
     hasAttemptedAutoStartRef.current = true;
     void (async () => {
-      await startSessionForCurrentBootstrapContext(bootstrapContext);
+      await startSessionForCurrentBootstrapContext(
+        bootstrapContext,
+        bootstrapContext.cwd,
+      );
     })();
   }, [bootstrapContext]);
 
@@ -216,6 +219,7 @@ export const TerminalView = () => {
   // restart buttons follow the exact same session lifecycle.
   const startSessionForCurrentBootstrapContext = async (
     currentBootstrapContext: TerminalBootstrapResponse,
+    requestedWorkingDirectory?: string,
   ) => {
     if (isStartingSession || sessionRef.current) {
       return;
@@ -225,8 +229,11 @@ export const TerminalView = () => {
     setLaunchErrorText(null);
     setStatusText('Starting terminal...');
 
+    const normalizedRequestedWorkingDirectory =
+      requestedWorkingDirectory?.trim() ?? workingDirectoryInput.trim();
+
     const startResponse = await getTerminalApi().startSession({
-      cwd: workingDirectoryInput.trim() || currentBootstrapContext.cwd,
+      cwd: normalizedRequestedWorkingDirectory || currentBootstrapContext.cwd,
       targetFilePath: currentBootstrapContext.targetFilePath,
     });
 
@@ -242,12 +249,12 @@ export const TerminalView = () => {
     if (!startResponse.ok) {
       setStatusText('Failed to start terminal');
       setLaunchErrorText(startResponse.errorMessage);
-      setOutputText((currentOutput) =>
-        appendTerminalOutputChunk(
-          currentOutput,
-          `\n[launch failed] ${startResponse.command} ${startResponse.args.join(' ')}\n${startResponse.errorMessage}\n`,
-        ),
+      xtermRef.current?.writeln('');
+      xtermRef.current?.writeln(
+        `[launch failed] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
       );
+      xtermRef.current?.writeln(startResponse.errorMessage);
+      xtermRef.current?.writeln('');
       return;
     }
 

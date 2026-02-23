@@ -62,6 +62,11 @@ export type TerminalProcessExitEvent = {
   signal: number | null;
 };
 
+export type TerminalSessionActionResponse = {
+  ok: boolean;
+  errorMessage?: string;
+};
+
 export type ResizeTerminalSessionRequest = {
   sessionId: string;
   cols: number;

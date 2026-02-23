@@ -7,6 +7,7 @@ import type {
   ResizeTerminalSessionRequest,
   StartTerminalSessionRequest,
   StartTerminalSessionResponse,
+  TerminalSessionActionResponse,
   TerminalBootstrapResponse,
   TerminalProcessDataEvent,
   TerminalProcessExitEvent,
@@ -17,13 +18,14 @@ type TerminalApi = {
   startSession: (
     request: StartTerminalSessionRequest,
   ) => Promise<StartTerminalSessionResponse>;
-  sendInput: (sessionId: string, data: string) => Promise<{ ok: boolean }>;
+  sendInput: (
+    sessionId: string,
+    data: string,
+  ) => Promise<TerminalSessionActionResponse>;
   resizeSession: (
     request: ResizeTerminalSessionRequest,
-  ) => Promise<{ ok: boolean; errorMessage?: string }>;
-  killSession: (
-    sessionId: string,
-  ) => Promise<{ ok: boolean; errorMessage?: string }>;
+  ) => Promise<TerminalSessionActionResponse>;
+  killSession: (sessionId: string) => Promise<TerminalSessionActionResponse>;
   onProcessData: (
     handler: (event: TerminalProcessDataEvent) => void,
   ) => () => void;

@@ -19,6 +19,7 @@ What works right now:
 - A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
 - The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
 - The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
+- Terminal prototype error paths were hardened so failed session starts and failed input sends report correctly in the `xterm.js` output/status UI without crashing.
 - Packaging/making is configured through Electron Forge for:
   - Windows (`squirrel`)
   - macOS (`zip`)
