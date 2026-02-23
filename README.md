@@ -17,7 +17,7 @@ What works right now:
 - The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
 - A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
-- The terminal prototype now uses a PTY-backed process session for interactive CLI compatibility, while the UI is still a temporary line-input prototype (not `xterm.js` yet).
+- The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
 - The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
 - Packaging/making is configured through Electron Forge for:
   - Windows (`squirrel`)

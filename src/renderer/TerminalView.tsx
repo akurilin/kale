@@ -410,10 +410,9 @@ export const TerminalView = () => {
               </span>
             </div>
           </div>
-          <div
-            className="terminal-output terminal-xterm-host"
-            ref={terminalHostElementRef}
-          />
+          <div className="terminal-output">
+            <div className="terminal-xterm-host" ref={terminalHostElementRef} />
+          </div>
         </section>
       </main>
     </>

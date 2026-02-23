@@ -203,6 +203,7 @@ body {
   min-height: 0;
   min-width: 0;
   margin: 0 12px 12px;
+  padding: 8px;
   border: 1px solid #e1dbce;
   border-radius: 12px;
   background: #151515;
@@ -213,7 +214,6 @@ body {
 .terminal-xterm-host {
   height: 100%;
   width: 100%;
-  padding: 8px;
   overflow: hidden;
 }
 
@@ -222,8 +222,17 @@ body {
   width: 100%;
 }
 
+/* Hide the native scrollbar track while keeping scroll functional via mouse
+   wheel and keyboard. This sidesteps the xterm.js issue where the FitAddon
+   doesn't account for the native scrollbar width, causing text to render
+   underneath the scrollbar. */
 .terminal-xterm-host .xterm-viewport {
   border-radius: 8px;
+  scrollbar-width: none;
+}
+
+.terminal-xterm-host .xterm-viewport::-webkit-scrollbar {
+  display: none;
 }
 
 .terminal-input {
