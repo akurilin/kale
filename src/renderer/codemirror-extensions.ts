@@ -2,8 +2,13 @@
 // This file isolates CodeMirror markdown presentation extensions so the
 // renderer entry stays focused on app composition instead of editor internals.
 //
-import { syntaxTree } from '@codemirror/language';
+import {
+  HighlightStyle,
+  syntaxHighlighting,
+  syntaxTree,
+} from '@codemirror/language';
 import { type Extension, type Range } from '@codemirror/state';
+import { tags } from '@lezer/highlight';
 import {
   Decoration,
   EditorView,
@@ -19,6 +24,17 @@ const markerNodes = new Set([
   'CodeMark',
 ]);
 
+const markdownHeadingNodeNameToLevel = new Map<string, number>([
+  ['ATXHeading1', 1],
+  ['ATXHeading2', 2],
+  ['ATXHeading3', 3],
+  ['ATXHeading4', 4],
+  ['ATXHeading5', 5],
+  ['ATXHeading6', 6],
+  ['SetextHeading1', 1],
+  ['SetextHeading2', 2],
+]);
+
 // CodeMirror decorations operate on character ranges, so selection-aware
 // marker hiding needs a shared overlap helper to stay readable and correct.
 const overlaps = (
@@ -27,6 +43,34 @@ const overlaps = (
   fromB: number,
   toB: number,
 ): boolean => fromA < toB && toA > fromB;
+
+// The markdown parser already distinguishes ATX and setext heading levels, so
+// this helper translates parser node names into a single heading-level scale
+// the styling layer can use without duplicating parser-specific knowledge.
+const getMarkdownHeadingLevel = (nodeName: string): number | null =>
+  markdownHeadingNodeNameToLevel.get(nodeName) ?? null;
+
+// CodeMirror's default markdown highlighting underlines headings, which reads
+// like links in a prose editor. This override keeps semantic heading tokens
+// while removing the underline so line-level typography can define the look.
+export const headingUnderlineResetHighlightExtension = (): Extension =>
+  syntaxHighlighting(
+    HighlightStyle.define([
+      {
+        tag: [
+          tags.heading,
+          tags.heading1,
+          tags.heading2,
+          tags.heading3,
+          tags.heading4,
+          tags.heading5,
+          tags.heading6,
+        ],
+        textDecoration: 'none',
+      },
+    ]),
+    { fallback: true },
+  );
 
 // live-preview marker tokens must remain visible when the cursor/selection
 // is interacting with the same region so editing still feels source-oriented.
@@ -108,6 +152,63 @@ export const livePreviewMarkersExtension = (): Extension =>
 
               decorations.push(Decoration.replace({}).range(from, hideTo));
             }
+          },
+        });
+
+        return Decoration.set(decorations, true);
+      }
+    },
+    {
+      decorations: (viewPluginInstance) => viewPluginInstance.decorations,
+    },
+  );
+
+// Heading typography is applied as line decorations so level-specific sizing
+// and spacing can be expressed in CSS without mutating markdown text or
+// relying on syntax-token spans that are awkward for block-level layout.
+export const headingLineDecorationExtension = (): Extension =>
+  ViewPlugin.fromClass(
+    class {
+      decorations;
+
+      constructor(view: EditorView) {
+        this.decorations = this.buildDecorations(view);
+      }
+
+      // Heading line placement only depends on parsed content and viewport.
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+
+      // Setext heading nodes span both the text line and underline marker
+      // line, but typography should only be applied to the visible content
+      // line to avoid styling an effectively hidden underline row.
+      buildDecorations(view: EditorView) {
+        const decorations: Range<Decoration>[] = [];
+        const { state } = view;
+        const tree = syntaxTree(state);
+        const decoratedLineStarts = new Set<number>();
+
+        tree.iterate({
+          enter: (node) => {
+            const headingLevel = getMarkdownHeadingLevel(node.name);
+            if (headingLevel === null) {
+              return;
+            }
+
+            const headingTextLine = state.doc.lineAt(node.from);
+            if (decoratedLineStarts.has(headingTextLine.from)) {
+              return;
+            }
+
+            decoratedLineStarts.add(headingTextLine.from);
+            decorations.push(
+              Decoration.line({
+                class: `cm-live-heading-line cm-live-heading-line--${headingLevel}`,
+              }).range(headingTextLine.from),
+            );
           },
         });
 

@@ -15,6 +15,8 @@ import { EditorView } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 
 import {
+  headingLineDecorationExtension,
+  headingUnderlineResetHighlightExtension,
   livePreviewMarkersExtension,
   quoteLineDecorationExtension,
 } from './codemirror-extensions';
@@ -74,6 +76,8 @@ const MarkdownEditorPaneImpl = (
       extensions: [
         basicSetup,
         markdown(),
+        headingUnderlineResetHighlightExtension(),
+        headingLineDecorationExtension(),
         quoteLineDecorationExtension(),
         livePreviewMarkersExtension(),
         EditorView.lineWrapping,
