@@ -40,6 +40,9 @@ const DEFAULT_WINDOW_HEIGHT = 1440;
 // In-memory cache for the active file path. We still re-validate on use because
 // the file can be moved/deleted outside the app between operations.
 let currentMarkdownFilePath: string | null = null;
+// Cache the bundled Claude system prompt once at startup so terminal session
+// launches do not perform filesystem I/O on the hot path.
+let bundledClaudeSystemPromptMarkdownText: string | null = null;
 const execFileAsync = promisify(execFile);
 const terminalSessionsById = new Map<string, nodePty.IPty>();
 
@@ -54,6 +57,77 @@ const parseWindowDimension = (value: string | undefined, fallback: number) => {
 
 const getSettingsFilePath = () =>
   path.join(app.getPath('userData'), SETTINGS_FILE_NAME);
+
+// This resolves the prompt asset path from the packaged app root so dev and
+// production builds can load the same logical file location.
+const getBundledClaudeSystemPromptMarkdownFilePath = () =>
+  path.resolve(app.getAppPath(), 'prompts', 'claude-system-prompt.md');
+
+// Claude sessions should start with Kale-specific prose guidance every time, so
+// startup fails fast if the prompt asset is missing instead of degrading later.
+const loadBundledClaudeSystemPromptMarkdownOrThrow = async () => {
+  const promptFilePath = getBundledClaudeSystemPromptMarkdownFilePath();
+  const promptMarkdownText = (await fs.readFile(promptFilePath, 'utf8')).trim();
+  if (!promptMarkdownText) {
+    throw new Error(`Claude system prompt file is empty: ${promptFilePath}`);
+  }
+
+  bundledClaudeSystemPromptMarkdownText = promptMarkdownText;
+};
+
+// Terminal session launch is synchronous with respect to command construction,
+// so this getter ensures startup completed the required prompt-file preload.
+const getRequiredBundledClaudeSystemPromptMarkdownText = () => {
+  if (bundledClaudeSystemPromptMarkdownText) {
+    return bundledClaudeSystemPromptMarkdownText;
+  }
+
+  throw new Error(
+    `Claude system prompt not loaded. Expected startup preload from ${getBundledClaudeSystemPromptMarkdownFilePath()}.`,
+  );
+};
+
+const KALE_PROMPT_ACTIVE_FILE_PATH_TOKEN = '@@KALE:ACTIVE_FILE_PATH@@';
+
+// Kale's core workflow depends on the Claude CLI, so startup validates that the
+// `claude` executable is reachable on PATH before opening the application UI.
+const ensureClaudeCliIsInstalledOrThrow = async () => {
+  try {
+    await execFileAsync('claude', ['--version'], {
+      windowsHide: true,
+    });
+  } catch (error) {
+    const commandError = error as NodeJS.ErrnoException & { stderr?: string };
+    const stderrText = commandError.stderr?.trim();
+    const failureDetail =
+      stderrText ||
+      commandError.message ||
+      'Unknown Claude CLI startup check error';
+
+    throw new Error(
+      `Claude CLI is required but was not found or could not be executed via PATH. Install Claude Code and ensure the 'claude' command is available. Details: ${failureDetail}`,
+    );
+  }
+};
+
+// Prompt templates live in repo data, so token replacement stays intentionally
+// small and strict to avoid accidental interpolation behavior.
+const buildClaudeSystemPromptFromTemplate = (activeFilePath: string) => {
+  const promptTemplate = getRequiredBundledClaudeSystemPromptMarkdownText();
+  const promptText = promptTemplate.replaceAll(
+    KALE_PROMPT_ACTIVE_FILE_PATH_TOKEN,
+    activeFilePath,
+  );
+
+  const unresolvedTokenMatch = promptText.match(/@@KALE:[A-Z0-9_]+@@/);
+  if (unresolvedTokenMatch) {
+    throw new Error(
+      `Unresolved Claude system prompt token: ${unresolvedTokenMatch[0]}`,
+    );
+  }
+
+  return promptText;
+};
 
 const readSettings = async (): Promise<AppSettings> => {
   try {
@@ -165,22 +239,22 @@ const resolveTerminalBootstrapContext =
     };
   };
 
-// The terminal prototype should default to the user's shell so we can validate
-// PTY terminal behavior before layering in app-specific terminal workflows.
-const resolveTerminalLaunchCommand = () => {
-  const override = process.env.KALE_TERMINAL_COMMAND?.trim();
-  if (override) {
-    return {
-      command: override,
-      args: process.env.KALE_TERMINAL_ARGS
-        ? process.env.KALE_TERMINAL_ARGS.split(' ').filter(Boolean)
-        : [],
-    };
-  }
+// The terminal pane launches Claude Code directly so Kale can provide writing
+// guidance at session start without requiring users to boot a shell first.
+const resolveTerminalLaunchCommand = async (
+  request: StartTerminalSessionRequest,
+) => {
+  const activeFilePathForPrompt = request.targetFilePath.trim()
+    ? request.targetFilePath.trim()
+    : await ensureCurrentMarkdownFilePath();
 
   return {
-    command: process.env.SHELL?.trim() || '/bin/zsh',
-    args: [] as string[],
+    command: 'claude',
+    args: [
+      '--dangerously-skip-permissions',
+      '--append-system-prompt',
+      buildClaudeSystemPromptFromTemplate(activeFilePathForPrompt),
+    ],
   };
 };
 
@@ -189,14 +263,14 @@ const resolveTerminalLaunchCommand = () => {
 const startTerminalSession = async (
   request: StartTerminalSessionRequest,
 ): Promise<StartTerminalSessionResponse> => {
-  const { command, args } = resolveTerminalLaunchCommand();
+  const { command, args } = await resolveTerminalLaunchCommand(request);
   const sessionId = createTerminalSessionId();
 
   try {
     const terminalProcess = nodePty.spawn(command, args, {
       cwd: request.cwd,
       // TODO(terminal-prototype): This prototype passes the full Electron process
-      // environment through so the user's shell starts with familiar PATH/tooling.
+      // environment through so the spawned CLI starts with familiar PATH/tooling.
       // Before shipping a broader terminal surface, build a sanitized env because
       // this inherits Electron/dev-process vars and any sensitive shell vars.
       env: process.env,
@@ -487,10 +561,29 @@ const createWindow = () => {
   mainWindow.webContents.openDevTools();
 };
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
-app.on('ready', createWindow);
+// App startup must validate required runtime assets before opening the window so
+// missing prompt configuration fails immediately and visibly for the user.
+const startApplication = async () => {
+  try {
+    await ensureClaudeCliIsInstalledOrThrow();
+    await loadBundledClaudeSystemPromptMarkdownOrThrow();
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown startup prompt error';
+    console.error(`Fatal startup error: ${errorMessage}`);
+    app.exit(1);
+    return;
+  }
+
+  createWindow();
+};
+
+// This method will be called when Electron has finished initialization and is
+// ready to create browser windows. Some APIs can only be used after this event
+// occurs.
+app.on('ready', () => {
+  void startApplication();
+});
 
 // Quit when all windows are closed, except on macOS. There, it's common
 // for applications and their menu bar to stay active until the user quits

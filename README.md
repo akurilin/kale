@@ -21,6 +21,10 @@ What works right now:
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
 - A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
 - The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
+- The embedded terminal currently launches `claude` directly (not a shell) with a prose-editing `--append-system-prompt` and `--dangerously-skip-permissions` for Kale-specific assistant behavior.
+- The Claude appended system prompt is loaded from `prompts/claude-system-prompt.md` at app startup, and the app exits immediately if that file is missing or empty.
+- The Claude prompt file supports simple token substitution for `@@KALE:ACTIVE_FILE_PATH@@`, populated per terminal session from the active markdown file path (with a first-run fallback to the app's resolved current markdown file).
+- The app also exits at startup if the `claude` CLI command is not available on `PATH`, because the terminal workflow depends on Claude Code.
 - The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
 - In the combined app view, the embedded terminal automatically restarts in the active document's folder when the user opens or switches files.
 - Terminal prototype error paths were hardened so failed session starts and failed input sends report correctly in the `xterm.js` output/status UI without crashing.
@@ -57,5 +61,6 @@ What is not implemented yet:
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.
+- `prompts/`: runtime prompt assets (including the Claude appended system prompt used by the terminal session launcher).
 - `data/`: example markdown files the app can edit
 - `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).

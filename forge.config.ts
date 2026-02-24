@@ -14,6 +14,18 @@ import { FuseV1Options, FuseVersion } from '@electron/fuses';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    // The Vite plugin normally packages only the generated `/.vite` output.
+    // Kale also needs runtime prompt assets inside app.asar for terminal startup.
+    ignore: (file: string) => {
+      if (!file) {
+        return false;
+      }
+
+      // Electron Packager passes project-relative paths prefixed with `/`.
+      const isViteBuildOutput = file.startsWith('/.vite');
+      const isRuntimePromptAsset = file.startsWith('/prompts');
+      return !isViteBuildOutput && !isRuntimePromptAsset;
+    },
   },
   rebuildConfig: {},
   makers: [

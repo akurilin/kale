@@ -202,8 +202,8 @@ export const TerminalPane = ({
     };
   }, []);
 
-  // Releasing the active PTY on unmount prevents background shells from being
-  // orphaned when this pane is removed or the app switches routes/views.
+  // Releasing the active PTY on unmount prevents background CLI processes from
+  // being orphaned when this pane is removed or the app switches routes/views.
   useEffect(() => {
     return () => {
       const activeSessionId = sessionRef.current?.sessionId;
@@ -216,7 +216,7 @@ export const TerminalPane = ({
   }, []);
 
   // The working-directory editor follows the active file context by default so
-  // users get sensible shell startup behavior without manual path entry first.
+  // users get sensible CLI startup behavior without manual path entry first.
   useEffect(() => {
     if (!targetWorkingDirectory) {
       return;
@@ -313,8 +313,8 @@ export const TerminalPane = ({
     });
   };
 
-  // File switches should produce a clean shell in the new file's folder, so
-  // this effect tears down any active session and starts a fresh one per file.
+  // File switches should produce a clean CLI session in the new file's folder,
+  // so this effect tears down any active session and starts a fresh one per file.
   useEffect(() => {
     const nextTargetContextKey = buildTargetContextKey(
       targetFilePath,
@@ -366,8 +366,8 @@ export const TerminalPane = ({
       <div className="pane-title">{title}</div>
       {showPrototypeNotice ? (
         <div className="terminal-warning-banner">
-          Phase 1 terminal prototype: PTY-backed shell process in a chosen
-          working directory, rendered with xterm.js.
+          Phase 1 terminal prototype: PTY-backed CLI process in a chosen working
+          directory, rendered with xterm.js.
         </div>
       ) : null}
       {showMetadataPanel ? (
@@ -409,7 +409,7 @@ export const TerminalPane = ({
             <span className="terminal-metadata-value">
               {session
                 ? `${session.command} ${session.args.join(' ')} (pid ${session.pid})`
-                : 'shell (not running)'}
+                : 'process (not running)'}
             </span>
           </div>
           <div>
