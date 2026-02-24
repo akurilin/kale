@@ -14,6 +14,7 @@ What works right now:
 - The top bar includes a `Restore Git` action that discards local changes for the current file and restores it from the repository `HEAD` version (requires `git` on `PATH`).
 - On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
 - Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
+- The markdown editor hides CodeMirror's line-number gutter so the document pane uses the full width for prose.
 - Markdown heading levels (ATX and setext) now receive level-specific live-preview typography via CodeMirror line decorations, so H1/H2/H3 no longer render identically.
 - The editor overrides CodeMirror's default heading underline highlight so markdown headings read like document typography instead of links.
 - The default app view now combines the markdown editor (left, ~75%) and a PTY-backed terminal pane (right, ~25%) in a single window.

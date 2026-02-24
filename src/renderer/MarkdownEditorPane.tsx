@@ -11,8 +11,32 @@ import {
   type ForwardedRef,
 } from 'react';
 import { markdown } from '@codemirror/lang-markdown';
-import { EditorView } from '@codemirror/view';
-import { basicSetup } from 'codemirror';
+import {
+  autocompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionKeymap,
+} from '@codemirror/autocomplete';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import {
+  bracketMatching,
+  defaultHighlightStyle,
+  indentOnInput,
+  syntaxHighlighting,
+} from '@codemirror/language';
+import { lintKeymap } from '@codemirror/lint';
+import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
+import { EditorState, type Extension } from '@codemirror/state';
+import {
+  crosshairCursor,
+  drawSelection,
+  dropCursor,
+  EditorView,
+  highlightActiveLine,
+  highlightSpecialChars,
+  keymap,
+  rectangularSelection,
+} from '@codemirror/view';
 
 import {
   headingLineDecorationExtension,
@@ -29,6 +53,35 @@ import {
   removeInlineCommentMarkersFromMarkdown,
   updateInlineCommentTextInMarkdown,
 } from './inline-comments';
+
+// CodeMirror recommends copying basicSetup when you need customization. This
+// local setup preserves the useful editor defaults while omitting gutter
+// features (line numbers, fold gutter, gutter active-line highlight) so the
+// prose editor truly does not mount a line counter pane at all.
+const proseEditorSetupWithoutGutters: Extension = [
+  highlightSpecialChars(),
+  history(),
+  drawSelection(),
+  dropCursor(),
+  EditorState.allowMultipleSelections.of(true),
+  indentOnInput(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  bracketMatching(),
+  closeBrackets(),
+  autocompletion(),
+  rectangularSelection(),
+  crosshairCursor(),
+  highlightActiveLine(),
+  highlightSelectionMatches(),
+  keymap.of([
+    ...closeBracketsKeymap,
+    ...defaultKeymap,
+    ...searchKeymap,
+    ...historyKeymap,
+    ...completionKeymap,
+    ...lintKeymap,
+  ]),
+];
 
 type MarkdownEditorPaneProps = {
   loadedDocumentContent: string | null;
@@ -212,7 +265,7 @@ const MarkdownEditorPaneImpl = (
     editorViewRef.current = new EditorView({
       doc: loadedDocumentContent ?? '',
       extensions: [
-        basicSetup,
+        proseEditorSetupWithoutGutters,
         markdown(),
         headingUnderlineResetHighlightExtension(),
         headingLineDecorationExtension(),
