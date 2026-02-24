@@ -88,6 +88,9 @@ type MarkdownEditorPaneProps = {
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
   onSelectionHasTextChanged?: (selectionHasText: boolean) => void;
+  onInlineCommentCreationAnchorChanged?: (
+    anchorPosition: { top: number; left: number } | null,
+  ) => void;
 };
 
 export type MarkdownEditorPaneHandle = {
@@ -112,6 +115,7 @@ const MarkdownEditorPaneImpl = (
     loadedDocumentRevision,
     onUserEditedDocument,
     onSelectionHasTextChanged,
+    onInlineCommentCreationAnchorChanged,
   }: MarkdownEditorPaneProps,
   ref: ForwardedRef<MarkdownEditorPaneHandle>,
 ) => {
@@ -120,6 +124,9 @@ const MarkdownEditorPaneImpl = (
   const isApplyingLoadedDocumentRef = useRef(false);
   const onUserEditedDocumentRef = useRef(onUserEditedDocument);
   const onSelectionHasTextChangedRef = useRef(onSelectionHasTextChanged);
+  const onInlineCommentCreationAnchorChangedRef = useRef(
+    onInlineCommentCreationAnchorChanged,
+  );
 
   // the update listener is attached once during editor creation, so a ref keeps
   // the latest React callback available without recreating the editor instance.
@@ -132,6 +139,56 @@ const MarkdownEditorPaneImpl = (
   useEffect(() => {
     onSelectionHasTextChangedRef.current = onSelectionHasTextChanged;
   }, [onSelectionHasTextChanged]);
+
+  // The editor update listener is attached once, so this ref keeps the latest
+  // anchor callback available without recreating the editor instance.
+  useEffect(() => {
+    onInlineCommentCreationAnchorChangedRef.current =
+      onInlineCommentCreationAnchorChanged;
+  }, [onInlineCommentCreationAnchorChanged]);
+
+  /**
+   * Why: the floating comment action belongs next to the current text
+   * selection, so we translate CodeMirror's viewport coordinates into
+   * editor-local coordinates that React can position against.
+   */
+  const emitInlineCommentCreationAnchorPosition = (editorView: EditorView) => {
+    const anchorCallback = onInlineCommentCreationAnchorChangedRef.current;
+    if (!anchorCallback) {
+      return;
+    }
+
+    const primarySelectionRange = editorView.state.selection.main;
+    if (primarySelectionRange.empty || !editorView.hasFocus) {
+      anchorCallback(null);
+      return;
+    }
+
+    const selectionTo = Math.max(
+      primarySelectionRange.from,
+      primarySelectionRange.to,
+    );
+    const selectionFrom = Math.min(
+      primarySelectionRange.from,
+      primarySelectionRange.to,
+    );
+
+    const selectionCoordinates =
+      editorView.coordsAtPos(selectionTo) ??
+      editorView.coordsAtPos(selectionFrom);
+    const editorContainerElement = editorContainerElementRef.current;
+    if (!selectionCoordinates || !editorContainerElement) {
+      anchorCallback(null);
+      return;
+    }
+
+    const editorContainerBounds =
+      editorContainerElement.getBoundingClientRect();
+    anchorCallback({
+      top: selectionCoordinates.top - editorContainerBounds.top,
+      left: selectionCoordinates.right - editorContainerBounds.left,
+    });
+  };
 
   // exposing a tiny imperative handle keeps save/lifecycle integrations simple
   // while still letting CodeMirror own document and selection state internally.
@@ -280,6 +337,15 @@ const MarkdownEditorPaneImpl = (
             );
           }
 
+          if (
+            update.selectionSet ||
+            update.viewportChanged ||
+            update.geometryChanged ||
+            update.focusChanged
+          ) {
+            emitInlineCommentCreationAnchorPosition(update.view);
+          }
+
           // Ignore programmatic file loads so they do not trigger autosave.
           if (!update.docChanged || isApplyingLoadedDocumentRef.current) {
             return;
@@ -294,6 +360,7 @@ const MarkdownEditorPaneImpl = (
     onSelectionHasTextChangedRef.current?.(
       !editorViewRef.current.state.selection.main.empty,
     );
+    emitInlineCommentCreationAnchorPosition(editorViewRef.current);
 
     return () => {
       editorViewRef.current?.destroy();
@@ -327,6 +394,7 @@ const MarkdownEditorPaneImpl = (
           insert: loadedDocumentContent,
         },
       });
+      emitInlineCommentCreationAnchorPosition(editorView);
     } finally {
       isApplyingLoadedDocumentRef.current = false;
     }

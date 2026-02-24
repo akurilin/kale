@@ -32,6 +32,9 @@ const INITIAL_SAVE_STATUS_TEXT = 'Ready';
 const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
 const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
 const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
+const INLINE_COMMENT_SELECTION_BUTTON_WIDTH = 92;
+const INLINE_COMMENT_SELECTION_BUTTON_HEIGHT = 34;
+const INLINE_COMMENT_SELECTION_BUTTON_MARGIN = 8;
 
 // The renderer needs a folder path for terminal startup, so this helper keeps
 // path parsing local and avoids coupling the pane to full document responses.
@@ -77,7 +80,11 @@ export const App = () => {
     DEFAULT_EDITOR_PANE_WIDTH_RATIO,
   );
   const [inlineComments, setInlineComments] = useState<InlineComment[]>([]);
-  const [editorSelectionHasText, setEditorSelectionHasText] = useState(false);
+  const [inlineCommentSelectionAnchor, setInlineCommentSelectionAnchor] =
+    useState<{ top: number; left: number } | null>(null);
+  const [autoFocusInlineCommentId, setAutoFocusInlineCommentId] = useState<
+    string | null
+  >(null);
 
   const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
   const workspaceElementRef = useRef<HTMLElement | null>(null);
@@ -282,8 +289,8 @@ export const App = () => {
     }
   };
 
-  // This action proves the inline-marker format end-to-end before custom
-  // context-menu UX lands, so the MVP is intentionally top-bar triggered.
+  // This action centralizes inline-comment creation so both the floating
+  // selection affordance and future entry points share one editor-backed path.
   const createInlineCommentFromSelection = () => {
     const createResult =
       markdownEditorPaneRef.current?.createInlineCommentFromCurrentSelection();
@@ -294,6 +301,11 @@ export const App = () => {
 
     if (!createResult.ok) {
       window.alert(createResult.errorMessage ?? 'Could not create comment.');
+      return;
+    }
+
+    if (createResult.createdCommentId) {
+      setAutoFocusInlineCommentId(createResult.createdCommentId);
     }
   };
 
@@ -395,14 +407,6 @@ export const App = () => {
         <button
           className="topbar-button"
           type="button"
-          onClick={createInlineCommentFromSelection}
-          disabled={!loadedDocument || !editorSelectionHasText}
-        >
-          Add Comment
-        </button>
-        <button
-          className="topbar-button"
-          type="button"
           onClick={() => {
             void restoreCurrentFileFromGit();
           }}
@@ -433,12 +437,50 @@ export const App = () => {
                 setInlineComments(parseInlineCommentsFromMarkdown(content));
                 saveController.scheduleSave(content);
               }}
-              onSelectionHasTextChanged={setEditorSelectionHasText}
+              onInlineCommentCreationAnchorChanged={
+                setInlineCommentSelectionAnchor
+              }
             />
+            {loadedDocument && inlineCommentSelectionAnchor ? (
+              <button
+                className="inline-comment-selection-action"
+                type="button"
+                onMouseDown={(event) => {
+                  // Prevent editor blur so the selection survives the click.
+                  event.preventDefault();
+                }}
+                onClick={createInlineCommentFromSelection}
+                style={
+                  {
+                    left: Math.max(
+                      INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
+                      inlineCommentSelectionAnchor.left -
+                        INLINE_COMMENT_SELECTION_BUTTON_WIDTH,
+                    ),
+                    top: Math.max(
+                      INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
+                      inlineCommentSelectionAnchor.top -
+                        INLINE_COMMENT_SELECTION_BUTTON_HEIGHT -
+                        INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
+                    ),
+                  } as CSSProperties
+                }
+              >
+                Comment
+              </button>
+            ) : null}
             <InlineCommentsSidebar
               comments={inlineComments}
               onChangeCommentText={updateInlineCommentText}
               onDeleteComment={deleteInlineComment}
+              autoFocusCommentId={autoFocusInlineCommentId}
+              onAutoFocusCommentHandled={(commentId) => {
+                setAutoFocusInlineCommentId((currentCommentId) => {
+                  return currentCommentId === commentId
+                    ? null
+                    : currentCommentId;
+                });
+              }}
             />
           </div>
         </section>

@@ -10,6 +10,8 @@ type InlineCommentsSidebarProps = {
   comments: InlineComment[];
   onChangeCommentText: (commentId: string, nextCommentText: string) => void;
   onDeleteComment: (commentId: string) => void;
+  autoFocusCommentId: string | null;
+  onAutoFocusCommentHandled: (commentId: string) => void;
 };
 
 // The sidebar is a presentational layer around comment cards so it can be
@@ -18,13 +20,16 @@ export const InlineCommentsSidebar = ({
   comments,
   onChangeCommentText,
   onDeleteComment,
+  autoFocusCommentId,
+  onAutoFocusCommentHandled,
 }: InlineCommentsSidebarProps) => {
   return (
     <aside className="inline-comments-sidebar" aria-label="Comments">
       <div className="inline-comments-sidebar-title">Comments</div>
       {comments.length === 0 ? (
         <div className="inline-comments-empty-state">
-          Select text and click `Add Comment` to create an inline comment.
+          Select text and click the floating `Comment` button to create an
+          inline comment.
         </div>
       ) : (
         comments.map((comment) => {
@@ -34,6 +39,8 @@ export const InlineCommentsSidebar = ({
               comment={comment}
               onChangeCommentText={onChangeCommentText}
               onDeleteComment={onDeleteComment}
+              shouldAutoFocusInput={autoFocusCommentId === comment.id}
+              onAutoFocusHandled={onAutoFocusCommentHandled}
             />
           );
         })

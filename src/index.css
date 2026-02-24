@@ -158,6 +158,7 @@ body {
 .document-comments-layout {
   flex: 1;
   min-height: 0;
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   border-top: 0;
@@ -261,6 +262,35 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.inline-comment-selection-action {
+  position: absolute;
+  z-index: 5;
+  min-width: 92px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid #d6cebf;
+  border-radius: 999px;
+  background: rgba(255, 253, 250, 0.98);
+  box-shadow:
+    0 8px 20px rgba(31, 27, 20, 0.08),
+    0 2px 6px rgba(31, 27, 20, 0.08);
+  color: #2f2a22;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.inline-comment-selection-action:hover {
+  background: #fff;
+  border-color: #cdbf9e;
+}
+
+.inline-comment-selection-action:focus-visible {
+  outline: 2px solid rgba(201, 141, 22, 0.2);
+  outline-offset: 2px;
 }
 
 .inline-comments-sidebar-title {

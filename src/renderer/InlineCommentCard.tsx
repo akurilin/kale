@@ -4,6 +4,7 @@
 //
 
 import {
+  useEffect,
   useLayoutEffect,
   useRef,
   type ChangeEvent,
@@ -17,6 +18,8 @@ type InlineCommentCardProps = {
   comment: InlineComment;
   onChangeCommentText: (commentId: string, nextCommentText: string) => void;
   onDeleteComment: (commentId: string) => void;
+  shouldAutoFocusInput?: boolean;
+  onAutoFocusHandled?: (commentId: string) => void;
 };
 
 /**
@@ -42,6 +45,8 @@ export const InlineCommentCard = ({
   comment,
   onChangeCommentText,
   onDeleteComment,
+  shouldAutoFocusInput = false,
+  onAutoFocusHandled,
 }: InlineCommentCardProps) => {
   const commentTextareaElementRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -50,6 +55,24 @@ export const InlineCommentCard = ({
   useLayoutEffect(() => {
     resizeCommentTextareaToContentHeight(commentTextareaElementRef);
   }, [comment.text]);
+
+  // Focusing immediately after comment creation keeps the workflow keyboard-
+  // first so users can keep typing without a pointer round-trip.
+  useEffect(() => {
+    if (!shouldAutoFocusInput) {
+      return;
+    }
+
+    const textareaElement = commentTextareaElementRef.current;
+    if (!textareaElement) {
+      return;
+    }
+
+    textareaElement.focus();
+    const textLength = textareaElement.value.length;
+    textareaElement.setSelectionRange(textLength, textLength);
+    onAutoFocusHandled?.(comment.id);
+  }, [comment.id, onAutoFocusHandled, shouldAutoFocusInput]);
 
   // Keeping this handler local avoids repeating event-plumbing details in the JSX.
   const handleTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
