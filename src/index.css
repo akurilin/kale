@@ -339,8 +339,10 @@ body {
 
 .inline-comment-card-input {
   width: 100%;
-  min-height: 96px;
-  resize: vertical;
+  min-height: calc(1.45em + 22px);
+  height: auto;
+  resize: none;
+  overflow-y: hidden;
   border: 1px solid #d6cebf;
   border-radius: 8px;
   padding: 10px 12px;

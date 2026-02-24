@@ -3,7 +3,13 @@
 // can evolve without bloating the app shell with repeated markup and handlers.
 //
 
-import type { ChangeEvent, MouseEvent } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  type ChangeEvent,
+  type MouseEvent,
+  type RefObject,
+} from 'react';
 
 import type { InlineComment } from './inline-comments';
 
@@ -13,6 +19,23 @@ type InlineCommentCardProps = {
   onDeleteComment: (commentId: string) => void;
 };
 
+/**
+ * Why: textarea elements do not shrink back down automatically as controlled
+ * values change, so we explicitly reset and grow to the content height to keep
+ * each comment card only as tall as its current text.
+ */
+const resizeCommentTextareaToContentHeight = (
+  textareaElementRef: RefObject<HTMLTextAreaElement>,
+) => {
+  const textareaElement = textareaElementRef.current;
+  if (!textareaElement) {
+    return;
+  }
+
+  textareaElement.style.height = 'auto';
+  textareaElement.style.height = `${textareaElement.scrollHeight}px`;
+};
+
 // The card stays stateless so all edits flow through the existing editor-backed
 // markdown source of truth rather than creating duplicate React-only comment state.
 export const InlineCommentCard = ({
@@ -20,6 +43,14 @@ export const InlineCommentCard = ({
   onChangeCommentText,
   onDeleteComment,
 }: InlineCommentCardProps) => {
+  const commentTextareaElementRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Resizing after each rendered value change keeps externally-driven updates
+  // and local edits visually compact without requiring manual drag-resize.
+  useLayoutEffect(() => {
+    resizeCommentTextareaToContentHeight(commentTextareaElementRef);
+  }, [comment.text]);
+
   // Keeping this handler local avoids repeating event-plumbing details in the JSX.
   const handleTextChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
     onChangeCommentText(comment.id, event.target.value);
@@ -43,10 +74,11 @@ export const InlineCommentCard = ({
         🗑
       </button>
       <textarea
+        ref={commentTextareaElementRef}
         className="inline-comment-card-input"
         value={comment.text}
         onChange={handleTextChange}
-        rows={3}
+        rows={1}
         placeholder="Type a comment..."
       />
     </label>
