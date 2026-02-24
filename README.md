@@ -17,6 +17,7 @@ What works right now:
 - Markdown heading levels (ATX and setext) now receive level-specific live-preview typography via CodeMirror line decorations, so H1/H2/H3 no longer render identically.
 - The editor overrides CodeMirror's default heading underline highlight so markdown headings read like document typography instead of links.
 - The default app view now combines the markdown editor (left, ~75%) and a PTY-backed terminal pane (right, ~25%) in a single window.
+- The document pane now includes an MVP inline-comment workflow: selecting text and using `Add Comment` inserts hidden HTML comment markers into the markdown, highlights the anchored range, and shows an editable comment card in a right-side comments sidebar.
 - The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
 - The terminal implementation is now split into a reusable embedded `TerminalPane` component and a standalone `TerminalView` wrapper used by `VITE_KALE_VIEW=terminal`.
 - The project now targets TypeScript `5.9.3` for modern type-system features and improved React typing support.
@@ -40,6 +41,7 @@ What works right now:
 What is not implemented yet:
 
 - The broader workflows from `docs/prd.md` (agent orchestration, snapshots, comment sidecars, skills, multi-doc project handling) are not yet wired into `src/`.
+- The inline comments feature is MVP-only: it currently uses a top-bar `Add Comment` action (not right-click context menu), a docked sidebar (not per-highlight floating bubbles), and permissive raw-character anchoring with basic malformed-marker tolerance.
 - The known editor persistence issues tracked in `docs/todos.md` are not fixed yet (packaged save path and close/save race).
 
 ## Run Commands

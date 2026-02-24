@@ -15,6 +15,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
+import { parseInlineCommentsFromMarkdown } from './inline-comments';
 
 const markerNodes = new Set([
   'HeaderMark',
@@ -270,6 +271,64 @@ export const quoteLineDecorationExtension = (): Extension =>
             }
           },
         });
+
+        return Decoration.set(decorations, true);
+      }
+    },
+    {
+      decorations: (viewPluginInstance) => viewPluginInstance.decorations,
+    },
+  );
+
+// Inline comments are stored as markdown HTML comment markers, so this plugin
+// hides the marker syntax and highlights the anchored text range for editing.
+export const inlineCommentDecorationExtension = (): Extension =>
+  ViewPlugin.fromClass(
+    class {
+      decorations;
+
+      constructor(view: EditorView) {
+        this.decorations = this.buildDecorations(view);
+      }
+
+      // Decoration placement only depends on document content and viewport.
+      update(update: ViewUpdate) {
+        if (update.docChanged || update.viewportChanged) {
+          this.decorations = this.buildDecorations(update.view);
+        }
+      }
+
+      // Marker ranges are replaced so users interact with highlighted prose
+      // while the raw comment syntax remains persisted in the document source.
+      buildDecorations(view: EditorView) {
+        const decorations: Range<Decoration>[] = [];
+        const parsedComments = parseInlineCommentsFromMarkdown(
+          view.state.doc.toString(),
+        );
+
+        for (const comment of parsedComments) {
+          decorations.push(
+            Decoration.replace({}).range(
+              comment.startMarkerFrom,
+              comment.startMarkerTo,
+            ),
+          );
+          decorations.push(
+            Decoration.replace({}).range(
+              comment.endMarkerFrom,
+              comment.endMarkerTo,
+            ),
+          );
+
+          if (comment.contentFrom < comment.contentTo) {
+            decorations.push(
+              Decoration.mark({ class: 'cm-inline-comment-range' }).range(
+                comment.contentFrom,
+                comment.contentTo,
+              ),
+            );
+          }
+        }
 
         return Decoration.set(decorations, true);
       }

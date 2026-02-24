@@ -17,18 +17,38 @@ import { basicSetup } from 'codemirror';
 import {
   headingLineDecorationExtension,
   headingUnderlineResetHighlightExtension,
+  inlineCommentDecorationExtension,
   livePreviewMarkersExtension,
   quoteLineDecorationExtension,
 } from './codemirror-extensions';
+import {
+  createInlineCommentEndMarker,
+  createInlineCommentId,
+  createInlineCommentStartMarker,
+  doesSelectionOverlapExistingInlineComment,
+  removeInlineCommentMarkersFromMarkdown,
+  updateInlineCommentTextInMarkdown,
+} from './inline-comments';
 
 type MarkdownEditorPaneProps = {
   loadedDocumentContent: string | null;
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
+  onSelectionHasTextChanged?: (selectionHasText: boolean) => void;
 };
 
 export type MarkdownEditorPaneHandle = {
   getCurrentContent: () => string | null;
+  createInlineCommentFromCurrentSelection: () => {
+    ok: boolean;
+    errorMessage?: string;
+    createdCommentId?: string;
+  };
+  updateInlineCommentTextById: (
+    commentId: string,
+    nextCommentText: string,
+  ) => boolean;
+  deleteInlineCommentById: (commentId: string) => boolean;
 };
 
 // forwardRef lets the app shell ask for current editor content during blur,
@@ -38,6 +58,7 @@ const MarkdownEditorPaneImpl = (
     loadedDocumentContent,
     loadedDocumentRevision,
     onUserEditedDocument,
+    onSelectionHasTextChanged,
   }: MarkdownEditorPaneProps,
   ref: ForwardedRef<MarkdownEditorPaneHandle>,
 ) => {
@@ -45,12 +66,19 @@ const MarkdownEditorPaneImpl = (
   const editorViewRef = useRef<EditorView | null>(null);
   const isApplyingLoadedDocumentRef = useRef(false);
   const onUserEditedDocumentRef = useRef(onUserEditedDocument);
+  const onSelectionHasTextChangedRef = useRef(onSelectionHasTextChanged);
 
   // the update listener is attached once during editor creation, so a ref keeps
   // the latest React callback available without recreating the editor instance.
   useEffect(() => {
     onUserEditedDocumentRef.current = onUserEditedDocument;
   }, [onUserEditedDocument]);
+
+  // Selection listeners are also attached once, so a ref keeps the latest
+  // callback available without recreating the editor instance.
+  useEffect(() => {
+    onSelectionHasTextChangedRef.current = onSelectionHasTextChanged;
+  }, [onSelectionHasTextChanged]);
 
   // exposing a tiny imperative handle keeps save/lifecycle integrations simple
   // while still letting CodeMirror own document and selection state internally.
@@ -59,6 +87,116 @@ const MarkdownEditorPaneImpl = (
     () => ({
       getCurrentContent: () =>
         editorViewRef.current?.state.doc.toString() ?? null,
+      createInlineCommentFromCurrentSelection: () => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return { ok: false, errorMessage: 'Editor is not ready.' };
+        }
+
+        const primarySelectionRange = editorView.state.selection.main;
+        if (primarySelectionRange.empty) {
+          return {
+            ok: false,
+            errorMessage: 'Select some text before creating a comment.',
+          };
+        }
+
+        const selectionFrom = Math.min(
+          primarySelectionRange.from,
+          primarySelectionRange.to,
+        );
+        const selectionTo = Math.max(
+          primarySelectionRange.from,
+          primarySelectionRange.to,
+        );
+        const currentMarkdownContent = editorView.state.doc.toString();
+
+        if (
+          doesSelectionOverlapExistingInlineComment(
+            currentMarkdownContent,
+            selectionFrom,
+            selectionTo,
+          )
+        ) {
+          return {
+            ok: false,
+            errorMessage:
+              'Overlapping or nested comments are not supported in this MVP.',
+          };
+        }
+
+        const createdCommentId = createInlineCommentId();
+        const startMarker = createInlineCommentStartMarker(
+          createdCommentId,
+          '',
+        );
+        const endMarker = createInlineCommentEndMarker(createdCommentId);
+
+        // Insert end marker first so the original selection offsets remain valid.
+        editorView.dispatch({
+          changes: [
+            { from: selectionTo, insert: endMarker },
+            { from: selectionFrom, insert: startMarker },
+          ],
+          selection: {
+            anchor: selectionFrom + startMarker.length,
+            head: selectionTo + startMarker.length,
+          },
+          scrollIntoView: true,
+        });
+
+        return { ok: true, createdCommentId };
+      },
+      updateInlineCommentTextById: (
+        commentId: string,
+        nextCommentText: string,
+      ) => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return false;
+        }
+
+        const nextMarkdownContent = updateInlineCommentTextInMarkdown(
+          editorView.state.doc.toString(),
+          commentId,
+          nextCommentText,
+        );
+        if (nextMarkdownContent === null) {
+          return false;
+        }
+
+        editorView.dispatch({
+          changes: {
+            from: 0,
+            to: editorView.state.doc.length,
+            insert: nextMarkdownContent,
+          },
+        });
+        return true;
+      },
+      deleteInlineCommentById: (commentId: string) => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return false;
+        }
+
+        const nextMarkdownContent = removeInlineCommentMarkersFromMarkdown(
+          editorView.state.doc.toString(),
+          commentId,
+        );
+        if (nextMarkdownContent === null) {
+          return false;
+        }
+
+        editorView.dispatch({
+          changes: {
+            from: 0,
+            to: editorView.state.doc.length,
+            insert: nextMarkdownContent,
+          },
+        });
+        return true;
+      },
     }),
     [],
   );
@@ -79,9 +217,16 @@ const MarkdownEditorPaneImpl = (
         headingUnderlineResetHighlightExtension(),
         headingLineDecorationExtension(),
         quoteLineDecorationExtension(),
+        inlineCommentDecorationExtension(),
         livePreviewMarkersExtension(),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
+          if (update.selectionSet) {
+            onSelectionHasTextChangedRef.current?.(
+              !update.state.selection.main.empty,
+            );
+          }
+
           // Ignore programmatic file loads so they do not trigger autosave.
           if (!update.docChanged || isApplyingLoadedDocumentRef.current) {
             return;
@@ -92,6 +237,10 @@ const MarkdownEditorPaneImpl = (
       ],
       parent: editorContainerElement,
     });
+
+    onSelectionHasTextChangedRef.current?.(
+      !editorViewRef.current.state.selection.main.empty,
+    );
 
     return () => {
       editorViewRef.current?.destroy();

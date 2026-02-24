@@ -20,6 +20,11 @@ import {
 } from './MarkdownEditorPane';
 import { getMarkdownApi } from './markdown-api';
 import { TerminalPane } from './TerminalPane';
+import { InlineCommentsSidebar } from './InlineCommentsSidebar';
+import {
+  parseInlineCommentsFromMarkdown,
+  type InlineComment,
+} from './inline-comments';
 
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
@@ -71,6 +76,8 @@ export const App = () => {
   const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
     DEFAULT_EDITOR_PANE_WIDTH_RATIO,
   );
+  const [inlineComments, setInlineComments] = useState<InlineComment[]>([]);
+  const [editorSelectionHasText, setEditorSelectionHasText] = useState(false);
 
   const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
   const workspaceElementRef = useRef<HTMLElement | null>(null);
@@ -108,6 +115,9 @@ export const App = () => {
       saveController.markContentAsSavedFromLoad(nextLoadedDocument.content);
       setLoadedDocument(nextLoadedDocument);
       setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
+      setInlineComments(
+        parseInlineCommentsFromMarkdown(nextLoadedDocument.content),
+      );
       setSaveStatusText('Saved');
     },
     [saveController],
@@ -272,6 +282,51 @@ export const App = () => {
     }
   };
 
+  // This action proves the inline-marker format end-to-end before custom
+  // context-menu UX lands, so the MVP is intentionally top-bar triggered.
+  const createInlineCommentFromSelection = () => {
+    const createResult =
+      markdownEditorPaneRef.current?.createInlineCommentFromCurrentSelection();
+    if (!createResult) {
+      window.alert('Editor is not ready yet.');
+      return;
+    }
+
+    if (!createResult.ok) {
+      window.alert(createResult.errorMessage ?? 'Could not create comment.');
+    }
+  };
+
+  // The app shell owns editor-ref calls so the sidebar stays presentational.
+  const updateInlineCommentText = (
+    commentId: string,
+    nextCommentText: string,
+  ) => {
+    const didUpdate =
+      markdownEditorPaneRef.current?.updateInlineCommentTextById(
+        commentId,
+        nextCommentText,
+      ) ?? false;
+    if (!didUpdate) {
+      window.alert(
+        'Could not update comment text. The comment markers may be malformed.',
+      );
+    }
+  };
+
+  // Deletion behavior remains centralized here so future confirmations or
+  // analytics can be added without coupling the sidebar to editor internals.
+  const deleteInlineComment = (commentId: string) => {
+    const didDelete =
+      markdownEditorPaneRef.current?.deleteInlineCommentById(commentId) ??
+      false;
+    if (!didDelete) {
+      window.alert(
+        'Could not delete comment. The comment markers may be malformed.',
+      );
+    }
+  };
+
   // The split ratio lives in React state so the default ratio is only a
   // starting point and user drags can redefine the layout for the session.
   const resizeWorkspacePanesFromClientX = (clientX: number) => {
@@ -340,6 +395,14 @@ export const App = () => {
         <button
           className="topbar-button"
           type="button"
+          onClick={createInlineCommentFromSelection}
+          disabled={!loadedDocument || !editorSelectionHasText}
+        >
+          Add Comment
+        </button>
+        <button
+          className="topbar-button"
+          type="button"
           onClick={() => {
             void restoreCurrentFileFromGit();
           }}
@@ -361,14 +424,23 @@ export const App = () => {
       >
         <section className="pane workspace-pane workspace-pane--editor">
           <div className="pane-title">Document</div>
-          <MarkdownEditorPane
-            ref={markdownEditorPaneRef}
-            loadedDocumentContent={loadedDocument?.content ?? null}
-            loadedDocumentRevision={loadedDocumentRevision}
-            onUserEditedDocument={(content) => {
-              saveController.scheduleSave(content);
-            }}
-          />
+          <div className="document-comments-layout">
+            <MarkdownEditorPane
+              ref={markdownEditorPaneRef}
+              loadedDocumentContent={loadedDocument?.content ?? null}
+              loadedDocumentRevision={loadedDocumentRevision}
+              onUserEditedDocument={(content) => {
+                setInlineComments(parseInlineCommentsFromMarkdown(content));
+                saveController.scheduleSave(content);
+              }}
+              onSelectionHasTextChanged={setEditorSelectionHasText}
+            />
+            <InlineCommentsSidebar
+              comments={inlineComments}
+              onChangeCommentText={updateInlineCommentText}
+              onDeleteComment={deleteInlineComment}
+            />
+          </div>
         </section>
         <div
           className="workspace-divider"

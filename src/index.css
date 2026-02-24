@@ -155,6 +155,14 @@ body {
   background: #fcfbf8;
 }
 
+.document-comments-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  border-top: 0;
+}
+
 .editor .cm-editor {
   height: 100%;
 }
@@ -235,6 +243,117 @@ body {
 
 .editor .cm-line {
   padding-left: 12px;
+}
+
+.editor .cm-inline-comment-range {
+  background: rgba(255, 223, 127, 0.45);
+  border-radius: 3px;
+  box-shadow: inset 0 -1px 0 rgba(212, 155, 24, 0.35);
+}
+
+.inline-comments-sidebar {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid #ece6da;
+  background: #fffdfa;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inline-comments-sidebar-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #6f6758;
+  padding: 2px 2px 0;
+}
+
+.inline-comments-empty-state {
+  padding: 10px;
+  border: 1px dashed #d9d1c2;
+  border-radius: 10px;
+  background: #fffefb;
+  color: #6d665a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.inline-comment-card {
+  position: relative;
+  display: block;
+  padding: 10px;
+  border: 1px solid #e4dccf;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.inline-comment-card-delete-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #e0d7c8;
+  border-radius: 8px;
+  background: #fffdfa;
+  color: #70523a;
+  cursor: pointer;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.inline-comment-card:hover .inline-comment-card-delete-button,
+.inline-comment-card:focus-within .inline-comment-card-delete-button {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.inline-comment-card-delete-button:hover {
+  background: #fff2ee;
+  border-color: #d7b7ac;
+  color: #8a2f1f;
+}
+
+.inline-comment-card-delete-button:focus-visible {
+  outline: 2px solid rgba(138, 47, 31, 0.18);
+  outline-offset: 1px;
+}
+
+.inline-comment-card-input {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid #d6cebf;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.45;
+  color: #2d2b26;
+  background: #fffdfa;
+}
+
+.inline-comment-card-input:focus {
+  outline: 2px solid rgba(201, 141, 22, 0.18);
+  border-color: #c98d16;
 }
 
 .terminal-warning-banner {
