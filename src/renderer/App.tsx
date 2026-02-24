@@ -8,6 +8,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 
@@ -352,9 +353,11 @@ export const App = () => {
       <main
         className="workspace workspace--split"
         ref={workspaceElementRef}
-        style={{
-          gridTemplateColumns: `${editorPaneWidthRatio}fr 8px ${1 - editorPaneWidthRatio}fr`,
-        }}
+        style={
+          {
+            '--workspace-split-columns': `${editorPaneWidthRatio}fr 8px ${1 - editorPaneWidthRatio}fr`,
+          } as CSSProperties
+        }
       >
         <section className="pane workspace-pane workspace-pane--editor">
           <div className="pane-title">Document</div>

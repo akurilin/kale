@@ -40,20 +40,32 @@ const SETTINGS_FILE_NAME = 'settings.json';
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
 const SELF_SAVE_WATCHER_SUPPRESSION_MS = 1000;
-// In-memory cache for the active file path. We still re-validate on use because
-// the file can be moved/deleted outside the app between operations.
-let currentMarkdownFilePath: string | null = null;
-// Cache the bundled Claude system prompt once at startup so terminal session
-// launches do not perform filesystem I/O on the hot path.
-let bundledClaudeSystemPromptMarkdownText: string | null = null;
 const execFileAsync = promisify(execFile);
-const terminalSessionsById = new Map<string, nodePty.IPty>();
-let activeMarkdownFileWatcher: FSWatcher | null = null;
-let watchedMarkdownFilePath: string | null = null;
-let pendingExternalMarkdownChangeBroadcastTimeout: ReturnType<
-  typeof setTimeout
-> | null = null;
-const recentAppSaveSuppressUntilByFilePath = new Map<string, number>();
+// The Electron main process is a singleton in this app, so runtime-only mutable
+// state stays module-scoped here until the file is split into service modules.
+const appRuntimeState: {
+  currentMarkdownFilePath: string | null;
+  bundledClaudeSystemPromptMarkdownText: string | null;
+  terminalSessionsById: Map<string, nodePty.IPty>;
+  activeMarkdownFileWatcher: FSWatcher | null;
+  watchedMarkdownFilePath: string | null;
+  pendingExternalMarkdownChangeBroadcastTimeout: ReturnType<
+    typeof setTimeout
+  > | null;
+  recentAppSaveSuppressUntilByFilePath: Map<string, number>;
+} = {
+  // In-memory cache for the active file path. We still re-validate on use
+  // because the file can be moved/deleted outside the app between operations.
+  currentMarkdownFilePath: null,
+  // Cache the bundled Claude system prompt once at startup so terminal session
+  // launches do not perform filesystem I/O on the hot path.
+  bundledClaudeSystemPromptMarkdownText: null,
+  terminalSessionsById: new Map<string, nodePty.IPty>(),
+  activeMarkdownFileWatcher: null,
+  watchedMarkdownFilePath: null,
+  pendingExternalMarkdownChangeBroadcastTimeout: null,
+  recentAppSaveSuppressUntilByFilePath: new Map<string, number>(),
+};
 
 type AppSettings = {
   lastOpenedFilePath?: string;
@@ -81,14 +93,14 @@ const loadBundledClaudeSystemPromptMarkdownOrThrow = async () => {
     throw new Error(`Claude system prompt file is empty: ${promptFilePath}`);
   }
 
-  bundledClaudeSystemPromptMarkdownText = promptMarkdownText;
+  appRuntimeState.bundledClaudeSystemPromptMarkdownText = promptMarkdownText;
 };
 
 // Terminal session launch is synchronous with respect to command construction,
 // so this getter ensures startup completed the required prompt-file preload.
 const getRequiredBundledClaudeSystemPromptMarkdownText = () => {
-  if (bundledClaudeSystemPromptMarkdownText) {
-    return bundledClaudeSystemPromptMarkdownText;
+  if (appRuntimeState.bundledClaudeSystemPromptMarkdownText) {
+    return appRuntimeState.bundledClaudeSystemPromptMarkdownText;
   }
 
   throw new Error(
@@ -167,31 +179,32 @@ const canReadFile = async (filePath: string) => {
 // Only the active editor document needs a watcher in this prototype, so this
 // helper tears down prior state before switching to a new file path.
 const stopWatchingActiveMarkdownFile = async () => {
-  const previousWatchedMarkdownFilePath = watchedMarkdownFilePath;
-  if (pendingExternalMarkdownChangeBroadcastTimeout) {
-    clearTimeout(pendingExternalMarkdownChangeBroadcastTimeout);
-    pendingExternalMarkdownChangeBroadcastTimeout = null;
+  const previousWatchedMarkdownFilePath =
+    appRuntimeState.watchedMarkdownFilePath;
+  if (appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout) {
+    clearTimeout(appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout);
+    appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout = null;
   }
 
-  watchedMarkdownFilePath = null;
+  appRuntimeState.watchedMarkdownFilePath = null;
   if (previousWatchedMarkdownFilePath) {
-    recentAppSaveSuppressUntilByFilePath.delete(
+    appRuntimeState.recentAppSaveSuppressUntilByFilePath.delete(
       previousWatchedMarkdownFilePath,
     );
   }
-  if (!activeMarkdownFileWatcher) {
+  if (!appRuntimeState.activeMarkdownFileWatcher) {
     return;
   }
 
-  const watcherToClose = activeMarkdownFileWatcher;
-  activeMarkdownFileWatcher = null;
+  const watcherToClose = appRuntimeState.activeMarkdownFileWatcher;
+  appRuntimeState.activeMarkdownFileWatcher = null;
   await watcherToClose.close();
 };
 
 // Renderer-initiated saves should not immediately echo back through the file
 // watcher because that reload loop replaces the editor document mid-typing.
 const markMarkdownFilePathAsRecentlySavedByApp = (filePath: string) => {
-  recentAppSaveSuppressUntilByFilePath.set(
+  appRuntimeState.recentAppSaveSuppressUntilByFilePath.set(
     filePath,
     Date.now() + SELF_SAVE_WATCHER_SUPPRESSION_MS,
   );
@@ -200,7 +213,8 @@ const markMarkdownFilePathAsRecentlySavedByApp = (filePath: string) => {
 // File-watch notifications are only useful for external writes, so a short
 // suppression window filters out the app's own save events after IPC writes.
 const shouldSuppressExternalChangeBroadcastForFilePath = (filePath: string) => {
-  const suppressUntil = recentAppSaveSuppressUntilByFilePath.get(filePath);
+  const suppressUntil =
+    appRuntimeState.recentAppSaveSuppressUntilByFilePath.get(filePath);
   if (!suppressUntil) {
     return false;
   }
@@ -209,7 +223,7 @@ const shouldSuppressExternalChangeBroadcastForFilePath = (filePath: string) => {
     return true;
   }
 
-  recentAppSaveSuppressUntilByFilePath.delete(filePath);
+  appRuntimeState.recentAppSaveSuppressUntilByFilePath.delete(filePath);
   return false;
 };
 
@@ -228,34 +242,44 @@ const broadcastExternalMarkdownFileChanged = (filePath: string) => {
 // Chokidar smooths over platform-specific save behavior, so this watcher treats
 // change/add events as a reload signal for the single active markdown file.
 const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
-  if (watchedMarkdownFilePath === filePath && activeMarkdownFileWatcher) {
+  if (
+    appRuntimeState.watchedMarkdownFilePath === filePath &&
+    appRuntimeState.activeMarkdownFileWatcher
+  ) {
     return;
   }
 
   await stopWatchingActiveMarkdownFile();
-  watchedMarkdownFilePath = filePath;
+  appRuntimeState.watchedMarkdownFilePath = filePath;
 
   const scheduleExternalChangeBroadcast = () => {
-    if (pendingExternalMarkdownChangeBroadcastTimeout) {
-      clearTimeout(pendingExternalMarkdownChangeBroadcastTimeout);
+    if (appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout) {
+      clearTimeout(
+        appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout,
+      );
     }
 
-    pendingExternalMarkdownChangeBroadcastTimeout = setTimeout(() => {
-      pendingExternalMarkdownChangeBroadcastTimeout = null;
-      if (!watchedMarkdownFilePath) {
-        return;
-      }
+    appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout = setTimeout(
+      () => {
+        appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout = null;
+        if (!appRuntimeState.watchedMarkdownFilePath) {
+          return;
+        }
 
-      if (
-        shouldSuppressExternalChangeBroadcastForFilePath(
-          watchedMarkdownFilePath,
-        )
-      ) {
-        return;
-      }
+        if (
+          shouldSuppressExternalChangeBroadcastForFilePath(
+            appRuntimeState.watchedMarkdownFilePath,
+          )
+        ) {
+          return;
+        }
 
-      broadcastExternalMarkdownFileChanged(watchedMarkdownFilePath);
-    }, 150);
+        broadcastExternalMarkdownFileChanged(
+          appRuntimeState.watchedMarkdownFilePath,
+        );
+      },
+      150,
+    );
   };
 
   const watcher = watchWithChokidar(filePath, {
@@ -269,7 +293,7 @@ const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
     console.error(`Markdown file watcher error for ${filePath}`, error);
   });
 
-  activeMarkdownFileWatcher = watcher;
+  appRuntimeState.activeMarkdownFileWatcher = watcher;
 };
 
 const ensureDefaultUserFile = async () => {
@@ -299,15 +323,18 @@ const ensureDefaultUserFile = async () => {
 };
 
 const setCurrentMarkdownFilePath = async (filePath: string) => {
-  currentMarkdownFilePath = filePath;
+  appRuntimeState.currentMarkdownFilePath = filePath;
   const settings = await readSettings();
   settings.lastOpenedFilePath = filePath;
   await writeSettings(settings);
 };
 
 const ensureCurrentMarkdownFilePath = async () => {
-  if (currentMarkdownFilePath && (await canReadFile(currentMarkdownFilePath))) {
-    return currentMarkdownFilePath;
+  if (
+    appRuntimeState.currentMarkdownFilePath &&
+    (await canReadFile(appRuntimeState.currentMarkdownFilePath))
+  ) {
+    return appRuntimeState.currentMarkdownFilePath;
   }
 
   const settings = await readSettings();
@@ -316,8 +343,8 @@ const ensureCurrentMarkdownFilePath = async () => {
     (await canReadFile(settings.lastOpenedFilePath))
   ) {
     // Restore the last file the user worked on across app restarts.
-    currentMarkdownFilePath = settings.lastOpenedFilePath;
-    return currentMarkdownFilePath;
+    appRuntimeState.currentMarkdownFilePath = settings.lastOpenedFilePath;
+    return appRuntimeState.currentMarkdownFilePath;
   }
 
   // Fall back to a guaranteed writable file if the remembered file is gone.
@@ -396,7 +423,7 @@ const startTerminalSession = async (
       rows: 40,
     });
 
-    terminalSessionsById.set(sessionId, terminalProcess);
+    appRuntimeState.terminalSessionsById.set(sessionId, terminalProcess);
 
     const sendChunkToRenderers = (chunkText: string) => {
       // TODO(terminal-prototype): We intentionally broadcast terminal events to
@@ -418,7 +445,7 @@ const startTerminalSession = async (
     });
 
     terminalProcess.onExit(({ exitCode, signal }) => {
-      terminalSessionsById.delete(sessionId);
+      appRuntimeState.terminalSessionsById.delete(sessionId);
       const exitEvent: TerminalProcessExitEvent = {
         sessionId,
         exitCode,
@@ -456,7 +483,7 @@ const startTerminalSession = async (
 // Centralized session lookup keeps renderer IPC failure modes predictable and
 // avoids throwing uncaught errors when the user presses controls after exit.
 const getTerminalSession = (sessionId: string) =>
-  terminalSessionsById.get(sessionId);
+  appRuntimeState.terminalSessionsById.get(sessionId);
 
 const loadCurrentMarkdown = async (): Promise<LoadMarkdownResponse> => {
   const filePath = await ensureCurrentMarkdownFilePath();
@@ -711,10 +738,10 @@ app.on('ready', () => {
 app.on('window-all-closed', () => {
   const shutdownSessionsAndMaybeQuit = async () => {
     await stopWatchingActiveMarkdownFile();
-    for (const terminalSession of terminalSessionsById.values()) {
+    for (const terminalSession of appRuntimeState.terminalSessionsById.values()) {
       terminalSession.kill('SIGTERM');
     }
-    terminalSessionsById.clear();
+    appRuntimeState.terminalSessionsById.clear();
     if (process.platform !== 'darwin') {
       app.quit();
     }

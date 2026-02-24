@@ -91,7 +91,7 @@ body {
 
 .workspace--split {
   display: grid;
-  grid-template-columns: 3fr 8px 2fr;
+  grid-template-columns: var(--workspace-split-columns, 3fr 8px 2fr);
 }
 
 .workspace-divider {
