@@ -14,12 +14,15 @@ What works right now:
 - The top bar includes a `Restore Git` action that discards local changes for the current file and restores it from the repository `HEAD` version (requires `git` on `PATH`).
 - On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
 - Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
+- The default app view now combines the markdown editor (left, ~75%) and a PTY-backed terminal pane (right, ~25%) in a single window.
 - The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
+- The terminal implementation is now split into a reusable embedded `TerminalPane` component and a standalone `TerminalView` wrapper used by `VITE_KALE_VIEW=terminal`.
 - The project now targets TypeScript `5.9.3` for modern type-system features and improved React typing support.
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
 - A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
 - The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
 - The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
+- In the combined app view, the embedded terminal automatically restarts in the active document's folder when the user opens or switches files.
 - Terminal prototype error paths were hardened so failed session starts and failed input sends report correctly in the `xterm.js` output/status UI without crashing.
 - Packaging/making is configured through Electron Forge for:
   - Windows (`squirrel`)
@@ -49,7 +52,8 @@ What is not implemented yet:
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
 - `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
 - `src/renderer/`: extracted renderer modules for CodeMirror extensions and save/autosave controller logic.
-- `src/renderer/TerminalView.tsx`: isolated terminal prototype view for PTY terminal integration work.
+- `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app and prototype terminal view.
+- `src/renderer/TerminalView.tsx`: isolated terminal prototype wrapper view that reuses `TerminalPane`.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.

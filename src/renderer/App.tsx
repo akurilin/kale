@@ -3,7 +3,12 @@
 // and file actions become easier to evolve while CodeMirror remains imperative.
 //
 
-import { useEffect, useRef, useState } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 
 import type { LoadMarkdownResponse } from '../shared-types';
 import { createSaveController } from './save-controller';
@@ -12,10 +17,43 @@ import {
   type MarkdownEditorPaneHandle,
 } from './MarkdownEditorPane';
 import { getMarkdownApi } from './markdown-api';
+import { TerminalPane } from './TerminalPane';
 
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
 const INITIAL_SAVE_STATUS_TEXT = 'Ready';
+const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
+const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
+const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
+
+// The renderer needs a folder path for terminal startup, so this helper keeps
+// path parsing local and avoids coupling the pane to full document responses.
+const getParentDirectoryPathFromFilePath = (filePath: string | null) => {
+  if (!filePath) {
+    return null;
+  }
+
+  const normalizedFilePath = filePath.replace(/\\/g, '/');
+  const lastSlashIndex = normalizedFilePath.lastIndexOf('/');
+  if (lastSlashIndex < 0) {
+    return null;
+  }
+
+  if (lastSlashIndex === 0) {
+    return '/';
+  }
+
+  return normalizedFilePath.slice(0, lastSlashIndex);
+};
+
+// This helper constrains drag updates so both panes remain usable while still
+// allowing the user to strongly prefer one side over the other.
+const clampEditorPaneWidthRatio = (editorPaneWidthRatio: number) => {
+  return Math.min(
+    MAX_EDITOR_PANE_WIDTH_RATIO,
+    Math.max(MIN_EDITOR_PANE_WIDTH_RATIO, editorPaneWidthRatio),
+  );
+};
 
 // React owns shell composition and lifecycle wiring here because those flows
 // benefit from explicit state transitions more than imperative DOM queries.
@@ -28,8 +66,12 @@ export const App = () => {
   );
   const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [isRestoringFromGit, setIsRestoringFromGit] = useState(false);
+  const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
+    DEFAULT_EDITOR_PANE_WIDTH_RATIO,
+  );
 
   const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
+  const workspaceElementRef = useRef<HTMLElement | null>(null);
   const isSuppressingLifecycleSaveRef = useRef(false);
   const saveControllerRef = useRef<ReturnType<
     typeof createSaveController
@@ -49,6 +91,10 @@ export const App = () => {
   }
 
   const saveController = saveControllerRef.current;
+  const activeDocumentFilePath = loadedDocument?.filePath ?? null;
+  const activeDocumentWorkingDirectory = getParentDirectoryPathFromFilePath(
+    activeDocumentFilePath,
+  );
 
   // loading a file updates both editor content and top-bar metadata, so this
   // helper keeps startup and "Open..." behavior aligned in one place.
@@ -176,6 +222,49 @@ export const App = () => {
     }
   };
 
+  // The split ratio lives in React state so the default ratio is only a
+  // starting point and user drags can redefine the layout for the session.
+  const resizeWorkspacePanesFromClientX = (clientX: number) => {
+    const workspaceElement = workspaceElementRef.current;
+    if (!workspaceElement) {
+      return;
+    }
+
+    const workspaceBounds = workspaceElement.getBoundingClientRect();
+    if (workspaceBounds.width <= 0) {
+      return;
+    }
+
+    const nextEditorPaneWidthRatio =
+      (clientX - workspaceBounds.left) / workspaceBounds.width;
+    setEditorPaneWidthRatio(
+      clampEditorPaneWidthRatio(nextEditorPaneWidthRatio),
+    );
+  };
+
+  // Mouse drag listeners are attached to the window during the drag so resizing
+  // continues smoothly even when the pointer leaves the narrow splitter target.
+  const startWorkspaceDividerDrag = (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+
+    const handleWindowMouseMove = (mouseMoveEvent: MouseEvent) => {
+      resizeWorkspacePanesFromClientX(mouseMoveEvent.clientX);
+    };
+
+    const finishWorkspaceDividerDrag = () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', finishWorkspaceDividerDrag);
+      document.body.classList.remove('is-resizing-panes');
+    };
+
+    document.body.classList.add('is-resizing-panes');
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', finishWorkspaceDividerDrag);
+    resizeWorkspacePanesFromClientX(event.clientX);
+  };
+
   return (
     <>
       <header className="topbar">
@@ -203,8 +292,14 @@ export const App = () => {
         <div className="file-path">{loadedDocument?.filePath ?? ''}</div>
         <div className="save-status">{saveStatusText}</div>
       </header>
-      <main className="workspace">
-        <section className="pane">
+      <main
+        className="workspace workspace--split"
+        ref={workspaceElementRef}
+        style={{
+          gridTemplateColumns: `${editorPaneWidthRatio}fr 8px ${1 - editorPaneWidthRatio}fr`,
+        }}
+      >
+        <section className="pane workspace-pane workspace-pane--editor">
           <div className="pane-title">Document</div>
           <MarkdownEditorPane
             ref={markdownEditorPaneRef}
@@ -215,6 +310,17 @@ export const App = () => {
             }}
           />
         </section>
+        <div
+          className="workspace-divider"
+          aria-hidden="true"
+          onMouseDown={startWorkspaceDividerDrag}
+        />
+        <TerminalPane
+          title="Terminal"
+          targetFilePath={activeDocumentFilePath}
+          targetWorkingDirectory={activeDocumentWorkingDirectory}
+          showMetadataPanel={false}
+        />
       </main>
     </>
   );
