@@ -15,6 +15,10 @@ export type SaveMarkdownResponse = {
   ok: boolean;
 };
 
+export type ExternalMarkdownFileChangedEvent = {
+  filePath: string;
+};
+
 export type OpenMarkdownFileResponse =
   | { canceled: true }
   | ({ canceled: false } & LoadMarkdownResponse);

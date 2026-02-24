@@ -6,6 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
+  ExternalMarkdownFileChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   ResizeTerminalSessionRequest,
@@ -29,6 +30,23 @@ contextBridge.exposeInMainWorld('markdownApi', {
     ipcRenderer.invoke('editor:save-markdown', content),
   restoreCurrentMarkdownFromGit: (): Promise<RestoreMarkdownFromGitResponse> =>
     ipcRenderer.invoke('editor:restore-current-markdown-from-git'),
+  onExternalMarkdownFileChanged: (
+    handler: (event: ExternalMarkdownFileChangedEvent) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: ExternalMarkdownFileChangedEvent,
+    ) => {
+      handler(payload);
+    };
+    ipcRenderer.on('editor:external-markdown-file-changed', listener);
+    return () => {
+      ipcRenderer.removeListener(
+        'editor:external-markdown-file-changed',
+        listener,
+      );
+    };
+  },
 });
 
 // The terminal view uses a separate bridge so process control stays explicit

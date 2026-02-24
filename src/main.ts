@@ -7,10 +7,12 @@ import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { watch as watchWithChokidar, type FSWatcher } from 'chokidar';
 import started from 'electron-squirrel-startup';
 import * as nodePty from 'node-pty';
 
 import type {
+  ExternalMarkdownFileChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   ResizeTerminalSessionRequest,
@@ -45,6 +47,11 @@ let currentMarkdownFilePath: string | null = null;
 let bundledClaudeSystemPromptMarkdownText: string | null = null;
 const execFileAsync = promisify(execFile);
 const terminalSessionsById = new Map<string, nodePty.IPty>();
+let activeMarkdownFileWatcher: FSWatcher | null = null;
+let watchedMarkdownFilePath: string | null = null;
+let pendingExternalMarkdownChangeBroadcastTimeout: ReturnType<
+  typeof setTimeout
+> | null = null;
 
 type AppSettings = {
   lastOpenedFilePath?: string;
@@ -153,6 +160,75 @@ const canReadFile = async (filePath: string) => {
   } catch {
     return false;
   }
+};
+
+// Only the active editor document needs a watcher in this prototype, so this
+// helper tears down prior state before switching to a new file path.
+const stopWatchingActiveMarkdownFile = async () => {
+  if (pendingExternalMarkdownChangeBroadcastTimeout) {
+    clearTimeout(pendingExternalMarkdownChangeBroadcastTimeout);
+    pendingExternalMarkdownChangeBroadcastTimeout = null;
+  }
+
+  watchedMarkdownFilePath = null;
+  if (!activeMarkdownFileWatcher) {
+    return;
+  }
+
+  const watcherToClose = activeMarkdownFileWatcher;
+  activeMarkdownFileWatcher = null;
+  await watcherToClose.close();
+};
+
+// The main process owns file watching so renderers receive simple change
+// notifications without gaining direct filesystem watch capabilities.
+const broadcastExternalMarkdownFileChanged = (filePath: string) => {
+  const eventPayload: ExternalMarkdownFileChangedEvent = { filePath };
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    browserWindow.webContents.send(
+      'editor:external-markdown-file-changed',
+      eventPayload,
+    );
+  }
+};
+
+// Chokidar smooths over platform-specific save behavior, so this watcher treats
+// change/add events as a reload signal for the single active markdown file.
+const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
+  if (watchedMarkdownFilePath === filePath && activeMarkdownFileWatcher) {
+    return;
+  }
+
+  await stopWatchingActiveMarkdownFile();
+  watchedMarkdownFilePath = filePath;
+
+  const scheduleExternalChangeBroadcast = () => {
+    if (pendingExternalMarkdownChangeBroadcastTimeout) {
+      clearTimeout(pendingExternalMarkdownChangeBroadcastTimeout);
+    }
+
+    pendingExternalMarkdownChangeBroadcastTimeout = setTimeout(() => {
+      pendingExternalMarkdownChangeBroadcastTimeout = null;
+      if (!watchedMarkdownFilePath) {
+        return;
+      }
+
+      broadcastExternalMarkdownFileChanged(watchedMarkdownFilePath);
+    }, 150);
+  };
+
+  const watcher = watchWithChokidar(filePath, {
+    ignoreInitial: true,
+    persistent: true,
+  });
+
+  watcher.on('change', scheduleExternalChangeBroadcast);
+  watcher.on('add', scheduleExternalChangeBroadcast);
+  watcher.on('error', (error) => {
+    console.error(`Markdown file watcher error for ${filePath}`, error);
+  });
+
+  activeMarkdownFileWatcher = watcher;
 };
 
 const ensureDefaultUserFile = async () => {
@@ -343,6 +419,7 @@ const getTerminalSession = (sessionId: string) =>
 
 const loadCurrentMarkdown = async (): Promise<LoadMarkdownResponse> => {
   const filePath = await ensureCurrentMarkdownFilePath();
+  await ensureWatchingActiveMarkdownFile(filePath);
   const content = await fs.readFile(filePath, 'utf8');
   return { content, filePath };
 };
@@ -469,6 +546,7 @@ ipcMain.handle(
     const content = await fs.readFile(filePath, 'utf8');
     // Persist immediately so restarting the app reopens the newly selected file.
     await setCurrentMarkdownFilePath(filePath);
+    await ensureWatchingActiveMarkdownFile(filePath);
     return { canceled: false, content, filePath };
   },
 );
@@ -589,13 +667,18 @@ app.on('ready', () => {
 // for applications and their menu bar to stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
-  for (const terminalSession of terminalSessionsById.values()) {
-    terminalSession.kill('SIGTERM');
-  }
-  terminalSessionsById.clear();
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  const shutdownSessionsAndMaybeQuit = async () => {
+    await stopWatchingActiveMarkdownFile();
+    for (const terminalSession of terminalSessionsById.values()) {
+      terminalSession.kill('SIGTERM');
+    }
+    terminalSessionsById.clear();
+    if (process.platform !== 'darwin') {
+      app.quit();
+    }
+  };
+
+  void shutdownSessionsAndMaybeQuit();
 });
 
 app.on('activate', () => {

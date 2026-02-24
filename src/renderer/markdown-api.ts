@@ -4,6 +4,7 @@
 //
 
 import type {
+  ExternalMarkdownFileChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   RestoreMarkdownFromGitResponse,
@@ -15,6 +16,9 @@ type MarkdownApi = {
   openMarkdownFile: () => Promise<OpenMarkdownFileResponse>;
   saveMarkdown: (content: string) => Promise<SaveMarkdownResponse>;
   restoreCurrentMarkdownFromGit: () => Promise<RestoreMarkdownFromGitResponse>;
+  onExternalMarkdownFileChanged: (
+    handler: (event: ExternalMarkdownFileChangedEvent) => void,
+  ) => () => void;
 };
 
 declare global {

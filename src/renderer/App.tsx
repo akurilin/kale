@@ -127,6 +127,39 @@ export const App = () => {
     };
   }, []);
 
+  // External writes (for example from Claude in the terminal pane) should
+  // refresh the editor view so the app reflects the current on-disk document.
+  useEffect(() => {
+    const removeExternalChangeListener =
+      getMarkdownApi().onExternalMarkdownFileChanged((event) => {
+        if (
+          !activeDocumentFilePath ||
+          event.filePath !== activeDocumentFilePath
+        ) {
+          return;
+        }
+
+        void (async () => {
+          try {
+            const reloadedDocument = await getMarkdownApi().loadMarkdown();
+            if (reloadedDocument.filePath !== activeDocumentFilePath) {
+              return;
+            }
+
+            applyLoadedDocument(reloadedDocument);
+            setSaveStatusText('Reloaded from disk');
+          } catch (error) {
+            setSaveStatusText('Reload failed');
+            console.error(error);
+          }
+        })();
+      });
+
+    return () => {
+      removeExternalChangeListener();
+    };
+  }, [activeDocumentFilePath, applyLoadedDocument]);
+
   // blur and close should flush editor content through the existing save
   // controller so users are less likely to lose changes during lifecycle edges.
   useEffect(() => {
