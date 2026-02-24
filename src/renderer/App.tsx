@@ -4,6 +4,7 @@
 //
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -72,6 +73,9 @@ export const App = () => {
 
   const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
   const workspaceElementRef = useRef<HTMLElement | null>(null);
+  const activeWorkspaceDividerDragCleanupRef = useRef<(() => void) | null>(
+    null,
+  );
   const isSuppressingLifecycleSaveRef = useRef(false);
   const saveControllerRef = useRef<ReturnType<
     typeof createSaveController
@@ -98,12 +102,15 @@ export const App = () => {
 
   // loading a file updates both editor content and top-bar metadata, so this
   // helper keeps startup and "Open..." behavior aligned in one place.
-  const applyLoadedDocument = (nextLoadedDocument: LoadMarkdownResponse) => {
-    saveController.markContentAsSavedFromLoad(nextLoadedDocument.content);
-    setLoadedDocument(nextLoadedDocument);
-    setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
-    setSaveStatusText('Saved');
-  };
+  const applyLoadedDocument = useCallback(
+    (nextLoadedDocument: LoadMarkdownResponse) => {
+      saveController.markContentAsSavedFromLoad(nextLoadedDocument.content);
+      setLoadedDocument(nextLoadedDocument);
+      setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
+      setSaveStatusText('Saved');
+    },
+    [saveController],
+  );
 
   // startup is async because the main process decides which file path/content
   // to restore and the renderer shell should reflect that loading state.
@@ -125,7 +132,7 @@ export const App = () => {
     return () => {
       isDisposed = true;
     };
-  }, []);
+  }, [applyLoadedDocument]);
 
   // External writes (for example from Claude in the terminal pane) should
   // refresh the editor view so the app reflects the current on-disk document.
@@ -184,6 +191,15 @@ export const App = () => {
       window.removeEventListener('beforeunload', saveCurrentEditorContent);
     };
   }, [saveController]);
+
+  // Window-scoped drag listeners are attached outside React's event system, so
+  // unmount cleanup must release any active drag handlers to avoid leaks.
+  useEffect(() => {
+    return () => {
+      activeWorkspaceDividerDragCleanupRef.current?.();
+      activeWorkspaceDividerDragCleanupRef.current = null;
+    };
+  }, []);
 
   // opening another file should behave like switching documents in an editor
   // and not allow overlapping native dialogs or skipped debounce flushes.
@@ -281,6 +297,7 @@ export const App = () => {
     event: ReactMouseEvent<HTMLDivElement>,
   ) => {
     event.preventDefault();
+    activeWorkspaceDividerDragCleanupRef.current?.();
 
     const handleWindowMouseMove = (mouseMoveEvent: MouseEvent) => {
       resizeWorkspacePanesFromClientX(mouseMoveEvent.clientX);
@@ -290,8 +307,15 @@ export const App = () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', finishWorkspaceDividerDrag);
       document.body.classList.remove('is-resizing-panes');
+      if (
+        activeWorkspaceDividerDragCleanupRef.current ===
+        finishWorkspaceDividerDrag
+      ) {
+        activeWorkspaceDividerDragCleanupRef.current = null;
+      }
     };
 
+    activeWorkspaceDividerDragCleanupRef.current = finishWorkspaceDividerDrag;
     document.body.classList.add('is-resizing-panes');
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', finishWorkspaceDividerDrag);

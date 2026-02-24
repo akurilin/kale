@@ -3,7 +3,7 @@
 // embedded in larger layouts while staying focused on one file context.
 //
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from 'xterm';
 
@@ -52,7 +52,7 @@ export const TerminalPane = ({
 }: TerminalPaneProps) => {
   const [session, setSession] = useState<TerminalSessionState | null>(null);
   const [workingDirectoryInput, setWorkingDirectoryInput] = useState('');
-  const [, setStatusText] = useState('Waiting for file context...');
+  const [statusText, setStatusText] = useState('Waiting for file context...');
   const [launchErrorText, setLaunchErrorText] = useState<string | null>(null);
   const [isStartingSession, setIsStartingSession] = useState(false);
 
@@ -61,6 +61,7 @@ export const TerminalPane = ({
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const isStartingSessionRef = useRef(false);
+  const workingDirectoryInputRef = useRef(workingDirectoryInput);
   const lastActivatedTargetContextKeyRef = useRef<string | null>(null);
   const activeTargetFilePathRef = useRef<string | null>(targetFilePath);
   const activeTargetWorkingDirectoryRef = useRef<string | null>(
@@ -76,6 +77,10 @@ export const TerminalPane = ({
   useEffect(() => {
     isStartingSessionRef.current = isStartingSession;
   }, [isStartingSession]);
+
+  useEffect(() => {
+    workingDirectoryInputRef.current = workingDirectoryInput;
+  }, [workingDirectoryInput]);
 
   useEffect(() => {
     activeTargetFilePathRef.current = targetFilePath;
@@ -231,87 +236,93 @@ export const TerminalPane = ({
     setStatusText('Ready to start terminal');
   }, [targetWorkingDirectory, targetFilePath]);
 
-  // This helper centralizes session start behavior so file-change auto-restart
-  // and manual restart actions follow the same PTY lifecycle and status logic.
-  const startSessionForTargetContext = async (
-    requestedWorkingDirectory?: string,
-  ) => {
-    const currentTargetFilePath = activeTargetFilePathRef.current;
-    const currentTargetWorkingDirectory =
-      activeTargetWorkingDirectoryRef.current;
-    if (!currentTargetFilePath || !currentTargetWorkingDirectory) {
-      return;
-    }
-
-    if (isStartingSessionRef.current || sessionRef.current) {
-      return;
-    }
-
-    setIsStartingSession(true);
-    setLaunchErrorText(null);
-    setStatusText('Starting terminal...');
-
-    const normalizedRequestedWorkingDirectory =
-      requestedWorkingDirectory?.trim() ?? workingDirectoryInput.trim();
-    try {
-      const startResponse = await getTerminalApi().startSession({
-        cwd:
-          normalizedRequestedWorkingDirectory || currentTargetWorkingDirectory,
-        targetFilePath: currentTargetFilePath,
-      });
-      handleStartSessionResponse(startResponse);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Unknown terminal start error';
-      setStatusText('Failed to start terminal');
-      setLaunchErrorText(errorMessage);
-      xtermRef.current?.writeln('');
-      xtermRef.current?.writeln(`[launch failed] IPC request rejected`);
-      xtermRef.current?.writeln(errorMessage);
-      xtermRef.current?.writeln('');
-    } finally {
-      setIsStartingSession(false);
-    }
-  };
-
   // The start response drives status UI and the active session id used to route
   // streamed PTY output into this pane's xterm instance.
-  const handleStartSessionResponse = (
-    startResponse: StartTerminalSessionResponse,
-  ) => {
-    if (!startResponse.ok) {
-      setStatusText('Failed to start terminal');
-      setLaunchErrorText(startResponse.errorMessage);
+  const handleStartSessionResponse = useCallback(
+    (startResponse: StartTerminalSessionResponse) => {
+      if (!startResponse.ok) {
+        setStatusText('Failed to start terminal');
+        setLaunchErrorText(startResponse.errorMessage);
+        xtermRef.current?.writeln('');
+        xtermRef.current?.writeln(
+          `[launch failed] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
+        );
+        xtermRef.current?.writeln(startResponse.errorMessage);
+        xtermRef.current?.writeln('');
+        return;
+      }
+
+      setSession({
+        sessionId: startResponse.sessionId,
+        pid: startResponse.pid,
+        command: startResponse.command,
+        args: startResponse.args,
+      });
+      setStatusText(`Running (pid ${startResponse.pid})`);
       xtermRef.current?.writeln('');
       xtermRef.current?.writeln(
-        `[launch failed] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
+        `[session started] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
       );
-      xtermRef.current?.writeln(startResponse.errorMessage);
+      xtermRef.current?.writeln(`[cwd] ${startResponse.cwd}`);
+      xtermRef.current?.writeln(`[target] ${startResponse.targetFilePath}`);
       xtermRef.current?.writeln('');
-      return;
-    }
+      fitAddonRef.current?.fit();
+      void getTerminalApi().resizeSession({
+        sessionId: startResponse.sessionId,
+        cols: xtermRef.current?.cols ?? 120,
+        rows: xtermRef.current?.rows ?? 40,
+      });
+    },
+    [],
+  );
 
-    setSession({
-      sessionId: startResponse.sessionId,
-      pid: startResponse.pid,
-      command: startResponse.command,
-      args: startResponse.args,
-    });
-    setStatusText(`Running (pid ${startResponse.pid})`);
-    xtermRef.current?.writeln('');
-    xtermRef.current?.writeln(
-      `[session started] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
-    );
-    xtermRef.current?.writeln(`[cwd] ${startResponse.cwd}`);
-    xtermRef.current?.writeln(`[target] ${startResponse.targetFilePath}`);
-    xtermRef.current?.writeln('');
-    fitAddonRef.current?.fit();
-    void getTerminalApi().resizeSession({
-      sessionId: startResponse.sessionId,
-      cols: xtermRef.current?.cols ?? 120,
-      rows: xtermRef.current?.rows ?? 40,
-    });
-  };
+  // This helper centralizes session start behavior so file-change auto-restart
+  // and manual restart actions follow the same PTY lifecycle and status logic.
+  const startSessionForTargetContext = useCallback(
+    async (requestedWorkingDirectory?: string) => {
+      const currentTargetFilePath = activeTargetFilePathRef.current;
+      const currentTargetWorkingDirectory =
+        activeTargetWorkingDirectoryRef.current;
+      if (!currentTargetFilePath || !currentTargetWorkingDirectory) {
+        return;
+      }
+
+      if (isStartingSessionRef.current || sessionRef.current) {
+        return;
+      }
+
+      setIsStartingSession(true);
+      setLaunchErrorText(null);
+      setStatusText('Starting terminal...');
+
+      const normalizedRequestedWorkingDirectory =
+        requestedWorkingDirectory?.trim() ??
+        workingDirectoryInputRef.current.trim();
+      try {
+        const startResponse = await getTerminalApi().startSession({
+          cwd:
+            normalizedRequestedWorkingDirectory ||
+            currentTargetWorkingDirectory,
+          targetFilePath: currentTargetFilePath,
+        });
+        handleStartSessionResponse(startResponse);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Unknown terminal start error';
+        setStatusText('Failed to start terminal');
+        setLaunchErrorText(errorMessage);
+        xtermRef.current?.writeln('');
+        xtermRef.current?.writeln(`[launch failed] IPC request rejected`);
+        xtermRef.current?.writeln(errorMessage);
+        xtermRef.current?.writeln('');
+      } finally {
+        setIsStartingSession(false);
+      }
+    },
+    [handleStartSessionResponse],
+  );
 
   // File switches should produce a clean CLI session in the new file's folder,
   // so this effect tears down any active session and starts a fresh one per file.
@@ -359,7 +370,7 @@ export const TerminalPane = ({
     return () => {
       isCancelled = true;
     };
-  }, [targetFilePath, targetWorkingDirectory]);
+  }, [targetFilePath, targetWorkingDirectory, startSessionForTargetContext]);
 
   return (
     <section className="pane terminal-pane">
@@ -403,6 +414,10 @@ export const TerminalPane = ({
                   : targetFilePath
                 : '...'}
             </span>
+          </div>
+          <div>
+            <span className="terminal-metadata-label">status</span>
+            <span className="terminal-metadata-value">{statusText}</span>
           </div>
           <div>
             <span className="terminal-metadata-label">process</span>

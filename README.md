@@ -19,7 +19,7 @@ What works right now:
 - The terminal implementation is now split into a reusable embedded `TerminalPane` component and a standalone `TerminalView` wrapper used by `VITE_KALE_VIEW=terminal`.
 - The project now targets TypeScript `5.9.3` for modern type-system features and improved React typing support.
 - Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
-- The active markdown file is watched in the Electron main process with `chokidar`; external edits trigger an automatic renderer reload (v1 behavior currently does not avoid self-save reload churn or protect unsaved local edits).
+- The active markdown file is watched in the Electron main process with `chokidar`; external edits trigger an automatic renderer reload, and app-originated saves now use a short watcher suppression window to avoid autosave self-reload churn (unsaved-local-edit protection is still not implemented).
 - A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
 - The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
 - The embedded terminal currently launches `claude` directly (not a shell) with a prose-editing `--append-system-prompt` and `--dangerously-skip-permissions` for Kale-specific assistant behavior.

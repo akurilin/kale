@@ -39,6 +39,7 @@ const DEFAULT_USER_FILE_NAME = 'what-the-best-looks-like.md';
 const SETTINGS_FILE_NAME = 'settings.json';
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
+const SELF_SAVE_WATCHER_SUPPRESSION_MS = 1000;
 // In-memory cache for the active file path. We still re-validate on use because
 // the file can be moved/deleted outside the app between operations.
 let currentMarkdownFilePath: string | null = null;
@@ -52,6 +53,7 @@ let watchedMarkdownFilePath: string | null = null;
 let pendingExternalMarkdownChangeBroadcastTimeout: ReturnType<
   typeof setTimeout
 > | null = null;
+const recentAppSaveSuppressUntilByFilePath = new Map<string, number>();
 
 type AppSettings = {
   lastOpenedFilePath?: string;
@@ -165,12 +167,18 @@ const canReadFile = async (filePath: string) => {
 // Only the active editor document needs a watcher in this prototype, so this
 // helper tears down prior state before switching to a new file path.
 const stopWatchingActiveMarkdownFile = async () => {
+  const previousWatchedMarkdownFilePath = watchedMarkdownFilePath;
   if (pendingExternalMarkdownChangeBroadcastTimeout) {
     clearTimeout(pendingExternalMarkdownChangeBroadcastTimeout);
     pendingExternalMarkdownChangeBroadcastTimeout = null;
   }
 
   watchedMarkdownFilePath = null;
+  if (previousWatchedMarkdownFilePath) {
+    recentAppSaveSuppressUntilByFilePath.delete(
+      previousWatchedMarkdownFilePath,
+    );
+  }
   if (!activeMarkdownFileWatcher) {
     return;
   }
@@ -178,6 +186,31 @@ const stopWatchingActiveMarkdownFile = async () => {
   const watcherToClose = activeMarkdownFileWatcher;
   activeMarkdownFileWatcher = null;
   await watcherToClose.close();
+};
+
+// Renderer-initiated saves should not immediately echo back through the file
+// watcher because that reload loop replaces the editor document mid-typing.
+const markMarkdownFilePathAsRecentlySavedByApp = (filePath: string) => {
+  recentAppSaveSuppressUntilByFilePath.set(
+    filePath,
+    Date.now() + SELF_SAVE_WATCHER_SUPPRESSION_MS,
+  );
+};
+
+// File-watch notifications are only useful for external writes, so a short
+// suppression window filters out the app's own save events after IPC writes.
+const shouldSuppressExternalChangeBroadcastForFilePath = (filePath: string) => {
+  const suppressUntil = recentAppSaveSuppressUntilByFilePath.get(filePath);
+  if (!suppressUntil) {
+    return false;
+  }
+
+  if (Date.now() < suppressUntil) {
+    return true;
+  }
+
+  recentAppSaveSuppressUntilByFilePath.delete(filePath);
+  return false;
 };
 
 // The main process owns file watching so renderers receive simple change
@@ -210,6 +243,14 @@ const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
     pendingExternalMarkdownChangeBroadcastTimeout = setTimeout(() => {
       pendingExternalMarkdownChangeBroadcastTimeout = null;
       if (!watchedMarkdownFilePath) {
+        return;
+      }
+
+      if (
+        shouldSuppressExternalChangeBroadcastForFilePath(
+          watchedMarkdownFilePath,
+        )
+      ) {
         return;
       }
 
@@ -497,6 +538,7 @@ ipcMain.handle('editor:load-markdown', async () => {
 
 ipcMain.handle('editor:save-markdown', async (_event, content: string) => {
   const filePath = await ensureCurrentMarkdownFilePath();
+  markMarkdownFilePathAsRecentlySavedByApp(filePath);
   await fs.writeFile(filePath, content, 'utf8');
   return { ok: true };
 });
