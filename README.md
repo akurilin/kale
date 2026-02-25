@@ -16,7 +16,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 
 - Start in development: `npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
-- Capture a screenshot of an already-running `kale` Electron window into `/tmp`: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
+- Capture a screenshot of an already-running `kale` Electron window into `/tmp` as a JPG: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Run tests: `npm test`
 - Run tests in watch mode: `npm run test:watch`
 - Format files: `npm run format`

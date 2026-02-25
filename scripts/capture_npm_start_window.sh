@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ $# -gt 2 ]]; then
-  echo "Usage: $0 [capture_delay_seconds] [output_png_path]" >&2
+  echo "Usage: $0 [capture_delay_seconds] [output_jpg_path]" >&2
   exit 1
 fi
 
@@ -13,7 +13,7 @@ OUTPUT_PATH="${2:-}"
 if [[ -n "$OUTPUT_PATH" ]]; then
   mkdir -p "$(dirname "$OUTPUT_PATH")"
 else
-  OUTPUT_PATH="/tmp/kale-window-$(date +%Y%m%d-%H%M%S).png"
+  OUTPUT_PATH="/tmp/kale-window-$(date +%Y%m%d-%H%M%S).jpg"
 fi
 
 find_window_id() {
@@ -67,7 +67,7 @@ if [[ "$CAPTURE_DELAY_SECONDS" != "0" ]]; then
   sleep "$CAPTURE_DELAY_SECONDS"
 fi
 
-screencapture -x -o -l "$WINDOW_ID" "$OUTPUT_PATH"
+screencapture -x -o -t jpg -l "$WINDOW_ID" "$OUTPUT_PATH"
 echo "Captured kale window ($WINDOW_ID) -> $OUTPUT_PATH"
 echo "Screenshot file: $OUTPUT_PATH"
 echo "$OUTPUT_PATH"
