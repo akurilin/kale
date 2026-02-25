@@ -102,14 +102,28 @@ export const App = () => {
     activeDocumentFilePath,
   );
 
-  // loading a file updates both editor content and top-bar metadata, so this
-  // helper keeps startup and "Open..." behavior aligned in one place.
+  // Loading a file updates both editor content and top-bar metadata. Save
+  // state synchronization is intentionally deferred to after the editor
+  // dispatch (via onDocumentContentReplacedFromDisk) so that any save timers
+  // created by user keystrokes during the async reload gap are correctly
+  // cleared at the moment the editor content is actually replaced, not before.
   const applyLoadedDocument = useCallback(
     (nextLoadedDocument: LoadMarkdownResponse) => {
-      saveController.markContentAsSavedFromLoad(nextLoadedDocument.content);
       setLoadedDocument(nextLoadedDocument);
       setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
       setSaveStatusText('Saved');
+    },
+    [],
+  );
+
+  // This callback fires after MarkdownEditorPane's useEffect has dispatched
+  // the content replacement into CodeMirror. Syncing save state here (instead
+  // of in applyLoadedDocument) guarantees that stale save timers from
+  // keystrokes typed during the async reload gap are cleared at the right
+  // moment — after the editor content is actually replaced.
+  const handleDocumentContentReplacedFromDisk = useCallback(
+    (replacedWithContent: string) => {
+      saveController.markContentAsSavedFromLoad(replacedWithContent);
     },
     [saveController],
   );
@@ -136,10 +150,14 @@ export const App = () => {
     };
   }, [applyLoadedDocument]);
 
-  // External writes (for example from Claude in the terminal pane) should
-  // refresh the editor view so the app reflects the current on-disk document.
+  // File-change notifications arrive for every disk write — including the
+  // app's own saves. Content comparison against the save controller's last
+  // known saved content distinguishes self-save echo-backs (ignore) from
+  // genuine external changes (reload). This replaces the old timestamp-based
+  // suppression heuristic with a deterministic check that is immune to
+  // filesystem event timing variations.
   useEffect(() => {
-    const removeExternalChangeListener =
+    const removeFileChangeListener =
       getMarkdownApi().onExternalMarkdownFileChanged((event) => {
         if (
           !activeDocumentFilePath ||
@@ -155,6 +173,18 @@ export const App = () => {
               return;
             }
 
+            // Content comparison: if the disk content matches what we last
+            // saved, this notification is the echo-back from our own save.
+            // Skip the reload so user keystrokes are never interrupted.
+            const lastSavedContent = saveController.getLastSavedContent();
+            if (reloadedDocument.content === lastSavedContent) {
+              return;
+            }
+
+            // Genuine external change — update the editor. The
+            // applyLoadedDocument flow will propagate the new content to
+            // MarkdownEditorPane, which calls onDocumentContentReplacedFromDisk
+            // after the editor dispatch to sync save state at the right moment.
             applyLoadedDocument(reloadedDocument);
             setSaveStatusText('Reloaded from disk');
           } catch (error) {
@@ -165,9 +195,9 @@ export const App = () => {
       });
 
     return () => {
-      removeExternalChangeListener();
+      removeFileChangeListener();
     };
-  }, [activeDocumentFilePath, applyLoadedDocument]);
+  }, [activeDocumentFilePath, applyLoadedDocument, saveController]);
 
   // blur and close should flush editor content through the existing save
   // controller so users are less likely to lose changes during lifecycle edges.
@@ -371,6 +401,9 @@ export const App = () => {
             onUserEditedDocument={(content) => {
               saveController.scheduleSave(content);
             }}
+            onDocumentContentReplacedFromDisk={
+              handleDocumentContentReplacedFromDisk
+            }
           />
         </section>
         <div

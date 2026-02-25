@@ -87,6 +87,7 @@ type MarkdownEditorPaneProps = {
   loadedDocumentContent: string | null;
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
+  onDocumentContentReplacedFromDisk?: (replacedWithContent: string) => void;
   onSelectionHasTextChanged?: (selectionHasText: boolean) => void;
   onInlineCommentAnchorGeometryChanged?: () => void;
   onInlineCommentCreationAnchorChanged?: (
@@ -119,6 +120,7 @@ const MarkdownEditorPaneImpl = (
     loadedDocumentContent,
     loadedDocumentRevision,
     onUserEditedDocument,
+    onDocumentContentReplacedFromDisk,
     onSelectionHasTextChanged,
     onInlineCommentAnchorGeometryChanged,
     onInlineCommentCreationAnchorChanged,
@@ -129,6 +131,9 @@ const MarkdownEditorPaneImpl = (
   const editorViewRef = useRef<EditorView | null>(null);
   const isApplyingLoadedDocumentRef = useRef(false);
   const onUserEditedDocumentRef = useRef(onUserEditedDocument);
+  const onDocumentContentReplacedFromDiskRef = useRef(
+    onDocumentContentReplacedFromDisk,
+  );
   const onSelectionHasTextChangedRef = useRef(onSelectionHasTextChanged);
   const onInlineCommentAnchorGeometryChangedRef = useRef(
     onInlineCommentAnchorGeometryChanged,
@@ -142,6 +147,13 @@ const MarkdownEditorPaneImpl = (
   useEffect(() => {
     onUserEditedDocumentRef.current = onUserEditedDocument;
   }, [onUserEditedDocument]);
+
+  // The post-replacement callback ref stays current so the content-swap
+  // useEffect always invokes the latest save-state synchronization function.
+  useEffect(() => {
+    onDocumentContentReplacedFromDiskRef.current =
+      onDocumentContentReplacedFromDisk;
+  }, [onDocumentContentReplacedFromDisk]);
 
   // Selection listeners are also attached once, so a ref keeps the latest
   // callback available without recreating the editor instance.
@@ -440,8 +452,12 @@ const MarkdownEditorPaneImpl = (
     };
   }, []);
 
-  // external file loads replace the document contents in-place so CodeMirror
+  // External file loads replace the document contents in-place so CodeMirror
   // can preserve editor instance state instead of being torn down and rebuilt.
+  // After the dispatch, onDocumentContentReplacedFromDisk is called so the
+  // save controller can sync its state (clear stale save timers, update
+  // lastSavedContent) at the exact moment the editor content is replaced —
+  // not earlier when stale timers could still be created in the async gap.
   useEffect(() => {
     if (loadedDocumentContent === null) {
       return;
@@ -454,6 +470,9 @@ const MarkdownEditorPaneImpl = (
 
     const currentContent = editorView.state.doc.toString();
     if (currentContent === loadedDocumentContent) {
+      // Content already matches (e.g. initial mount or no-op reload). Still
+      // sync save state so the controller knows the editor is up to date.
+      onDocumentContentReplacedFromDiskRef.current?.(loadedDocumentContent);
       return;
     }
 
@@ -471,6 +490,10 @@ const MarkdownEditorPaneImpl = (
     } finally {
       isApplyingLoadedDocumentRef.current = false;
     }
+
+    // Sync save state after the editor dispatch so any save timers created
+    // by user keystrokes during the async reload gap are cleared here.
+    onDocumentContentReplacedFromDiskRef.current?.(loadedDocumentContent);
   }, [loadedDocumentContent, loadedDocumentRevision]);
 
   return <div id="editor" className="editor" ref={editorContainerElementRef} />;

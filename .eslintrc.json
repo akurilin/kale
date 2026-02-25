@@ -13,5 +13,19 @@
     "plugin:import/typescript",
     "prettier"
   ],
-  "parser": "@typescript-eslint/parser"
+  "parser": "@typescript-eslint/parser",
+  "rules": {
+    "import/no-unresolved": ["error", { "ignore": ["node-diff3"] }]
+  },
+  "overrides": [
+    {
+      "files": ["vitest.config.ts", "**/*.test.ts"],
+      "rules": {
+        "import/no-unresolved": [
+          "error",
+          { "ignore": ["vitest", "vitest/config"] }
+        ]
+      }
+    }
+  ]
 }

@@ -12,6 +12,7 @@ type SaveControllerOptions = {
 
 type SaveController = {
   clearPendingSaveTimer: () => void;
+  getLastSavedContent: () => string;
   markContentAsSavedFromLoad: (content: string) => void;
   saveNow: (content: string) => Promise<void>;
   scheduleSave: (content: string) => void;
@@ -38,6 +39,10 @@ export const createSaveController = ({
     clearTimeout(saveTimer);
     saveTimer = null;
   };
+
+  // The reload handler needs the last-saved content to distinguish self-save
+  // echo-backs from genuine external changes via content comparison.
+  const getLastSavedContent = () => lastSavedContent;
 
   // file loads replace editor content with already-persisted text, so the
   // controller must reset dedupe state to avoid an immediate redundant save.
@@ -92,6 +97,7 @@ export const createSaveController = ({
 
   return {
     clearPendingSaveTimer,
+    getLastSavedContent,
     markContentAsSavedFromLoad,
     saveNow,
     scheduleSave,

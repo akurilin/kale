@@ -35,6 +35,7 @@ type DocumentCommentsPaneProps = {
   loadedDocumentContent: string | null;
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
+  onDocumentContentReplacedFromDisk?: (replacedWithContent: string) => void;
 };
 
 export type DocumentCommentsPaneHandle = {
@@ -90,6 +91,7 @@ const DocumentCommentsPaneImpl = (
     loadedDocumentContent,
     loadedDocumentRevision,
     onUserEditedDocument,
+    onDocumentContentReplacedFromDisk,
   }: DocumentCommentsPaneProps,
   ref: ForwardedRef<DocumentCommentsPaneHandle>,
 ) => {
@@ -337,6 +339,7 @@ const DocumentCommentsPaneImpl = (
         loadedDocumentContent={loadedDocumentContent}
         loadedDocumentRevision={loadedDocumentRevision}
         onUserEditedDocument={handleUserEditedDocument}
+        onDocumentContentReplacedFromDisk={onDocumentContentReplacedFromDisk}
         onInlineCommentAnchorGeometryChanged={
           handleInlineCommentAnchorGeometryChanged
         }

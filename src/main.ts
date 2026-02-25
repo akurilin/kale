@@ -39,7 +39,6 @@ const DEFAULT_USER_FILE_NAME = 'what-the-best-looks-like.md';
 const SETTINGS_FILE_NAME = 'settings.json';
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
-const SELF_SAVE_WATCHER_SUPPRESSION_MS = 1000;
 const execFileAsync = promisify(execFile);
 // The Electron main process is a singleton in this app, so runtime-only mutable
 // state stays module-scoped here until the file is split into service modules.
@@ -49,10 +48,9 @@ const appRuntimeState: {
   terminalSessionsById: Map<string, nodePty.IPty>;
   activeMarkdownFileWatcher: FSWatcher | null;
   watchedMarkdownFilePath: string | null;
-  pendingExternalMarkdownChangeBroadcastTimeout: ReturnType<
+  pendingFileChangeBroadcastDebounceTimeout: ReturnType<
     typeof setTimeout
   > | null;
-  recentAppSaveSuppressUntilByFilePath: Map<string, number>;
 } = {
   // In-memory cache for the active file path. We still re-validate on use
   // because the file can be moved/deleted outside the app between operations.
@@ -63,8 +61,7 @@ const appRuntimeState: {
   terminalSessionsById: new Map<string, nodePty.IPty>(),
   activeMarkdownFileWatcher: null,
   watchedMarkdownFilePath: null,
-  pendingExternalMarkdownChangeBroadcastTimeout: null,
-  recentAppSaveSuppressUntilByFilePath: new Map<string, number>(),
+  pendingFileChangeBroadcastDebounceTimeout: null,
 };
 
 type AppSettings = {
@@ -179,19 +176,12 @@ const canReadFile = async (filePath: string) => {
 // Only the active editor document needs a watcher in this prototype, so this
 // helper tears down prior state before switching to a new file path.
 const stopWatchingActiveMarkdownFile = async () => {
-  const previousWatchedMarkdownFilePath =
-    appRuntimeState.watchedMarkdownFilePath;
-  if (appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout) {
-    clearTimeout(appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout);
-    appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout = null;
+  if (appRuntimeState.pendingFileChangeBroadcastDebounceTimeout) {
+    clearTimeout(appRuntimeState.pendingFileChangeBroadcastDebounceTimeout);
+    appRuntimeState.pendingFileChangeBroadcastDebounceTimeout = null;
   }
 
   appRuntimeState.watchedMarkdownFilePath = null;
-  if (previousWatchedMarkdownFilePath) {
-    appRuntimeState.recentAppSaveSuppressUntilByFilePath.delete(
-      previousWatchedMarkdownFilePath,
-    );
-  }
   if (!appRuntimeState.activeMarkdownFileWatcher) {
     return;
   }
@@ -201,35 +191,11 @@ const stopWatchingActiveMarkdownFile = async () => {
   await watcherToClose.close();
 };
 
-// Renderer-initiated saves should not immediately echo back through the file
-// watcher because that reload loop replaces the editor document mid-typing.
-const markMarkdownFilePathAsRecentlySavedByApp = (filePath: string) => {
-  appRuntimeState.recentAppSaveSuppressUntilByFilePath.set(
-    filePath,
-    Date.now() + SELF_SAVE_WATCHER_SUPPRESSION_MS,
-  );
-};
-
-// File-watch notifications are only useful for external writes, so a short
-// suppression window filters out the app's own save events after IPC writes.
-const shouldSuppressExternalChangeBroadcastForFilePath = (filePath: string) => {
-  const suppressUntil =
-    appRuntimeState.recentAppSaveSuppressUntilByFilePath.get(filePath);
-  if (!suppressUntil) {
-    return false;
-  }
-
-  if (Date.now() < suppressUntil) {
-    return true;
-  }
-
-  appRuntimeState.recentAppSaveSuppressUntilByFilePath.delete(filePath);
-  return false;
-};
-
 // The main process owns file watching so renderers receive simple change
 // notifications without gaining direct filesystem watch capabilities.
-const broadcastExternalMarkdownFileChanged = (filePath: string) => {
+// The renderer decides whether to act on each notification using content
+// comparison, so main broadcasts every change unconditionally.
+const broadcastMarkdownFileChanged = (filePath: string) => {
   const eventPayload: ExternalMarkdownFileChangedEvent = { filePath };
   for (const browserWindow of BrowserWindow.getAllWindows()) {
     browserWindow.webContents.send(
@@ -239,8 +205,12 @@ const broadcastExternalMarkdownFileChanged = (filePath: string) => {
   }
 };
 
-// Chokidar smooths over platform-specific save behavior, so this watcher treats
-// change/add events as a reload signal for the single active markdown file.
+// Chokidar smooths over platform-specific save behavior, so this watcher
+// treats change/add events as a notification to the renderer. The 150ms
+// debounce deduplicates rapid chokidar events (some platforms fire multiple
+// events per write), but correctness does not depend on it — the renderer
+// uses content comparison to distinguish self-save echo-backs from genuine
+// external changes.
 const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
   if (
     appRuntimeState.watchedMarkdownFilePath === filePath &&
@@ -252,31 +222,19 @@ const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
   await stopWatchingActiveMarkdownFile();
   appRuntimeState.watchedMarkdownFilePath = filePath;
 
-  const scheduleExternalChangeBroadcast = () => {
-    if (appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout) {
-      clearTimeout(
-        appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout,
-      );
+  const scheduleFileChangeBroadcast = () => {
+    if (appRuntimeState.pendingFileChangeBroadcastDebounceTimeout) {
+      clearTimeout(appRuntimeState.pendingFileChangeBroadcastDebounceTimeout);
     }
 
-    appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout = setTimeout(
+    appRuntimeState.pendingFileChangeBroadcastDebounceTimeout = setTimeout(
       () => {
-        appRuntimeState.pendingExternalMarkdownChangeBroadcastTimeout = null;
+        appRuntimeState.pendingFileChangeBroadcastDebounceTimeout = null;
         if (!appRuntimeState.watchedMarkdownFilePath) {
           return;
         }
 
-        if (
-          shouldSuppressExternalChangeBroadcastForFilePath(
-            appRuntimeState.watchedMarkdownFilePath,
-          )
-        ) {
-          return;
-        }
-
-        broadcastExternalMarkdownFileChanged(
-          appRuntimeState.watchedMarkdownFilePath,
-        );
+        broadcastMarkdownFileChanged(appRuntimeState.watchedMarkdownFilePath);
       },
       150,
     );
@@ -287,8 +245,8 @@ const ensureWatchingActiveMarkdownFile = async (filePath: string) => {
     persistent: true,
   });
 
-  watcher.on('change', scheduleExternalChangeBroadcast);
-  watcher.on('add', scheduleExternalChangeBroadcast);
+  watcher.on('change', scheduleFileChangeBroadcast);
+  watcher.on('add', scheduleFileChangeBroadcast);
   watcher.on('error', (error) => {
     console.error(`Markdown file watcher error for ${filePath}`, error);
   });
@@ -565,7 +523,6 @@ ipcMain.handle('editor:load-markdown', async () => {
 
 ipcMain.handle('editor:save-markdown', async (_event, content: string) => {
   const filePath = await ensureCurrentMarkdownFilePath();
-  markMarkdownFilePathAsRecentlySavedByApp(filePath);
   await fs.writeFile(filePath, content, 'utf8');
   return { ok: true };
 });
