@@ -15,16 +15,11 @@ import {
 import type { LoadMarkdownResponse } from '../shared-types';
 import { createSaveController } from './save-controller';
 import {
-  MarkdownEditorPane,
-  type MarkdownEditorPaneHandle,
-} from './MarkdownEditorPane';
+  DocumentCommentsPane,
+  type DocumentCommentsPaneHandle,
+} from './DocumentCommentsPane';
 import { getMarkdownApi } from './markdown-api';
 import { TerminalPane } from './TerminalPane';
-import { InlineCommentsSidebar } from './InlineCommentsSidebar';
-import {
-  parseInlineCommentsFromMarkdown,
-  type InlineComment,
-} from './inline-comments';
 
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
@@ -32,9 +27,6 @@ const INITIAL_SAVE_STATUS_TEXT = 'Ready';
 const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
 const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
 const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
-const INLINE_COMMENT_SELECTION_BUTTON_WIDTH = 92;
-const INLINE_COMMENT_SELECTION_BUTTON_HEIGHT = 34;
-const INLINE_COMMENT_SELECTION_BUTTON_MARGIN = 8;
 
 // The renderer needs a folder path for terminal startup, so this helper keeps
 // path parsing local and avoids coupling the pane to full document responses.
@@ -79,14 +71,9 @@ export const App = () => {
   const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
     DEFAULT_EDITOR_PANE_WIDTH_RATIO,
   );
-  const [inlineComments, setInlineComments] = useState<InlineComment[]>([]);
-  const [inlineCommentSelectionAnchor, setInlineCommentSelectionAnchor] =
-    useState<{ top: number; left: number } | null>(null);
-  const [autoFocusInlineCommentId, setAutoFocusInlineCommentId] = useState<
-    string | null
-  >(null);
-
-  const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
+  const documentCommentsPaneRef = useRef<DocumentCommentsPaneHandle | null>(
+    null,
+  );
   const workspaceElementRef = useRef<HTMLElement | null>(null);
   const activeWorkspaceDividerDragCleanupRef = useRef<(() => void) | null>(
     null,
@@ -122,9 +109,6 @@ export const App = () => {
       saveController.markContentAsSavedFromLoad(nextLoadedDocument.content);
       setLoadedDocument(nextLoadedDocument);
       setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
-      setInlineComments(
-        parseInlineCommentsFromMarkdown(nextLoadedDocument.content),
-      );
       setSaveStatusText('Saved');
     },
     [saveController],
@@ -193,7 +177,8 @@ export const App = () => {
         return;
       }
 
-      const currentContent = markdownEditorPaneRef.current?.getCurrentContent();
+      const currentContent =
+        documentCommentsPaneRef.current?.getCurrentContent();
       if (currentContent === null || currentContent === undefined) {
         return;
       }
@@ -228,7 +213,8 @@ export const App = () => {
 
     setIsOpeningFile(true);
     try {
-      const currentContent = markdownEditorPaneRef.current?.getCurrentContent();
+      const currentContent =
+        documentCommentsPaneRef.current?.getCurrentContent();
       if (currentContent !== null && currentContent !== undefined) {
         // Save first so "Open..." behaves like a document switch, not discard.
         await saveController.flushPendingSave(() => currentContent);
@@ -237,7 +223,7 @@ export const App = () => {
       setSaveStatusText('Opening...');
       const response = await getMarkdownApi().openMarkdownFile();
       if (response.canceled) {
-        setSaveStatusText(markdownEditorPaneRef.current ? 'Saved' : 'Ready');
+        setSaveStatusText(documentCommentsPaneRef.current ? 'Saved' : 'Ready');
         return;
       }
 
@@ -286,56 +272,6 @@ export const App = () => {
     } finally {
       isSuppressingLifecycleSaveRef.current = false;
       setIsRestoringFromGit(false);
-    }
-  };
-
-  // This action centralizes inline-comment creation so both the floating
-  // selection affordance and future entry points share one editor-backed path.
-  const createInlineCommentFromSelection = () => {
-    const createResult =
-      markdownEditorPaneRef.current?.createInlineCommentFromCurrentSelection();
-    if (!createResult) {
-      window.alert('Editor is not ready yet.');
-      return;
-    }
-
-    if (!createResult.ok) {
-      window.alert(createResult.errorMessage ?? 'Could not create comment.');
-      return;
-    }
-
-    if (createResult.createdCommentId) {
-      setAutoFocusInlineCommentId(createResult.createdCommentId);
-    }
-  };
-
-  // The app shell owns editor-ref calls so the sidebar stays presentational.
-  const updateInlineCommentText = (
-    commentId: string,
-    nextCommentText: string,
-  ) => {
-    const didUpdate =
-      markdownEditorPaneRef.current?.updateInlineCommentTextById(
-        commentId,
-        nextCommentText,
-      ) ?? false;
-    if (!didUpdate) {
-      window.alert(
-        'Could not update comment text. The comment markers may be malformed.',
-      );
-    }
-  };
-
-  // Deletion behavior remains centralized here so future confirmations or
-  // analytics can be added without coupling the sidebar to editor internals.
-  const deleteInlineComment = (commentId: string) => {
-    const didDelete =
-      markdownEditorPaneRef.current?.deleteInlineCommentById(commentId) ??
-      false;
-    if (!didDelete) {
-      window.alert(
-        'Could not delete comment. The comment markers may be malformed.',
-      );
     }
   };
 
@@ -428,61 +364,14 @@ export const App = () => {
       >
         <section className="pane workspace-pane workspace-pane--editor">
           <div className="pane-title">Document</div>
-          <div className="document-comments-layout">
-            <MarkdownEditorPane
-              ref={markdownEditorPaneRef}
-              loadedDocumentContent={loadedDocument?.content ?? null}
-              loadedDocumentRevision={loadedDocumentRevision}
-              onUserEditedDocument={(content) => {
-                setInlineComments(parseInlineCommentsFromMarkdown(content));
-                saveController.scheduleSave(content);
-              }}
-              onInlineCommentCreationAnchorChanged={
-                setInlineCommentSelectionAnchor
-              }
-            />
-            {loadedDocument && inlineCommentSelectionAnchor ? (
-              <button
-                className="inline-comment-selection-action"
-                type="button"
-                onMouseDown={(event) => {
-                  // Prevent editor blur so the selection survives the click.
-                  event.preventDefault();
-                }}
-                onClick={createInlineCommentFromSelection}
-                style={
-                  {
-                    left: Math.max(
-                      INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-                      inlineCommentSelectionAnchor.left -
-                        INLINE_COMMENT_SELECTION_BUTTON_WIDTH,
-                    ),
-                    top: Math.max(
-                      INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-                      inlineCommentSelectionAnchor.top -
-                        INLINE_COMMENT_SELECTION_BUTTON_HEIGHT -
-                        INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-                    ),
-                  } as CSSProperties
-                }
-              >
-                Comment
-              </button>
-            ) : null}
-            <InlineCommentsSidebar
-              comments={inlineComments}
-              onChangeCommentText={updateInlineCommentText}
-              onDeleteComment={deleteInlineComment}
-              autoFocusCommentId={autoFocusInlineCommentId}
-              onAutoFocusCommentHandled={(commentId) => {
-                setAutoFocusInlineCommentId((currentCommentId) => {
-                  return currentCommentId === commentId
-                    ? null
-                    : currentCommentId;
-                });
-              }}
-            />
-          </div>
+          <DocumentCommentsPane
+            ref={documentCommentsPaneRef}
+            loadedDocumentContent={loadedDocument?.content ?? null}
+            loadedDocumentRevision={loadedDocumentRevision}
+            onUserEditedDocument={(content) => {
+              saveController.scheduleSave(content);
+            }}
+          />
         </section>
         <div
           className="workspace-divider"

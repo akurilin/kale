@@ -255,13 +255,18 @@ body {
 .inline-comments-sidebar {
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   border-left: 1px solid #ece6da;
   background: #fffdfa;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  position: relative;
+}
+
+.inline-comments-sidebar--floating {
+  gap: 0;
 }
 
 .inline-comment-selection-action {
@@ -293,16 +298,9 @@ body {
   outline-offset: 2px;
 }
 
-.inline-comments-sidebar-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #6f6758;
-  padding: 2px 2px 0;
-}
-
 .inline-comments-empty-state {
+  position: relative;
+  z-index: 1;
   padding: 10px;
   border: 1px dashed #d9d1c2;
   border-radius: 10px;
@@ -310,6 +308,17 @@ body {
   color: #6d665a;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.inline-comments-floating-layer {
+  position: absolute;
+  inset: 0 10px 10px;
+}
+
+.inline-comment-floating-slot {
+  position: absolute;
+  left: 0;
+  right: 0;
 }
 
 .inline-comment-card {

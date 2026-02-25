@@ -20,6 +20,7 @@ type InlineCommentCardProps = {
   onDeleteComment: (commentId: string) => void;
   shouldAutoFocusInput?: boolean;
   onAutoFocusHandled?: (commentId: string) => void;
+  onCardHeightChanged?: (commentId: string, nextHeight: number) => void;
 };
 
 /**
@@ -47,7 +48,9 @@ export const InlineCommentCard = ({
   onDeleteComment,
   shouldAutoFocusInput = false,
   onAutoFocusHandled,
+  onCardHeightChanged,
 }: InlineCommentCardProps) => {
+  const commentCardElementRef = useRef<HTMLLabelElement | null>(null);
   const commentTextareaElementRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Resizing after each rendered value change keeps externally-driven updates
@@ -55,6 +58,31 @@ export const InlineCommentCard = ({
   useLayoutEffect(() => {
     resizeCommentTextareaToContentHeight(commentTextareaElementRef);
   }, [comment.text]);
+
+  /**
+   * Why: floating comment layout depends on actual rendered card heights, so a
+   * ResizeObserver reports size changes back to the positioning layer.
+   */
+  useEffect(() => {
+    const commentCardElement = commentCardElementRef.current;
+    if (!commentCardElement || !onCardHeightChanged) {
+      return;
+    }
+
+    const emitCurrentCardHeight = () => {
+      onCardHeightChanged(comment.id, commentCardElement.offsetHeight);
+    };
+
+    emitCurrentCardHeight();
+    const resizeObserver = new ResizeObserver(() => {
+      emitCurrentCardHeight();
+    });
+    resizeObserver.observe(commentCardElement);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [comment.id, onCardHeightChanged]);
 
   // Focusing immediately after comment creation keeps the workflow keyboard-
   // first so users can keep typing without a pointer round-trip.
@@ -86,7 +114,7 @@ export const InlineCommentCard = ({
   };
 
   return (
-    <label className="inline-comment-card">
+    <label className="inline-comment-card" ref={commentCardElementRef}>
       <button
         className="inline-comment-card-delete-button"
         type="button"

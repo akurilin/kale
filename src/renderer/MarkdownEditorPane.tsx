@@ -88,6 +88,7 @@ type MarkdownEditorPaneProps = {
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
   onSelectionHasTextChanged?: (selectionHasText: boolean) => void;
+  onInlineCommentAnchorGeometryChanged?: () => void;
   onInlineCommentCreationAnchorChanged?: (
     anchorPosition: { top: number; left: number } | null,
   ) => void;
@@ -95,6 +96,10 @@ type MarkdownEditorPaneProps = {
 
 export type MarkdownEditorPaneHandle = {
   getCurrentContent: () => string | null;
+  getAnchorPositionForDocumentRange: (
+    rangeFrom: number,
+    rangeTo: number,
+  ) => { top: number; left: number } | null;
   createInlineCommentFromCurrentSelection: () => {
     ok: boolean;
     errorMessage?: string;
@@ -115,6 +120,7 @@ const MarkdownEditorPaneImpl = (
     loadedDocumentRevision,
     onUserEditedDocument,
     onSelectionHasTextChanged,
+    onInlineCommentAnchorGeometryChanged,
     onInlineCommentCreationAnchorChanged,
   }: MarkdownEditorPaneProps,
   ref: ForwardedRef<MarkdownEditorPaneHandle>,
@@ -124,6 +130,9 @@ const MarkdownEditorPaneImpl = (
   const isApplyingLoadedDocumentRef = useRef(false);
   const onUserEditedDocumentRef = useRef(onUserEditedDocument);
   const onSelectionHasTextChangedRef = useRef(onSelectionHasTextChanged);
+  const onInlineCommentAnchorGeometryChangedRef = useRef(
+    onInlineCommentAnchorGeometryChanged,
+  );
   const onInlineCommentCreationAnchorChangedRef = useRef(
     onInlineCommentCreationAnchorChanged,
   );
@@ -140,12 +149,49 @@ const MarkdownEditorPaneImpl = (
     onSelectionHasTextChangedRef.current = onSelectionHasTextChanged;
   }, [onSelectionHasTextChanged]);
 
+  // Floating comments need re-layout signals on editor scroll/geometry updates,
+  // so this ref keeps the latest callback without recreating the editor.
+  useEffect(() => {
+    onInlineCommentAnchorGeometryChangedRef.current =
+      onInlineCommentAnchorGeometryChanged;
+  }, [onInlineCommentAnchorGeometryChanged]);
+
   // The editor update listener is attached once, so this ref keeps the latest
   // anchor callback available without recreating the editor instance.
   useEffect(() => {
     onInlineCommentCreationAnchorChangedRef.current =
       onInlineCommentCreationAnchorChanged;
   }, [onInlineCommentCreationAnchorChanged]);
+
+  /**
+   * Why: floating comment cards and the selection action both need the same
+   * coordinate translation from CodeMirror viewport space into editor-local UI.
+   */
+  const getEditorLocalAnchorPositionForDocumentRange = (
+    editorView: EditorView,
+    rangeFrom: number,
+    rangeTo: number,
+  ): { top: number; left: number } | null => {
+    const clampedRangeFrom = Math.max(0, Math.min(rangeFrom, rangeTo));
+    const clampedRangeTo = Math.min(
+      editorView.state.doc.length,
+      Math.max(rangeFrom, rangeTo),
+    );
+    const rangeAnchorCoordinates =
+      editorView.coordsAtPos(clampedRangeTo) ??
+      editorView.coordsAtPos(clampedRangeFrom);
+    const editorContainerElement = editorContainerElementRef.current;
+    if (!rangeAnchorCoordinates || !editorContainerElement) {
+      return null;
+    }
+
+    const editorContainerBounds =
+      editorContainerElement.getBoundingClientRect();
+    return {
+      top: rangeAnchorCoordinates.top - editorContainerBounds.top,
+      left: rangeAnchorCoordinates.right - editorContainerBounds.left,
+    };
+  };
 
   /**
    * Why: the floating comment action belongs next to the current text
@@ -172,22 +218,21 @@ const MarkdownEditorPaneImpl = (
       primarySelectionRange.from,
       primarySelectionRange.to,
     );
+    anchorCallback(
+      getEditorLocalAnchorPositionForDocumentRange(
+        editorView,
+        selectionFrom,
+        selectionTo,
+      ),
+    );
+  };
 
-    const selectionCoordinates =
-      editorView.coordsAtPos(selectionTo) ??
-      editorView.coordsAtPos(selectionFrom);
-    const editorContainerElement = editorContainerElementRef.current;
-    if (!selectionCoordinates || !editorContainerElement) {
-      anchorCallback(null);
-      return;
-    }
-
-    const editorContainerBounds =
-      editorContainerElement.getBoundingClientRect();
-    anchorCallback({
-      top: selectionCoordinates.top - editorContainerBounds.top,
-      left: selectionCoordinates.right - editorContainerBounds.left,
-    });
+  /**
+   * Why: comment cards must re-pack when editor scroll or geometry changes, and
+   * a shared emitter keeps those invalidation points consistent.
+   */
+  const emitInlineCommentAnchorGeometryChanged = () => {
+    onInlineCommentAnchorGeometryChangedRef.current?.();
   };
 
   // exposing a tiny imperative handle keeps save/lifecycle integrations simple
@@ -197,6 +242,18 @@ const MarkdownEditorPaneImpl = (
     () => ({
       getCurrentContent: () =>
         editorViewRef.current?.state.doc.toString() ?? null,
+      getAnchorPositionForDocumentRange: (rangeFrom, rangeTo) => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return null;
+        }
+
+        return getEditorLocalAnchorPositionForDocumentRange(
+          editorView,
+          rangeFrom,
+          rangeTo,
+        );
+      },
       createInlineCommentFromCurrentSelection: () => {
         const editorView = editorViewRef.current;
         if (!editorView) {
@@ -344,6 +401,7 @@ const MarkdownEditorPaneImpl = (
             update.focusChanged
           ) {
             emitInlineCommentCreationAnchorPosition(update.view);
+            emitInlineCommentAnchorGeometryChanged();
           }
 
           // Ignore programmatic file loads so they do not trigger autosave.
@@ -361,8 +419,22 @@ const MarkdownEditorPaneImpl = (
       !editorViewRef.current.state.selection.main.empty,
     );
     emitInlineCommentCreationAnchorPosition(editorViewRef.current);
+    emitInlineCommentAnchorGeometryChanged();
+
+    const handleEditorScroll = () => {
+      emitInlineCommentCreationAnchorPosition(editorViewRef.current!);
+      emitInlineCommentAnchorGeometryChanged();
+    };
+    editorViewRef.current.scrollDOM.addEventListener(
+      'scroll',
+      handleEditorScroll,
+    );
 
     return () => {
+      editorViewRef.current?.scrollDOM.removeEventListener(
+        'scroll',
+        handleEditorScroll,
+      );
       editorViewRef.current?.destroy();
       editorViewRef.current = null;
     };
@@ -395,6 +467,7 @@ const MarkdownEditorPaneImpl = (
         },
       });
       emitInlineCommentCreationAnchorPosition(editorView);
+      emitInlineCommentAnchorGeometryChanged();
     } finally {
       isApplyingLoadedDocumentRef.current = false;
     }
