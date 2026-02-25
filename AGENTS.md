@@ -3,6 +3,10 @@
 This is an Electron project using Electron Forge. The goal of this app is to be a modern tool for editing
 prose combining the power of coding agents and an IDE with the beautful aesthetics of a writing tool.
 
+# Workflow
+
+- !IMPORTANT: do not commit unless explitictly told to by the user
+
 ## Coding style
 
 - Use a self-explanatory naming style that makes it easy to understand what a function does based on the name alone. It's better to make it longer and clearer than to try to be brief and obscure.
