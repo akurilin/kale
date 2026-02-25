@@ -476,6 +476,16 @@ const MarkdownEditorPaneImpl = (
       return;
     }
 
+    // Preserve cursor line/column and scroll position across the content
+    // replacement. Line/column is used rather than absolute offset because
+    // external edits (e.g. Claude) may add or remove lines above the cursor,
+    // but the writer's logical position within "their" paragraph stays the same.
+    const prevCursorPos = editorView.state.selection.main.head;
+    const prevCursorLine = editorView.state.doc.lineAt(prevCursorPos);
+    const prevLineNumber = prevCursorLine.number;
+    const prevColumn = prevCursorPos - prevCursorLine.from;
+    const prevScrollTop = editorView.scrollDOM.scrollTop;
+
     isApplyingLoadedDocumentRef.current = true;
     try {
       editorView.dispatch({
@@ -485,6 +495,22 @@ const MarkdownEditorPaneImpl = (
           insert: loadedDocumentContent,
         },
       });
+
+      // Restore cursor to the same line/column in the new document,
+      // clamped to valid ranges if the document shrank.
+      const newDoc = editorView.state.doc;
+      const restoredLineNumber = Math.min(prevLineNumber, newDoc.lines);
+      const restoredLine = newDoc.line(restoredLineNumber);
+      const restoredColumn = Math.min(prevColumn, restoredLine.length);
+      const restoredPos = restoredLine.from + restoredColumn;
+
+      editorView.dispatch({
+        selection: { anchor: restoredPos },
+      });
+
+      // Restore scroll position so the viewport doesn't jump.
+      editorView.scrollDOM.scrollTop = prevScrollTop;
+
       emitInlineCommentCreationAnchorPosition(editorView);
       emitInlineCommentAnchorGeometryChanged();
     } finally {
