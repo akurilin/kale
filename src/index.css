@@ -172,6 +172,33 @@ body {
   padding: 0;
   font-size: 18px;
   line-height: 1.7;
+  /* Hide scrollbar by default, reveal only while actively scrolling for a
+     seamless transition between editor and comments sidebar */
+  scrollbar-width: none;
+}
+
+.editor .cm-scroller::-webkit-scrollbar {
+  width: 8px;
+}
+
+.editor .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editor .cm-scroller::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.editor.is-scrolling .cm-scroller::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Firefox: show scrollbar only while actively scrolling */
+.editor.is-scrolling .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 
 .editor .cm-content {
@@ -256,8 +283,8 @@ body {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid #ece6da;
-  background: #fffdfa;
+  border-left: none;
+  background: rgb(252, 251, 248);
   padding: 10px;
   display: flex;
   flex-direction: column;

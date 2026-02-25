@@ -467,9 +467,19 @@ const MarkdownEditorPaneImpl = (
     emitInlineCommentCreationAnchorPosition(editorViewRef.current);
     emitInlineCommentAnchorGeometryChanged();
 
+    /* Show the scrollbar while actively scrolling, then fade it out after
+       a short idle period. This keeps the gutter between editor and comments
+       visually clean when the user isn't scrolling. */
+    let scrollIdleTimer: ReturnType<typeof setTimeout> | null = null;
     const handleEditorScroll = () => {
       emitInlineCommentCreationAnchorPosition(editorViewRef.current!);
       emitInlineCommentAnchorGeometryChanged();
+
+      editorContainerElement.classList.add('is-scrolling');
+      if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
+      scrollIdleTimer = setTimeout(() => {
+        editorContainerElement.classList.remove('is-scrolling');
+      }, 1000);
     };
     editorViewRef.current.scrollDOM.addEventListener(
       'scroll',
@@ -481,6 +491,7 @@ const MarkdownEditorPaneImpl = (
         'scroll',
         handleEditorScroll,
       );
+      if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
       editorViewRef.current?.destroy();
       editorViewRef.current = null;
     };
