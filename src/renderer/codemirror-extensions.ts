@@ -2,13 +2,8 @@
 // This file isolates CodeMirror markdown presentation extensions so the
 // renderer entry stays focused on app composition instead of editor internals.
 //
-import {
-  HighlightStyle,
-  syntaxHighlighting,
-  syntaxTree,
-} from '@codemirror/language';
+import { syntaxTree } from '@codemirror/language';
 import { type Extension, type Range } from '@codemirror/state';
-import { tags } from '@lezer/highlight';
 import {
   Decoration,
   EditorView,
@@ -81,27 +76,6 @@ const createDecorationViewPlugin = (
       }
     },
     { decorations: (viewPluginInstance) => viewPluginInstance.decorations },
-  );
-
-// CodeMirror's default markdown highlighting underlines headings, which reads
-// like links in a prose editor. This override keeps semantic heading tokens
-// while removing the underline so line-level typography can define the look.
-export const headingUnderlineResetHighlightExtension = (): Extension =>
-  syntaxHighlighting(
-    HighlightStyle.define([
-      {
-        tag: [
-          tags.heading,
-          tags.heading1,
-          tags.heading2,
-          tags.heading3,
-          tags.heading4,
-          tags.heading5,
-          tags.heading6,
-        ],
-        textDecoration: 'none',
-      },
-    ]),
   );
 
 // live-preview marker tokens must remain visible when the cursor/selection

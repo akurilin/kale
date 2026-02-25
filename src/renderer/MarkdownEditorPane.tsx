@@ -22,11 +22,12 @@ import {
 } from '@codemirror/autocomplete';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import {
+  HighlightStyle,
   bracketMatching,
-  defaultHighlightStyle,
   indentOnInput,
   syntaxHighlighting,
 } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 import { lintKeymap } from '@codemirror/lint';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { EditorState, type Extension } from '@codemirror/state';
@@ -43,7 +44,6 @@ import {
 
 import {
   headingLineDecorationExtension,
-  headingUnderlineResetHighlightExtension,
   inlineCommentDecorationExtension,
   livePreviewMarkersExtension,
   quoteLineDecorationExtension,
@@ -101,6 +101,65 @@ const dispatchFullDocumentReplacementPreservingCursor = (
 // local setup preserves the useful editor defaults while omitting gutter
 // features (line numbers, fold gutter, gutter active-line highlight) so the
 // prose editor truly does not mount a line counter pane at all.
+
+// Custom prose highlight style — a modified copy of CodeMirror's
+// defaultHighlightStyle (@codemirror/language). We maintain our own copy
+// instead of importing defaultHighlightStyle because:
+//
+//   1. defaultHighlightStyle sets `textDecoration: "underline"` on headings,
+//      which looks like hyperlinks in a prose editor. We need headings
+//      without underlines.
+//
+//   2. Trying to override a single property via a second HighlightStyle is
+//      unreliable — CodeMirror generates one CSS class per HighlightStyle
+//      rule, and when two classes set the same property at equal specificity,
+//      the winner depends on stylesheet injection order, which CodeMirror
+//      does not guarantee.
+//
+//   3. CodeMirror's highlight facet has a binary fallback gate: if ANY
+//      non-fallback HighlightStyle exists, ALL fallback styles are silently
+//      discarded. Using defaultHighlightStyle as a fallback alongside a
+//      non-fallback override causes the default (bold, italic, etc.) to
+//      vanish entirely. A single style avoids this trap.
+//
+// If @codemirror/language updates defaultHighlightStyle, review the upstream
+// diff and port relevant changes here.
+const proseHighlightStyle = HighlightStyle.define([
+  { tag: tags.meta, color: '#404740' },
+  { tag: tags.link, textDecoration: 'underline' },
+  // Upstream defaultHighlightStyle uses `textDecoration: "underline"` here.
+  // Omitted so headings don't look like links in the prose editor.
+  { tag: tags.heading, fontWeight: 'bold' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.strikethrough, textDecoration: 'line-through' },
+  { tag: tags.keyword, color: '#708' },
+  {
+    tag: [
+      tags.atom,
+      tags.bool,
+      tags.url,
+      tags.contentSeparator,
+      tags.labelName,
+    ],
+    color: '#219',
+  },
+  { tag: [tags.literal, tags.inserted], color: '#164' },
+  { tag: [tags.string, tags.deleted], color: '#a11' },
+  {
+    tag: [tags.regexp, tags.escape, tags.special(tags.string)],
+    color: '#e40',
+  },
+  { tag: tags.definition(tags.variableName), color: '#00f' },
+  { tag: tags.local(tags.variableName), color: '#30a' },
+  { tag: [tags.typeName, tags.namespace], color: '#085' },
+  { tag: tags.className, color: '#167' },
+  { tag: [tags.special(tags.variableName), tags.macroName], color: '#256' },
+  { tag: tags.definition(tags.propertyName), color: '#00c' },
+  { tag: tags.comment, color: '#940' },
+  { tag: tags.invalid, color: '#f00' },
+]);
+
 const proseEditorSetupWithoutGutters: Extension = [
   highlightSpecialChars(),
   history(),
@@ -108,7 +167,7 @@ const proseEditorSetupWithoutGutters: Extension = [
   dropCursor(),
   EditorState.allowMultipleSelections.of(true),
   indentOnInput(),
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  syntaxHighlighting(proseHighlightStyle),
   bracketMatching(),
   closeBrackets(),
   autocompletion(),
@@ -409,7 +468,6 @@ const MarkdownEditorPaneImpl = (
       extensions: [
         proseEditorSetupWithoutGutters,
         markdown(),
-        headingUnderlineResetHighlightExtension(),
         headingLineDecorationExtension(),
         quoteLineDecorationExtension(),
         inlineCommentDecorationExtension(),
