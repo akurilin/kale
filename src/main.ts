@@ -19,7 +19,6 @@ import type {
   RestoreMarkdownFromGitResponse,
   StartTerminalSessionRequest,
   StartTerminalSessionResponse,
-  TerminalBootstrapResponse,
   TerminalProcessExitEvent,
 } from './shared-types';
 
@@ -311,35 +310,10 @@ const ensureCurrentMarkdownFilePath = async () => {
   return defaultFilePath;
 };
 
-// The isolated terminal view needs a stable, known markdown target during
-// development even when the persisted "last opened" file points elsewhere.
-const getBundledSampleMarkdownFilePath = () => BUNDLED_SAMPLE_MARKDOWN_FILE;
-
 // Terminal sessions are keyed in main so the renderer never gets direct access
 // to process objects and can only control them through narrow IPC methods.
 const createTerminalSessionId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-
-// The terminal prototype should prefer the bundled sample file for isolated
-// testing while still allowing a fallback to the app's current file path.
-const resolveTerminalBootstrapContext =
-  async (): Promise<TerminalBootstrapResponse> => {
-    const sampleFilePath = getBundledSampleMarkdownFilePath();
-    if (await canReadFile(sampleFilePath)) {
-      return {
-        targetFilePath: sampleFilePath,
-        cwd: path.dirname(sampleFilePath),
-        source: 'sample',
-      };
-    }
-
-    const currentFilePath = await ensureCurrentMarkdownFilePath();
-    return {
-      targetFilePath: currentFilePath,
-      cwd: path.dirname(currentFilePath),
-      source: 'current',
-    };
-  };
 
 // The terminal pane launches Claude Code directly so Kale can provide writing
 // guidance at session start without requiring users to boot a shell first.
@@ -576,10 +550,6 @@ ipcMain.handle(
     return { canceled: false, content, filePath };
   },
 );
-
-ipcMain.handle('terminal:get-bootstrap-context', async () => {
-  return resolveTerminalBootstrapContext();
-});
 
 ipcMain.handle(
   'terminal:start-session',

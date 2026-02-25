@@ -263,20 +263,11 @@ This is an assumption to verify against the SDK version Kale targets; Kale shoul
 
 ### Terminology
 
-The app uses **views** as top-level screen alternatives, and **panes** as subdivisions within a view. The current app has one view (the editor view) containing one pane (the document pane). The Claude Code terminal will be developed as a separate **terminal view** that can be loaded independently.
+The app uses **views** as top-level screen alternatives, and **panes** as subdivisions within a view. The current app uses the editor view and embeds the Claude Code terminal as a pane in that view.
 
-### Isolated view switching via environment variable
+### Embedded terminal pane development
 
-The terminal view is decoupled from the editor view at the component level. They should not share components or depend directly on each other's internals. To support developing and testing them in isolation, the renderer entry (`src/renderer/main.tsx`) switches which root component to render based on a Vite environment variable:
-
-- `npm start` — loads the editor view (default, existing behavior)
-- `VITE_KALE_VIEW=terminal npm start` — loads the terminal view in isolation
-
-This requires no changes to Forge config, no second HTML entry, and no second window. Vite statically replaces `import.meta.env.VITE_*` at build time, and in dev mode the value is read from the shell environment.
-
-### Terminal view defaults
-
-The terminal view reuses the same "last opened file" setting that the editor view uses (persisted in Kale's `settings.json` as `lastOpenedFilePath`). When the terminal view loads, it reads that setting and spawns Claude Code with `cwd` set to `path.dirname(lastOpenedFilePath)`. This means `VITE_KALE_VIEW=terminal npm start` immediately starts a Claude Code session in the directory of whatever file you were last editing — no manual configuration needed.
+The terminal pane remains decoupled from the editor internals at the component level, but it is now mounted inside the main app view rather than behind a separate renderer-root switch. Development and testing happen through the normal `npm start` app flow.
 
 ### Why component decoupling
 
@@ -287,9 +278,9 @@ The editor and terminal have no reason to know about each other:
 - The only future connection point is **context injection** (passing file path / content / selection from editor to terminal), which belongs in a thin coordination layer with a narrow interface above both components, not inside either one.
 - For Claude's edits flowing back to the editor: Claude writes directly to the file on disk, and the editor picks up changes through its existing file-watching/reload mechanism. No coupling needed.
 
-This means both views can be developed, tested, and iterated on independently, while still allowing a shared coordination layer in product mode.
+This means both panes can be developed, tested, and iterated on independently, while still allowing a shared coordination layer in product mode.
 
-In product mode, the coordination layer is expected to pass editor-derived context (for example: active file path, selection, cursor, and document state) into the terminal/agent flow without coupling the terminal view to editor internals.
+In product mode, the coordination layer is expected to pass editor-derived context (for example: active file path, selection, cursor, and document state) into the terminal/agent flow without coupling the terminal pane to editor internals.
 
 ## Product/Compliance Note to Revisit
 
@@ -320,8 +311,8 @@ When we resume this work:
 - **Session resume**: Check if the JSONL file exists before resuming; fall back to a fresh session if the file is missing.
 - **Session reset**: User-triggered; deletes the mapping and starts fresh.
 - **Conversation history display**: Phase 1 collects messages as they stream in (no dependency on internal JSONL format).
-- **View terminology**: Top-level screens are "views" (editor view, terminal view). Subdivisions within a view are "panes."
-- **Isolated development**: Terminal view loads independently via `VITE_KALE_VIEW=terminal npm start`. No coupling to the editor view.
-- **Working directory**: Claude Code must always be spawned with `cwd` set to the directory of the active file. Sessions are tied to the cwd and cannot be resumed from a different directory (no `--cwd` flag exists). The terminal test view derives its cwd from the existing `lastOpenedFilePath` setting.
+- **View terminology**: Top-level screens are "views". The current terminal implementation is an embedded pane in the editor view.
+- **Isolated development**: Removed. Terminal development now happens in the main app view (`npm start`).
+- **Working directory**: Claude Code must always be spawned with `cwd` set to the directory of the active file. Sessions are tied to the cwd and cannot be resumed from a different directory (no `--cwd` flag exists).
 - **Phase 1 file access model**: Claude edits the authoritative file directly (no sandbox copy). Concurrent user edits are allowed in Phase 1 ("at your own peril").
 - **Phase 1 platform target**: macOS first. Linux may follow later; Windows is not a Phase 1 target.

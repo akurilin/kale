@@ -27,12 +27,6 @@ export type RestoreMarkdownFromGitResponse =
   | ({ ok: true } & LoadMarkdownResponse)
   | { ok: false; errorMessage: string };
 
-export type TerminalBootstrapResponse = {
-  targetFilePath: string;
-  cwd: string;
-  source: 'current' | 'sample';
-};
-
 export type StartTerminalSessionRequest = {
   cwd: string;
   targetFilePath: string;

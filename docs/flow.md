@@ -12,7 +12,7 @@ Yes. The flow is a combination of:
   - Electron main creates BrowserWindow
   - BrowserWindow loads index.html
   - index.html loads /src/renderer/main.tsx
-  - main.tsx mounts either <App /> or <TerminalView />
+  - main.tsx mounts <App />
   - <App /> renders:
       - top bar
       - split workspace
@@ -29,7 +29,7 @@ Yes. The flow is a combination of:
   - index.html:10 loads the renderer entry script /src/renderer/main.tsx.
   - src/renderer/main.tsx:16 finds #root.
   - src/renderer/main.tsx:22 creates the React root and renders.
-  - src/renderer/main.tsx:24 chooses <App /> by default (or <TerminalView /> if VITE_KALE_VIEW=terminal).
+  - src/renderer/main.tsx:22 mounts <App /> as the renderer root.
 
   How App combines the panes
 
@@ -77,11 +77,10 @@ Yes. The flow is a combination of:
   - src/main.ts:343 editor:load-markdown
   - src/main.ts:347 editor:save-markdown
   - src/main.ts:369 editor:open-markdown-file
-  - src/main.ts:402 terminal:get-bootstrap-context
-  - src/main.ts:406 terminal:start-session
-  - src/main.ts:416 terminal:send-input
-  - src/main.ts:433 terminal:resize-session
-  - src/main.ts:448 terminal:kill-session
+  - src/main.ts:382 terminal:start-session
+  - src/main.ts:392 terminal:send-input
+  - src/main.ts:409 terminal:resize-session
+  - src/main.ts:424 terminal:kill-session
 
   Terminal process creation + streaming:
 

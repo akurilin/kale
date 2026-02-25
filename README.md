@@ -6,7 +6,6 @@ React renderer shell.
 ## Run Commands
 
 - Start in development: `npm start`
-- Start isolated terminal prototype view: `VITE_KALE_VIEW=terminal npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp`: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Run tests: `npm test`
@@ -28,9 +27,7 @@ React renderer shell.
 - `src/renderer/InlineCommentCard.tsx`: individual comment card UI (textarea auto-size, delete action, autofocus, resize reporting for layout).
 - `src/renderer/line-merge.ts`: pure line-level three-way merge function for reconciling concurrent user and external (Claude) edits to the same document. Uses `node-diff3`; conflicts resolve in favor of the disk version.
 - `src/renderer/inline-comments.ts`: parser/helpers for hidden HTML comment markers used as the canonical inline-comment source of truth.
-- `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app and prototype terminal view.
-- `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app and prototype terminal view, including preset prompt buttons that inject common Claude requests into the active terminal session and submit them automatically.
-- `src/renderer/TerminalView.tsx`: isolated terminal prototype wrapper view that reuses `TerminalPane`.
+- `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app, including preset prompt buttons that inject common Claude requests into the active terminal session and submit them automatically.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.

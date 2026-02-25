@@ -1,6 +1,6 @@
 //
-// This file centralizes the typed preload bridge contract for the isolated
-// terminal view so terminal session IPC can evolve without touching editor code.
+// This file centralizes the typed preload bridge contract for terminal session
+// control so terminal IPC can evolve without touching editor/editor-pane code.
 //
 
 import type {
@@ -8,13 +8,11 @@ import type {
   StartTerminalSessionRequest,
   StartTerminalSessionResponse,
   TerminalSessionActionResponse,
-  TerminalBootstrapResponse,
   TerminalProcessDataEvent,
   TerminalProcessExitEvent,
 } from '../shared-types';
 
 type TerminalApi = {
-  getBootstrapContext: () => Promise<TerminalBootstrapResponse>;
   startSession: (
     request: StartTerminalSessionRequest,
   ) => Promise<StartTerminalSessionResponse>;

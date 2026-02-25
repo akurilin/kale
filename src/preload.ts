@@ -14,7 +14,6 @@ import type {
   StartTerminalSessionRequest,
   StartTerminalSessionResponse,
   TerminalSessionActionResponse,
-  TerminalBootstrapResponse,
   TerminalProcessDataEvent,
   TerminalProcessExitEvent,
 } from './shared-types';
@@ -49,11 +48,9 @@ contextBridge.exposeInMainWorld('markdownApi', {
   },
 });
 
-// The terminal view uses a separate bridge so process control stays explicit
+// The terminal pane uses a separate bridge so process control stays explicit
 // and we can evolve it independently from the editor file-API contract.
 contextBridge.exposeInMainWorld('terminalApi', {
-  getBootstrapContext: (): Promise<TerminalBootstrapResponse> =>
-    ipcRenderer.invoke('terminal:get-bootstrap-context'),
   startSession: (
     request: StartTerminalSessionRequest,
   ): Promise<StartTerminalSessionResponse> =>
