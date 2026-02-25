@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
   ExternalMarkdownFileChangedEvent,
+  IdeSelectionChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   ResizeTerminalSessionRequest,
@@ -93,5 +94,15 @@ contextBridge.exposeInMainWorld('terminalApi', {
     return () => {
       ipcRenderer.removeListener('terminal:process-exit', listener);
     };
+  },
+});
+
+// The IDE server bridge lets the renderer push selection changes to the main
+// process so the MCP server can report editor state to Claude Code clients.
+// Main caches the latest state — no pull queries needed.
+contextBridge.exposeInMainWorld('ideServerApi', {
+  /** Push a selection change event from renderer to main (fire-and-forget). */
+  reportSelectionChanged: (event: IdeSelectionChangedEvent): void => {
+    ipcRenderer.send('ide:selection-changed', event);
   },
 });

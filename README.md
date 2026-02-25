@@ -33,6 +33,7 @@ React renderer shell.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.
 - `prompts/`: runtime prompt assets (including the Claude appended system prompt used by the terminal session launcher).
 - `data/`: example markdown files the app can edit
+- `src/ide-server/`: MCP-over-WebSocket server that lets Claude Code CLI query Kale's editor state (open files, selections, diagnostics). See `docs/claude-code-ide-protocol.md` for the protocol spec.
 - `src/types/`: ambient TypeScript declarations for packages whose types cannot be resolved by `moduleResolution: "node"`.
 - `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).
 
@@ -45,3 +46,16 @@ The editor and the filesystem stay in sync through content-based comparison rath
 3. **Self-save detection**: when a file-change notification arrives, the renderer compares the disk content to `saveController.getLastSavedContent()`. If they match, the notification is the echo-back from the app's own save and is ignored.
 4. **External change with three-way merge**: if the disk content differs from the last saved content, a genuine external change occurred. When the editor has unsaved user edits, `mergeDocumentLines(base, ours, theirs)` reconciles both sets of changes at line granularity — non-conflicting edits from both sides are preserved, and conflicts resolve in favor of the disk version (external wins). If the merge preserved user edits, a save is scheduled automatically to persist the merged result.
 5. **Post-replacement save sync**: `markContentAsSavedFromLoad` runs after the CodeMirror dispatch (not before), so any save timers created by keystrokes during the async reload gap are cleared at the right moment. When a merge produced content that differs from disk, the save controller's `lastSavedContent` is set to the actual disk content so it correctly detects the merged editor content as dirty.
+
+## Claude Code IDE Integration
+
+Kale runs an MCP (Model Context Protocol) server over WebSocket so Claude Code CLI can query editor state — open files, text selections, and diagnostics. The protocol is documented in `docs/claude-code-ide-protocol.md`.
+
+**How it works:**
+
+1. On startup, the main process starts a WebSocket server on a random port (10000–65535) bound to `127.0.0.1`.
+2. A lock file is written to `~/.claude/ide/<port>.lock` containing the PID, workspace folders, IDE name ("Kale"), and an auth token (UUID).
+3. Claude Code CLI discovers the server by scanning the lock file directory and connects with the auth token in an HTTP header.
+4. The server exposes MCP tools: `getCurrentSelection`, `getLatestSelection`, `getOpenEditors`, `getDiagnostics`.
+5. The renderer pushes selection changes to main via IPC; main caches the latest state and broadcasts `selection_changed` notifications to connected clients (50ms debounce). Claude Code consumes the selection context on prompt submission — this is standard behavior across all IDE integrations.
+6. On shutdown, the server closes all connections and removes the lock file.

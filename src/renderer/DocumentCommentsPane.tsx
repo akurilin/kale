@@ -17,6 +17,7 @@ import {
 
 import {
   MarkdownEditorPane,
+  type EditorSelectionDetails,
   type MarkdownEditorPaneHandle,
 } from './MarkdownEditorPane';
 import { InlineCommentsSidebar } from './InlineCommentsSidebar';
@@ -36,6 +37,7 @@ type DocumentCommentsPaneProps = {
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
   onDocumentContentReplacedFromDisk?: (replacedWithContent: string) => void;
+  onSelectionDetailsChanged?: (details: EditorSelectionDetails | null) => void;
 };
 
 export type DocumentCommentsPaneHandle = {
@@ -92,6 +94,7 @@ const DocumentCommentsPaneImpl = (
     loadedDocumentRevision,
     onUserEditedDocument,
     onDocumentContentReplacedFromDisk,
+    onSelectionDetailsChanged,
   }: DocumentCommentsPaneProps,
   ref: ForwardedRef<DocumentCommentsPaneHandle>,
 ) => {
@@ -340,6 +343,7 @@ const DocumentCommentsPaneImpl = (
         loadedDocumentRevision={loadedDocumentRevision}
         onUserEditedDocument={handleUserEditedDocument}
         onDocumentContentReplacedFromDisk={onDocumentContentReplacedFromDisk}
+        onSelectionDetailsChanged={onSelectionDetailsChanged}
         onInlineCommentAnchorGeometryChanged={
           handleInlineCommentAnchorGeometryChanged
         }

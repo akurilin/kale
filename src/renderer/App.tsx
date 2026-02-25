@@ -12,12 +12,16 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 
-import type { LoadMarkdownResponse } from '../shared-types';
+import type {
+  IdeSelectionChangedEvent,
+  LoadMarkdownResponse,
+} from '../shared-types';
 import { createSaveController } from './save-controller';
 import {
   DocumentCommentsPane,
   type DocumentCommentsPaneHandle,
 } from './DocumentCommentsPane';
+import { getIdeServerApi } from './ide-server-api';
 import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
 import { TerminalPane } from './TerminalPane';
@@ -262,6 +266,18 @@ export const App = () => {
     };
   }, [activeDocumentFilePath, applyLoadedDocument, saveController]);
 
+  // Called by the editor pane on every selection or focus change. Always pushes
+  // to main (including cursor-only positions) so the MCP server has fresh state
+  // and can broadcast accurate selection_changed notifications to Claude Code.
+  const handleIdeSelectionChanged = useCallback(
+    (event: IdeSelectionChangedEvent | null) => {
+      if (event) {
+        getIdeServerApi().reportSelectionChanged(event);
+      }
+    },
+    [],
+  );
+
   // blur and close should flush editor content through the existing save
   // controller so users are less likely to lose changes during lifecycle edges.
   useEffect(() => {
@@ -467,6 +483,17 @@ export const App = () => {
             onDocumentContentReplacedFromDisk={
               handleDocumentContentReplacedFromDisk
             }
+            onSelectionDetailsChanged={(details) => {
+              if (!details || !activeDocumentFilePath) {
+                handleIdeSelectionChanged(null);
+                return;
+              }
+              handleIdeSelectionChanged({
+                filePath: activeDocumentFilePath,
+                selectedText: details.selectedText,
+                range: details.range,
+              });
+            }}
           />
         </section>
         <div

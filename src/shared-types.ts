@@ -70,3 +70,34 @@ export type ResizeTerminalSessionRequest = {
   cols: number;
   rows: number;
 };
+
+// ---------------------------------------------------------------------------
+// IDE integration: editor state queries from main → renderer
+// ---------------------------------------------------------------------------
+
+/** Selection range using 0-based line/column coordinates. */
+export type IdeSelectionRange = {
+  start: { line: number; character: number };
+  end: { line: number; character: number };
+};
+
+/** Response to ide:get-current-selection from the renderer. */
+export type IdeEditorSelectionResponse = {
+  filePath: string;
+  selectedText: string;
+  range: IdeSelectionRange;
+} | null;
+
+/** A single open editor tab reported to the IDE server. */
+export type IdeOpenEditor = {
+  filePath: string;
+  isActive: boolean;
+  languageId: string;
+};
+
+/** Push event: renderer tells main about selection/cursor changes. */
+export type IdeSelectionChangedEvent = {
+  filePath: string;
+  selectedText: string;
+  range: IdeSelectionRange;
+};

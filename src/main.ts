@@ -13,6 +13,7 @@ import * as nodePty from 'node-pty';
 
 import type {
   ExternalMarkdownFileChangedEvent,
+  IdeSelectionChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   ResizeTerminalSessionRequest,
@@ -21,6 +22,11 @@ import type {
   StartTerminalSessionResponse,
   TerminalProcessExitEvent,
 } from './shared-types';
+import {
+  startIdeServer,
+  type EditorSelection,
+  type IdeServerHandle,
+} from './ide-server';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -50,6 +56,8 @@ const appRuntimeState: {
   pendingFileChangeBroadcastDebounceTimeout: ReturnType<
     typeof setTimeout
   > | null;
+  ideServer: IdeServerHandle | null;
+  cachedEditorSelection: EditorSelection;
 } = {
   // In-memory cache for the active file path. We still re-validate on use
   // because the file can be moved/deleted outside the app between operations.
@@ -61,6 +69,11 @@ const appRuntimeState: {
   activeMarkdownFileWatcher: null,
   watchedMarkdownFilePath: null,
   pendingFileChangeBroadcastDebounceTimeout: null,
+  // The IDE MCP server handle, created on startup and shut down on exit.
+  ideServer: null,
+  // Cached editor selection pushed from the renderer. The MCP server reads
+  // this synchronously when Claude Code calls getCurrentSelection.
+  cachedEditorSelection: null,
 };
 
 type AppSettings = {
@@ -603,6 +616,76 @@ ipcMain.handle('terminal:kill-session', async (_event, sessionId: string) => {
   return { ok: true };
 });
 
+// The renderer pushes selection changes on every cursor movement so the MCP
+// server can answer getCurrentSelection without a round-trip IPC query. A 50ms
+// debounce on the notification broadcast avoids flooding connected Claude Code
+// clients during rapid cursor movement.
+const SELECTION_NOTIFICATION_DEBOUNCE_MS = 50;
+let pendingSelectionNotificationTimeout: ReturnType<typeof setTimeout> | null =
+  null;
+
+ipcMain.on(
+  'ide:selection-changed',
+  (_event, payload: IdeSelectionChangedEvent) => {
+    // Update the cache that getCurrentSelection reads. When the selection is
+    // empty (cursor-only), we still cache the cursor position so Claude Code
+    // can always see where the user is in the document.
+    appRuntimeState.cachedEditorSelection = {
+      filePath: payload.filePath,
+      selectedText: payload.selectedText,
+      range: payload.range,
+    };
+
+    // Debounced broadcast to connected Claude Code clients. Sends both text
+    // selections and cursor-only positions so Claude Code's status display
+    // always reflects reality (matching VS Code extension behavior).
+    if (pendingSelectionNotificationTimeout) {
+      clearTimeout(pendingSelectionNotificationTimeout);
+    }
+    pendingSelectionNotificationTimeout = setTimeout(() => {
+      pendingSelectionNotificationTimeout = null;
+      appRuntimeState.ideServer?.broadcastNotification({
+        jsonrpc: '2.0',
+        method: 'selection_changed',
+        params: {
+          text: payload.selectedText,
+          filePath: payload.filePath,
+          fileUrl: `file://${payload.filePath}`,
+          selection: {
+            start: payload.range.start,
+            end: payload.range.end,
+            isEmpty: !payload.selectedText,
+          },
+        },
+      });
+    }, SELECTION_NOTIFICATION_DEBOUNCE_MS);
+  },
+);
+
+// Starts the MCP WebSocket server that lets Claude Code query editor state.
+// Non-fatal: if the server fails to start, the app still works — Claude Code
+// just won't have IDE context.
+const startIdeServerSafely = async (workspaceFolders: string[]) => {
+  try {
+    appRuntimeState.ideServer = await startIdeServer(workspaceFolders, {
+      getCurrentSelection: async () => appRuntimeState.cachedEditorSelection,
+      getOpenEditors: async () => {
+        const filePath = appRuntimeState.currentMarkdownFilePath;
+        if (!filePath) {
+          return [];
+        }
+        return [{ filePath, isActive: true, languageId: 'markdown' }];
+      },
+      getDiagnostics: async () => {
+        // Diagnostics are not yet implemented — return empty for now.
+        return [];
+      },
+    });
+  } catch (error) {
+    console.error('Failed to start IDE MCP server (non-fatal):', error);
+  }
+};
+
 const createWindow = () => {
   const windowWidth = parseWindowDimension(
     process.env.KALE_WINDOW_WIDTH,
@@ -650,6 +733,11 @@ const startApplication = async () => {
   }
 
   createWindow();
+
+  // Start the IDE MCP server after the window is created. The workspace folder
+  // is the process cwd because that's what Claude Code matches against when
+  // deciding whether an IDE server is relevant to the current session.
+  void startIdeServerSafely([process.cwd()]);
 };
 
 // This method will be called when Electron has finished initialization and is
@@ -665,6 +753,14 @@ app.on('ready', () => {
 app.on('window-all-closed', () => {
   const shutdownSessionsAndMaybeQuit = async () => {
     await stopWatchingActiveMarkdownFile();
+
+    // Shut down the IDE MCP server so the lock file is cleaned up and Claude
+    // Code clients are disconnected gracefully.
+    if (appRuntimeState.ideServer) {
+      await appRuntimeState.ideServer.shutdown();
+      appRuntimeState.ideServer = null;
+    }
+
     for (const terminalSession of appRuntimeState.terminalSessionsById.values()) {
       terminalSession.kill('SIGTERM');
     }

@@ -123,12 +123,22 @@ const proseEditorSetupWithoutGutters: Extension = [
   ]),
 ];
 
+/** Selection details emitted on every selection/cursor change for IDE integration. */
+export type EditorSelectionDetails = {
+  selectedText: string;
+  range: {
+    start: { line: number; character: number };
+    end: { line: number; character: number };
+  };
+};
+
 type MarkdownEditorPaneProps = {
   loadedDocumentContent: string | null;
   loadedDocumentRevision: number;
   onUserEditedDocument: (content: string) => void;
   onDocumentContentReplacedFromDisk?: (replacedWithContent: string) => void;
   onSelectionHasTextChanged?: (selectionHasText: boolean) => void;
+  onSelectionDetailsChanged?: (details: EditorSelectionDetails | null) => void;
   onInlineCommentAnchorGeometryChanged?: () => void;
   onInlineCommentCreationAnchorChanged?: (
     anchorPosition: { top: number; left: number } | null,
@@ -162,6 +172,7 @@ const MarkdownEditorPaneImpl = (
     onUserEditedDocument,
     onDocumentContentReplacedFromDisk,
     onSelectionHasTextChanged,
+    onSelectionDetailsChanged,
     onInlineCommentAnchorGeometryChanged,
     onInlineCommentCreationAnchorChanged,
   }: MarkdownEditorPaneProps,
@@ -175,6 +186,7 @@ const MarkdownEditorPaneImpl = (
     onDocumentContentReplacedFromDisk,
   );
   const onSelectionHasTextChangedRef = useRef(onSelectionHasTextChanged);
+  const onSelectionDetailsChangedRef = useRef(onSelectionDetailsChanged);
   const onInlineCommentAnchorGeometryChangedRef = useRef(
     onInlineCommentAnchorGeometryChanged,
   );
@@ -200,6 +212,12 @@ const MarkdownEditorPaneImpl = (
   useEffect(() => {
     onSelectionHasTextChangedRef.current = onSelectionHasTextChanged;
   }, [onSelectionHasTextChanged]);
+
+  // The IDE integration callback needs the latest ref so selection detail
+  // events always reach the current handler without recreating the editor.
+  useEffect(() => {
+    onSelectionDetailsChangedRef.current = onSelectionDetailsChanged;
+  }, [onSelectionDetailsChanged]);
 
   // Floating comments need re-layout signals on editor scroll/geometry updates,
   // so this ref keeps the latest callback without recreating the editor.
@@ -438,6 +456,38 @@ const MarkdownEditorPaneImpl = (
             onSelectionHasTextChangedRef.current?.(
               !update.state.selection.main.empty,
             );
+          }
+
+          // Emit selection details for IDE integration on selection changes
+          // only (not focus changes). The reference protocol (claudecode.nvim)
+          // emits on cursor movement and selection changes, not on blur/focus.
+          // Re-emitting on focusChanged causes extra selection_changed
+          // notifications during prompt submission that reset Claude Code's
+          // selection tracking. The main process cache persists the last
+          // selection independently, so focus events are unnecessary.
+          if (update.selectionSet) {
+            const selectionDetailsCallback =
+              onSelectionDetailsChangedRef.current;
+            if (selectionDetailsCallback) {
+              const mainSelection = update.state.selection.main;
+              const fromPos = Math.min(mainSelection.from, mainSelection.to);
+              const toPos = Math.max(mainSelection.from, mainSelection.to);
+              const fromLine = update.state.doc.lineAt(fromPos);
+              const toLine = update.state.doc.lineAt(toPos);
+              selectionDetailsCallback({
+                selectedText: update.state.sliceDoc(fromPos, toPos),
+                range: {
+                  start: {
+                    line: fromLine.number - 1,
+                    character: fromPos - fromLine.from,
+                  },
+                  end: {
+                    line: toLine.number - 1,
+                    character: toPos - toLine.from,
+                  },
+                },
+              });
+            }
           }
 
           if (
