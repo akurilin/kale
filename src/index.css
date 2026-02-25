@@ -172,9 +172,12 @@ body {
   padding: 0;
   font-size: 18px;
   line-height: 1.7;
-  /* Hide scrollbar by default, reveal only while actively scrolling for a
-     seamless transition between editor and comments sidebar */
-  scrollbar-width: none;
+  /* Reserve scrollbar gutter space at all times so editor width stays stable
+     and floating comment anchors do not shift when scrollbar visibility changes. */
+  scrollbar-gutter: stable;
+  /* Keep a consistent scrollbar width, but hide the thumb until scrolling. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
 .editor .cm-scroller::-webkit-scrollbar {
@@ -195,9 +198,9 @@ body {
   background: rgba(0, 0, 0, 0.2);
 }
 
-/* Firefox: show scrollbar only while actively scrolling */
+/* Firefox: reveal only the thumb color while scrolling so gutter width stays
+   constant and the editor/comment layout does not reflow. */
 .editor.is-scrolling .cm-scroller {
-  scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 
@@ -500,6 +503,7 @@ body {
 
 .terminal-output--pane {
   margin-top: 0;
+  margin-bottom: 8px;
 }
 
 .terminal-xterm-host {
@@ -547,6 +551,49 @@ body {
   height: 34px;
 }
 
+.terminal-preset-bar {
+  margin: 0 12px 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.terminal-preset-button {
+  min-height: 34px;
+  border: 1px solid #dacfbf;
+  border-radius: 10px;
+  background: #fffdfa;
+  color: #3a3126;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.terminal-preset-button:hover:not(:disabled) {
+  background: #fff6e8;
+  border-color: #ccb895;
+  box-shadow: 0 2px 8px rgba(95, 69, 33, 0.08);
+}
+
+.terminal-preset-button:focus-visible {
+  outline: 2px solid rgba(201, 141, 22, 0.18);
+  outline-offset: 2px;
+}
+
+.terminal-preset-button:disabled {
+  cursor: not-allowed;
+  background: #f3efe7;
+  color: #8a8377;
+  border-color: #e1dbce;
+}
+
 @media (max-width: 900px) {
   .workspace--split {
     display: flex;
@@ -571,6 +618,10 @@ body {
   }
 
   .terminal-metadata-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal-preset-bar {
     grid-template-columns: 1fr;
   }
 }

@@ -29,6 +29,33 @@ type TerminalPaneProps = {
   showMetadataPanel?: boolean;
 };
 
+type TerminalPromptPreset = {
+  label: string;
+  promptText: string;
+};
+
+const terminalPromptPresets: TerminalPromptPreset[] = [
+  {
+    label: 'Fix grammar',
+    promptText: "fix this document's grammar",
+  },
+  {
+    label: 'Handle comments',
+    promptText:
+      "Look at each individual comment currently in this document and address its concerns, then remove the comment once you're done.",
+  },
+  {
+    label: 'Generate comments',
+    promptText:
+      'Generate comments with ideas for improving the readability of this document.',
+  },
+  {
+    label: 'Analyze flow',
+    promptText:
+      'Analyze the document and provide feedback on the overall structure and flow, and critique how the flow of the whole document could be improved if there are any suggestions.',
+  },
+];
+
 // This helper derives a stable file-context key so the pane can ignore content
 // reloads for the same file while still restarting when the user switches files.
 const buildTargetContextKey = (
@@ -372,6 +399,25 @@ export const TerminalPane = ({
     };
   }, [targetFilePath, targetWorkingDirectory, startSessionForTargetContext]);
 
+  // Preset buttons automate common Claude-in-terminal requests by writing a
+  // full prompt plus Enter into the already-running PTY session.
+  const sendPresetPromptToActiveSession = useCallback(
+    async (promptText: string) => {
+      const activeSessionId = sessionRef.current?.sessionId;
+      if (!activeSessionId) {
+        return;
+      }
+
+      await getTerminalApi().sendInput(activeSessionId, promptText);
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 0);
+      });
+      await getTerminalApi().sendInput(activeSessionId, '\r');
+      xtermRef.current?.focus();
+    },
+    [],
+  );
+
   return (
     <section className="pane terminal-pane">
       <div className="pane-title">{title}</div>
@@ -437,6 +483,22 @@ export const TerminalPane = ({
       ) : null}
       <div className="terminal-output terminal-output--pane">
         <div className="terminal-xterm-host" ref={terminalHostElementRef} />
+      </div>
+      <div className="terminal-preset-bar" aria-label="Terminal prompt presets">
+        {terminalPromptPresets.map((preset) => (
+          <button
+            key={preset.label}
+            type="button"
+            className="terminal-preset-button"
+            disabled={!session}
+            title={preset.promptText}
+            onClick={() => {
+              void sendPresetPromptToActiveSession(preset.promptText);
+            }}
+          >
+            {preset.label}
+          </button>
+        ))}
       </div>
     </section>
   );
