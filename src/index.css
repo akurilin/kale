@@ -324,10 +324,7 @@ body {
 .inline-comment-card {
   position: relative;
   display: block;
-  padding: 10px;
-  border: 1px solid #e4dccf;
-  border-radius: 10px;
-  background: #fff;
+  padding: 0;
 }
 
 .inline-comment-card-delete-button {
@@ -378,23 +375,34 @@ body {
 
 .inline-comment-card-input {
   width: 100%;
-  min-height: calc(1.45em + 22px);
+  min-height: calc(1.45em + 28px);
   height: auto;
   resize: none;
   overflow-y: hidden;
   border: 1px solid #d6cebf;
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 12px;
+  padding: 12px 44px 12px 14px;
   font: inherit;
   font-size: 16px;
   line-height: 1.45;
   color: #2d2b26;
-  background: #fffdfa;
+  background: #fffdfb;
+  box-shadow:
+    0 6px 18px rgba(31, 27, 20, 0.04),
+    0 1px 3px rgba(31, 27, 20, 0.05);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease;
 }
 
 .inline-comment-card-input:focus {
   outline: 2px solid rgba(201, 141, 22, 0.18);
   border-color: #c98d16;
+  background: #fff;
+  box-shadow:
+    0 10px 26px rgba(31, 27, 20, 0.08),
+    0 2px 6px rgba(31, 27, 20, 0.06);
 }
 
 .terminal-warning-banner {
