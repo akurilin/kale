@@ -386,7 +386,7 @@ body {
   font-size: 16px;
   line-height: 1.45;
   color: #2d2b26;
-  background: #fffdfb;
+  background: rgb(243, 246, 252);
   box-shadow:
     0 6px 18px rgba(31, 27, 20, 0.04),
     0 1px 3px rgba(31, 27, 20, 0.05);
@@ -403,6 +403,10 @@ body {
   box-shadow:
     0 10px 26px rgba(31, 27, 20, 0.08),
     0 2px 6px rgba(31, 27, 20, 0.06);
+}
+
+.inline-comment-card:not(:focus-within):hover .inline-comment-card-input {
+  background: rgb(235, 240, 249);
 }
 
 .terminal-warning-banner {
