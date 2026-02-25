@@ -1,7 +1,14 @@
 # kale
 
-This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a
-React renderer shell.
+An agentic word processing tool for technical essay writers. Combines aesthetic visuals and creature comforts expected from the best writing tools with the power of Claude Code, git and Markdown. Use comments to annotate future work for Claude while writing the article (e.g. "find a link for this claim", "this paragraph reads clunky, needs to flow better", "is this claim actually true? research how much evidence there is to support this"), and claude acts on those comments when the user is ready. Alternatively, Claude can generate comments for the user as an editor and writing coach, helping them refine their prose.
+
+Kale integrates with Claude Code through its IDE MCP server (activated with /ide) and allows the user to select lines for Claude to focus on the same way VSCode and Cursor do.
+
+The tool is based on a workflow I already used for writing [kuril.in](https://www.kuril.in/), but I couldn't find it off-the-shelf available anywhere and I was frustrated by having to cobble it all by hand manually.
+
+## Technology
+
+This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a React renderer shell.
 
 ## Run Commands
 
@@ -19,6 +26,8 @@ React renderer shell.
 ## Folder Overview
 
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
+- `src/main.ts`: Electron main-process orchestrator that wires lifecycle events to extracted domain services.
+- `src/main/`: main-process domain modules for window creation, markdown file/watcher IPC, terminal PTY sessions, and Claude Code IDE integration.
 - `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
 - `src/renderer/`: extracted renderer modules for CodeMirror extensions, save/autosave controller logic, and line-level three-way merge.
 - `src/renderer/DocumentCommentsPane.tsx`: document editor + inline comments orchestration (selection comment action, anchor-based floating comment layout/packing, sidebar wiring, autofocus handoff).
