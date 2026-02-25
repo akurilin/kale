@@ -1,51 +1,7 @@
 # kale
 
-## Current State
-
 This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a
 React renderer shell.
-
-What works right now:
-
-- `npm start` runs Electron Forge and opens a single-window markdown workspace.
-- Prettier is configured for repository formatting (`npm run format`, `npm run format:check`).
-- Startup window size defaults to `2560x1440` and can be overridden with `KALE_WINDOW_WIDTH` / `KALE_WINDOW_HEIGHT`.
-- The app can open a markdown file from the UI (`Open...`) and remembers the last opened file across restarts.
-- The top bar includes a `Restore Git` action that discards local changes for the current file and restores it from the repository `HEAD` version (requires `git` on `PATH`).
-- On first run (or if the remembered file is unavailable), the app seeds a writable default markdown file in Electron `userData` from `data/what-the-best-looks-like.md`.
-- Editing happens in a single CodeMirror 6 pane with Obsidian-style live preview behavior (markdown markers hide outside the active context while formatted text remains visible).
-- The markdown editor hides CodeMirror's line-number gutter so the document pane uses the full width for prose.
-- Markdown heading levels (ATX and setext) now receive level-specific live-preview typography via CodeMirror line decorations, so H1/H2/H3 no longer render identically.
-- The editor overrides CodeMirror's default heading underline highlight so markdown headings read like document typography instead of links.
-- The default app view now combines the markdown editor (left, ~75%) and a PTY-backed terminal pane (right, ~25%) in a single window.
-- The document pane now includes an inline-comment workflow: selecting text and using a floating `Comment` action near the selection inserts hidden HTML comment markers into the markdown, highlights the anchored range, and shows editable comment cards in a right-side floating comments rail aligned to anchor text.
-- Newly created inline comments now auto-focus their comment text box so typing can continue immediately without an extra click.
-- The renderer UI shell is React-based while the CodeMirror editor remains an imperative CM6 integration inside a React component.
-- Inline comment/editor layout orchestration is now isolated in `src/renderer/DocumentCommentsPane.tsx` so floating-comment positioning work can evolve without bloating `App.tsx`.
-- The terminal implementation is now split into a reusable embedded `TerminalPane` component and a standalone `TerminalView` wrapper used by `VITE_KALE_VIEW=terminal`.
-- The project now targets TypeScript `5.9.3` for modern type-system features and improved React typing support.
-- Autosave runs 5 seconds after typing stops (and also attempts a save on blur/close).
-- The active markdown file is watched in the Electron main process with `chokidar`; external edits trigger an automatic renderer reload, and app-originated saves now use a short watcher suppression window to avoid autosave self-reload churn (unsaved-local-edit protection is still not implemented).
-- A separate isolated terminal prototype view can be loaded with `VITE_KALE_VIEW=terminal npm start` for PTY terminal development/testing.
-- The terminal prototype now uses a PTY-backed process session and `xterm.js` rendering for interactive CLI compatibility.
-- The embedded terminal currently launches `claude` directly (not a shell) with a prose-editing `--append-system-prompt` and `--dangerously-skip-permissions` for Kale-specific assistant behavior.
-- The Claude appended system prompt is loaded from `prompts/claude-system-prompt.md` at app startup, and the app exits immediately if that file is missing or empty.
-- The Claude prompt file supports simple token substitution for `@@KALE:ACTIVE_FILE_PATH@@`, populated per terminal session from the active markdown file path (with a first-run fallback to the app's resolved current markdown file).
-- The app also exits at startup if the `claude` CLI command is not available on `PATH`, because the terminal workflow depends on Claude Code.
-- The terminal prototype defaults its working directory to `data/what-the-best-looks-like.md`'s directory for predictable local testing.
-- In the combined app view, the embedded terminal automatically restarts in the active document's folder when the user opens or switches files.
-- Terminal prototype error paths were hardened so failed session starts and failed input sends report correctly in the `xterm.js` output/status UI without crashing.
-- Packaging/making is configured through Electron Forge for:
-  - Windows (`squirrel`)
-  - macOS (`zip`)
-  - Linux (`deb`, `rpm`)
-- Electron fuses are configured for a more locked-down packaged app profile.
-
-What is not implemented yet:
-
-- The broader workflows from `docs/prd.md` (agent orchestration, snapshots, comment sidecars, skills, multi-doc project handling) are not yet wired into `src/`.
-- The inline comments feature is still early: it currently uses a floating selection action (not right-click context menu), a right-side floating comments rail (not fully in-editor bubbles/connectors), and permissive raw-character anchoring with basic malformed-marker tolerance.
-- The known editor persistence issues tracked in `docs/todos.md` are not fixed yet (packaged save path and close/save race).
 
 ## Run Commands
 
@@ -65,6 +21,10 @@ What is not implemented yet:
 - `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
 - `src/renderer/`: extracted renderer modules for CodeMirror extensions and save/autosave controller logic.
 - `src/renderer/DocumentCommentsPane.tsx`: document editor + inline comments orchestration (selection comment action, anchor-based floating comment layout/packing, sidebar wiring, autofocus handoff).
+- `src/renderer/MarkdownEditorPane.tsx`: imperative CodeMirror wrapper that exposes editor content and range-anchor geometry to the React layout layer.
+- `src/renderer/InlineCommentsSidebar.tsx`: presentational floating comments rail renderer (absolute-positioned card slots in the right column).
+- `src/renderer/InlineCommentCard.tsx`: individual comment card UI (textarea auto-size, delete action, autofocus, resize reporting for layout).
+- `src/renderer/inline-comments.ts`: parser/helpers for hidden HTML comment markers used as the canonical inline-comment source of truth.
 - `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app and prototype terminal view.
 - `src/renderer/TerminalView.tsx`: isolated terminal prototype wrapper view that reuses `TerminalPane`.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
