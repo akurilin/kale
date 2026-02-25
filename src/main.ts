@@ -523,20 +523,20 @@ ipcMain.handle(
     const browserWindow = BrowserWindow.getFocusedWindow();
     // The native dialog lives in the main process; the renderer only requests it
     // via IPC to keep filesystem access out of browser code.
-    const { canceled, filePaths } = await dialog.showOpenDialog(
-      browserWindow ?? undefined,
-      {
-        title: 'Open Markdown File',
-        properties: ['openFile'],
-        filters: [
-          {
-            name: 'Markdown',
-            extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'],
-          },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      },
-    );
+    const openDialogOptions: Electron.OpenDialogOptions = {
+      title: 'Open Markdown File',
+      properties: ['openFile'],
+      filters: [
+        {
+          name: 'Markdown',
+          extensions: ['md', 'markdown', 'mdown', 'mkd', 'txt'],
+        },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    };
+    const { canceled, filePaths } = browserWindow
+      ? await dialog.showOpenDialog(browserWindow, openDialogOptions)
+      : await dialog.showOpenDialog(openDialogOptions);
 
     if (canceled || filePaths.length === 0) {
       return { canceled: true };

@@ -386,7 +386,7 @@ export const TerminalPane = ({
 
       xtermRef.current?.clear();
       xtermRef.current?.writeln('[terminal reset for file]');
-      xtermRef.current?.writeln(targetFilePath);
+      xtermRef.current?.writeln(targetFilePath ?? '');
       xtermRef.current?.writeln('');
 
       await startSessionForTargetContext(targetWorkingDirectory ?? undefined);
