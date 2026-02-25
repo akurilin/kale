@@ -54,6 +54,46 @@ import {
   updateInlineCommentTextInMarkdown,
 } from './inline-comments';
 
+/**
+ * Why: several operations replace the entire document content (external reload,
+ * comment text update, comment deletion). A full-document replacement dispatch
+ * collapses the cursor to position 0 and can reset the viewport, so this helper
+ * preserves and restores the cursor's line/column and the scroll position.
+ */
+const dispatchFullDocumentReplacementPreservingCursor = (
+  editorView: EditorView,
+  newContent: string,
+) => {
+  const prevCursorPos = editorView.state.selection.main.head;
+  const prevCursorLine = editorView.state.doc.lineAt(prevCursorPos);
+  const prevLineNumber = prevCursorLine.number;
+  const prevColumn = prevCursorPos - prevCursorLine.from;
+  const prevScrollTop = editorView.scrollDOM.scrollTop;
+
+  editorView.dispatch({
+    changes: {
+      from: 0,
+      to: editorView.state.doc.length,
+      insert: newContent,
+    },
+  });
+
+  // Restore cursor to the same line/column in the new document,
+  // clamped to valid ranges if the document shrank.
+  const newDoc = editorView.state.doc;
+  const restoredLineNumber = Math.min(prevLineNumber, newDoc.lines);
+  const restoredLine = newDoc.line(restoredLineNumber);
+  const restoredColumn = Math.min(prevColumn, restoredLine.length);
+  const restoredPos = restoredLine.from + restoredColumn;
+
+  editorView.dispatch({
+    selection: { anchor: restoredPos },
+  });
+
+  // Restore scroll position so the viewport doesn't jump.
+  editorView.scrollDOM.scrollTop = prevScrollTop;
+};
+
 // CodeMirror recommends copying basicSetup when you need customization. This
 // local setup preserves the useful editor defaults while omitting gutter
 // features (line numbers, fold gutter, gutter active-line highlight) so the
@@ -344,13 +384,10 @@ const MarkdownEditorPaneImpl = (
           return false;
         }
 
-        editorView.dispatch({
-          changes: {
-            from: 0,
-            to: editorView.state.doc.length,
-            insert: nextMarkdownContent,
-          },
-        });
+        dispatchFullDocumentReplacementPreservingCursor(
+          editorView,
+          nextMarkdownContent,
+        );
         return true;
       },
       deleteInlineCommentById: (commentId: string) => {
@@ -367,13 +404,10 @@ const MarkdownEditorPaneImpl = (
           return false;
         }
 
-        editorView.dispatch({
-          changes: {
-            from: 0,
-            to: editorView.state.doc.length,
-            insert: nextMarkdownContent,
-          },
-        });
+        dispatchFullDocumentReplacementPreservingCursor(
+          editorView,
+          nextMarkdownContent,
+        );
         return true;
       },
     }),
@@ -476,41 +510,12 @@ const MarkdownEditorPaneImpl = (
       return;
     }
 
-    // Preserve cursor line/column and scroll position across the content
-    // replacement. Line/column is used rather than absolute offset because
-    // external edits (e.g. Claude) may add or remove lines above the cursor,
-    // but the writer's logical position within "their" paragraph stays the same.
-    const prevCursorPos = editorView.state.selection.main.head;
-    const prevCursorLine = editorView.state.doc.lineAt(prevCursorPos);
-    const prevLineNumber = prevCursorLine.number;
-    const prevColumn = prevCursorPos - prevCursorLine.from;
-    const prevScrollTop = editorView.scrollDOM.scrollTop;
-
     isApplyingLoadedDocumentRef.current = true;
     try {
-      editorView.dispatch({
-        changes: {
-          from: 0,
-          to: editorView.state.doc.length,
-          insert: loadedDocumentContent,
-        },
-      });
-
-      // Restore cursor to the same line/column in the new document,
-      // clamped to valid ranges if the document shrank.
-      const newDoc = editorView.state.doc;
-      const restoredLineNumber = Math.min(prevLineNumber, newDoc.lines);
-      const restoredLine = newDoc.line(restoredLineNumber);
-      const restoredColumn = Math.min(prevColumn, restoredLine.length);
-      const restoredPos = restoredLine.from + restoredColumn;
-
-      editorView.dispatch({
-        selection: { anchor: restoredPos },
-      });
-
-      // Restore scroll position so the viewport doesn't jump.
-      editorView.scrollDOM.scrollTop = prevScrollTop;
-
+      dispatchFullDocumentReplacementPreservingCursor(
+        editorView,
+        loadedDocumentContent,
+      );
       emitInlineCommentCreationAnchorPosition(editorView);
       emitInlineCommentAnchorGeometryChanged();
     } finally {
