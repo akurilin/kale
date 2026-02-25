@@ -70,7 +70,6 @@ export const headingUnderlineResetHighlightExtension = (): Extension =>
         textDecoration: 'none',
       },
     ]),
-    { fallback: true },
   );
 
 // live-preview marker tokens must remain visible when the cursor/selection
