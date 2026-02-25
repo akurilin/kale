@@ -30,6 +30,8 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - `src/`: application source code for the Electron main process, preload layer, and renderer entry.
 - `src/main.ts`: Electron main-process orchestrator that wires lifecycle events to extracted domain services.
 - `src/main/`: main-process domain modules for window creation, markdown file/watcher IPC, terminal PTY sessions, and Claude Code IDE integration.
+- `src/preload.ts`: preload bridge that exposes typed `markdownApi`, `terminalApi`, and `ideServerApi` methods/events to the renderer via `contextBridge`.
+- `src/shared-types.ts`: canonical IPC payload/type contracts shared by main, preload, renderer, and IDE integration code.
 - `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
 - `src/renderer/`: extracted renderer modules for CodeMirror extensions, save/autosave controller logic, and line-level three-way merge.
 - `src/renderer/DocumentCommentsPane.tsx`: document editor + inline comments orchestration (selection comment action, anchor-based floating comment layout/packing, sidebar wiring, autofocus handoff).
@@ -47,6 +49,18 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - `src/ide-server/`: MCP-over-WebSocket server that lets Claude Code CLI query Kale's editor state (open files, selections, diagnostics). See `docs/claude-code-ide-protocol.md` for the protocol spec.
 - `src/types/`: ambient TypeScript declarations for packages whose types cannot be resolved by `moduleResolution: "node"`.
 - `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).
+
+## Main Process Architecture
+
+The Electron main process is now organized as a thin orchestrator plus domain services:
+
+- `src/main.ts` wires Electron lifecycle events (`ready`, `activate`, `window-all-closed`) to service startup/shutdown and IPC registration.
+- `src/main/window.ts` owns BrowserWindow creation and Forge/Vite renderer/preload entry loading.
+- `src/main/markdown-file-service.ts` owns active markdown file state, settings persistence, file open/load/save/restore IPC handlers, and chokidar-based file watching/broadcasts.
+- `src/main/terminal-session-service.ts` owns PTY session state, Claude CLI startup validation/prompt-template preload, and terminal IPC handlers.
+- `src/main/ide-integration-service.ts` owns IDE MCP server lifecycle, cached editor selection state, and the `ide:selection-changed` IPC handler/debounced Claude notifications.
+
+Cross-service coordination stays explicit through small APIs/callbacks (for example, terminal and IDE services read the active file path from the markdown file service) rather than through a single shared runtime-state object.
 
 ## File Sync Architecture
 
