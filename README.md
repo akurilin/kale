@@ -1,10 +1,12 @@
 # kale
 
-An agentic word processing tool for technical essay writers. Combines aesthetic visuals and creature comforts expected from the best writing tools with the power of Claude Code, git and Markdown. Use comments to annotate future work for Claude while writing the article (e.g. "find a link for this claim", "this paragraph reads clunky, needs to flow better", "is this claim actually true? research how much evidence there is to support this"), and claude acts on those comments when the user is ready. Alternatively, Claude can generate comments for the user as an editor and writing coach, helping them refine their prose.
+An agentic word processor for technical essay writers. Combines the aesthetics of the best writing tools with the power of Claude Code, git, and Markdown.
 
-Kale integrates with Claude Code through its IDE MCP server (activated with /ide) and allows the user to select lines for Claude to focus on the same way VSCode and Cursor do.
+Annotate your draft with comments — "find a link for this claim", "this paragraph reads clunky", "is this actually true?" — and Claude acts on them when you're ready. Or let Claude generate comments as an editor and writing coach, helping you refine your prose.
 
-The tool is based on a workflow I already used for writing [kuril.in](https://www.kuril.in/), but I couldn't find it off-the-shelf available anywhere and I was frustrated by having to cobble it all by hand manually.
+Kale integrates with Claude Code through its IDE MCP server (activated with `/ide`) and lets you select lines for Claude to focus on, the same way VS Code and Cursor do.
+
+Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into the tool I wished existed.
 
 ## Technology
 
