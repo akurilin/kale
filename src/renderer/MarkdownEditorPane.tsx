@@ -10,6 +10,9 @@ import {
   useRef,
   type ForwardedRef,
 } from 'react';
+
+import type { SelectionRange } from '../shared-types';
+import { useLatestRef } from './use-latest-ref';
 import { markdown } from '@codemirror/lang-markdown';
 import {
   autocompletion,
@@ -126,10 +129,7 @@ const proseEditorSetupWithoutGutters: Extension = [
 /** Selection details emitted on every selection/cursor change for IDE integration. */
 export type EditorSelectionDetails = {
   selectedText: string;
-  range: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
+  range: SelectionRange;
 };
 
 type MarkdownEditorPaneProps = {
@@ -181,57 +181,21 @@ const MarkdownEditorPaneImpl = (
   const editorContainerElementRef = useRef<HTMLDivElement | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const isApplyingLoadedDocumentRef = useRef(false);
-  const onUserEditedDocumentRef = useRef(onUserEditedDocument);
-  const onDocumentContentReplacedFromDiskRef = useRef(
+  // useLatestRef keeps each callback ref current on every render so the
+  // one-shot CodeMirror update listener always sees the latest handler
+  // without forcing editor instance recreation.
+  const onUserEditedDocumentRef = useLatestRef(onUserEditedDocument);
+  const onDocumentContentReplacedFromDiskRef = useLatestRef(
     onDocumentContentReplacedFromDisk,
   );
-  const onSelectionHasTextChangedRef = useRef(onSelectionHasTextChanged);
-  const onSelectionDetailsChangedRef = useRef(onSelectionDetailsChanged);
-  const onInlineCommentAnchorGeometryChangedRef = useRef(
+  const onSelectionHasTextChangedRef = useLatestRef(onSelectionHasTextChanged);
+  const onSelectionDetailsChangedRef = useLatestRef(onSelectionDetailsChanged);
+  const onInlineCommentAnchorGeometryChangedRef = useLatestRef(
     onInlineCommentAnchorGeometryChanged,
   );
-  const onInlineCommentCreationAnchorChangedRef = useRef(
+  const onInlineCommentCreationAnchorChangedRef = useLatestRef(
     onInlineCommentCreationAnchorChanged,
   );
-
-  // the update listener is attached once during editor creation, so a ref keeps
-  // the latest React callback available without recreating the editor instance.
-  useEffect(() => {
-    onUserEditedDocumentRef.current = onUserEditedDocument;
-  }, [onUserEditedDocument]);
-
-  // The post-replacement callback ref stays current so the content-swap
-  // useEffect always invokes the latest save-state synchronization function.
-  useEffect(() => {
-    onDocumentContentReplacedFromDiskRef.current =
-      onDocumentContentReplacedFromDisk;
-  }, [onDocumentContentReplacedFromDisk]);
-
-  // Selection listeners are also attached once, so a ref keeps the latest
-  // callback available without recreating the editor instance.
-  useEffect(() => {
-    onSelectionHasTextChangedRef.current = onSelectionHasTextChanged;
-  }, [onSelectionHasTextChanged]);
-
-  // The IDE integration callback needs the latest ref so selection detail
-  // events always reach the current handler without recreating the editor.
-  useEffect(() => {
-    onSelectionDetailsChangedRef.current = onSelectionDetailsChanged;
-  }, [onSelectionDetailsChanged]);
-
-  // Floating comments need re-layout signals on editor scroll/geometry updates,
-  // so this ref keeps the latest callback without recreating the editor.
-  useEffect(() => {
-    onInlineCommentAnchorGeometryChangedRef.current =
-      onInlineCommentAnchorGeometryChanged;
-  }, [onInlineCommentAnchorGeometryChanged]);
-
-  // The editor update listener is attached once, so this ref keeps the latest
-  // anchor callback available without recreating the editor instance.
-  useEffect(() => {
-    onInlineCommentCreationAnchorChangedRef.current =
-      onInlineCommentCreationAnchorChanged;
-  }, [onInlineCommentCreationAnchorChanged]);
 
   /**
    * Why: floating comment cards and the selection action both need the same

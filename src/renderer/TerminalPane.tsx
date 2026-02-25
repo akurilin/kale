@@ -4,6 +4,8 @@
 //
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { useLatestRef } from './use-latest-ref';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 
@@ -87,32 +89,20 @@ export const TerminalPane = ({
   const sessionRef = useRef<TerminalSessionState | null>(null);
   const xtermRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const isStartingSessionRef = useRef(false);
-  const workingDirectoryInputRef = useRef(workingDirectoryInput);
+  // useLatestRef keeps these mirrors current on every render so async flows
+  // and event handlers always see the latest value without effect churn.
+  const isStartingSessionRef = useLatestRef(isStartingSession);
+  const workingDirectoryInputRef = useLatestRef(workingDirectoryInput);
   const lastActivatedTargetContextKeyRef = useRef<string | null>(null);
-  const activeTargetFilePathRef = useRef<string | null>(targetFilePath);
-  const activeTargetWorkingDirectoryRef = useRef<string | null>(
-    targetWorkingDirectory,
-  );
+  const activeTargetFilePathRef = useLatestRef(targetFilePath);
+  const activeTargetWorkingDirectoryRef = useLatestRef(targetWorkingDirectory);
 
-  // Ref mirrors keep event handlers and async flows aligned with the latest
-  // React state without forcing listener teardown/re-subscribe churn.
+  // sessionRef is kept as a manual ref because restartForTargetContext writes
+  // it imperatively (before the React render cycle) to prevent delayed exit
+  // events from the old process from overwriting the next session's state.
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
-
-  useEffect(() => {
-    isStartingSessionRef.current = isStartingSession;
-  }, [isStartingSession]);
-
-  useEffect(() => {
-    workingDirectoryInputRef.current = workingDirectoryInput;
-  }, [workingDirectoryInput]);
-
-  useEffect(() => {
-    activeTargetFilePathRef.current = targetFilePath;
-    activeTargetWorkingDirectoryRef.current = targetWorkingDirectory;
-  }, [targetFilePath, targetWorkingDirectory]);
 
   // The xterm instance is imperative and owns terminal rendering/input, while
   // React owns the surrounding layout and file-context lifecycle behavior.

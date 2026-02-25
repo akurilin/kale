@@ -51,6 +51,38 @@ const overlaps = (
 const getMarkdownHeadingLevel = (nodeName: string): number | null =>
   markdownHeadingNodeNameToLevel.get(nodeName) ?? null;
 
+// ---------------------------------------------------------------------------
+// ViewPlugin factory
+//
+// Every decoration-producing CodeMirror plugin follows the same skeleton:
+// build decorations in the constructor, rebuild when specified conditions are
+// met in the update handler, and expose the set via an accessor. This factory
+// extracts that boilerplate so each extension only supplies the two pieces
+// that actually vary: the rebuild predicate and the decoration builder.
+// ---------------------------------------------------------------------------
+
+const createDecorationViewPlugin = (
+  shouldRebuildDecorations: (update: ViewUpdate) => boolean,
+  buildDecorations: (view: EditorView) => Range<Decoration>[],
+): Extension =>
+  ViewPlugin.fromClass(
+    class {
+      decorations;
+      constructor(view: EditorView) {
+        this.decorations = Decoration.set(buildDecorations(view), true);
+      }
+      update(update: ViewUpdate) {
+        if (shouldRebuildDecorations(update)) {
+          this.decorations = Decoration.set(
+            buildDecorations(update.view),
+            true,
+          );
+        }
+      }
+    },
+    { decorations: (viewPluginInstance) => viewPluginInstance.decorations },
+  );
+
 // CodeMirror's default markdown highlighting underlines headings, which reads
 // like links in a prose editor. This override keeps semantic heading tokens
 // while removing the underline so line-level typography can define the look.
@@ -98,241 +130,177 @@ const isSelectionContextActive = (
   return false;
 };
 
-// this plugin implements the markdown live-preview behavior without
-// mutating document text by hiding marker tokens via decorations only.
-export const livePreviewMarkersExtension = (): Extension =>
-  ViewPlugin.fromClass(
-    class {
-      decorations;
+// syntax-tree-driven decoration generation is less fragile than
+// regex parsing and stays aligned with CodeMirror markdown semantics.
+const buildLivePreviewMarkerDecorations = (
+  view: EditorView,
+): Range<Decoration>[] => {
+  const decorations: Range<Decoration>[] = [];
+  const { state } = view;
+  const tree = syntaxTree(state);
 
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
+  tree.iterate({
+    enter: (node) => {
+      const { name, from, to } = node;
+      if (from >= to) {
+        return;
       }
 
-      // marker visibility depends on document content and cursor context.
-      update(update: ViewUpdate) {
+      if (markerNodes.has(name) && !isSelectionContextActive(state, from, to)) {
+        let hideTo = to;
+
         if (
-          update.docChanged ||
-          update.selectionSet ||
-          update.viewportChanged ||
-          update.focusChanged
+          (name === 'HeaderMark' ||
+            name === 'QuoteMark' ||
+            name === 'ListMark') &&
+          state.sliceDoc(to, to + 1) === ' '
         ) {
-          this.decorations = this.buildDecorations(update.view);
+          hideTo = to + 1;
         }
-      }
 
-      // syntax-tree-driven decoration generation is less fragile than
-      // regex parsing and stays aligned with CodeMirror markdown semantics.
-      buildDecorations(view: EditorView) {
-        const decorations: Range<Decoration>[] = [];
-        const { state } = view;
-        const tree = syntaxTree(state);
-
-        tree.iterate({
-          enter: (node) => {
-            const { name, from, to } = node;
-            if (from >= to) {
-              return;
-            }
-
-            if (
-              markerNodes.has(name) &&
-              !isSelectionContextActive(state, from, to)
-            ) {
-              let hideTo = to;
-
-              if (
-                (name === 'HeaderMark' ||
-                  name === 'QuoteMark' ||
-                  name === 'ListMark') &&
-                state.sliceDoc(to, to + 1) === ' '
-              ) {
-                hideTo = to + 1;
-              }
-
-              decorations.push(Decoration.replace({}).range(from, hideTo));
-            }
-          },
-        });
-
-        return Decoration.set(decorations, true);
+        decorations.push(Decoration.replace({}).range(from, hideTo));
       }
     },
-    {
-      decorations: (viewPluginInstance) => viewPluginInstance.decorations,
-    },
+  });
+
+  return decorations;
+};
+
+// This plugin implements the markdown live-preview behavior without
+// mutating document text by hiding marker tokens via decorations only.
+// Marker visibility depends on document content and cursor context.
+export const livePreviewMarkersExtension = (): Extension =>
+  createDecorationViewPlugin(
+    (update) =>
+      update.docChanged ||
+      update.selectionSet ||
+      update.viewportChanged ||
+      update.focusChanged,
+    buildLivePreviewMarkerDecorations,
   );
+
+// Setext heading nodes span both the text line and underline marker line, but
+// typography should only be applied to the visible content line to avoid
+// styling an effectively hidden underline row.
+const buildHeadingLineDecorations = (view: EditorView): Range<Decoration>[] => {
+  const decorations: Range<Decoration>[] = [];
+  const { state } = view;
+  const tree = syntaxTree(state);
+  const decoratedLineStarts = new Set<number>();
+
+  tree.iterate({
+    enter: (node) => {
+      const headingLevel = getMarkdownHeadingLevel(node.name);
+      if (headingLevel === null) {
+        return;
+      }
+
+      const headingTextLine = state.doc.lineAt(node.from);
+      if (decoratedLineStarts.has(headingTextLine.from)) {
+        return;
+      }
+
+      decoratedLineStarts.add(headingTextLine.from);
+      decorations.push(
+        Decoration.line({
+          class: `cm-live-heading-line cm-live-heading-line--${headingLevel}`,
+        }).range(headingTextLine.from),
+      );
+    },
+  });
+
+  return decorations;
+};
 
 // Heading typography is applied as line decorations so level-specific sizing
 // and spacing can be expressed in CSS without mutating markdown text or
 // relying on syntax-token spans that are awkward for block-level layout.
 export const headingLineDecorationExtension = (): Extension =>
-  ViewPlugin.fromClass(
-    class {
-      decorations;
-
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
-      }
-
-      // Heading line placement only depends on parsed content and viewport.
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged) {
-          this.decorations = this.buildDecorations(update.view);
-        }
-      }
-
-      // Setext heading nodes span both the text line and underline marker
-      // line, but typography should only be applied to the visible content
-      // line to avoid styling an effectively hidden underline row.
-      buildDecorations(view: EditorView) {
-        const decorations: Range<Decoration>[] = [];
-        const { state } = view;
-        const tree = syntaxTree(state);
-        const decoratedLineStarts = new Set<number>();
-
-        tree.iterate({
-          enter: (node) => {
-            const headingLevel = getMarkdownHeadingLevel(node.name);
-            if (headingLevel === null) {
-              return;
-            }
-
-            const headingTextLine = state.doc.lineAt(node.from);
-            if (decoratedLineStarts.has(headingTextLine.from)) {
-              return;
-            }
-
-            decoratedLineStarts.add(headingTextLine.from);
-            decorations.push(
-              Decoration.line({
-                class: `cm-live-heading-line cm-live-heading-line--${headingLevel}`,
-              }).range(headingTextLine.from),
-            );
-          },
-        });
-
-        return Decoration.set(decorations, true);
-      }
-    },
-    {
-      decorations: (viewPluginInstance) => viewPluginInstance.decorations,
-    },
+  createDecorationViewPlugin(
+    (update) => update.docChanged || update.viewportChanged,
+    buildHeadingLineDecorations,
   );
 
-// blockquote styling is attached as line decorations so quote visuals stay
+// Each parsed blockquote spans one or more lines, and line decorations must
+// be anchored at line starts for stable rendering.
+const buildQuoteLineDecorations = (view: EditorView): Range<Decoration>[] => {
+  const decorations: Range<Decoration>[] = [];
+  const { state } = view;
+  const tree = syntaxTree(state);
+  const lineStarts = new Set<number>();
+
+  tree.iterate({
+    enter: (node) => {
+      if (node.name !== 'Blockquote') {
+        return;
+      }
+
+      let line = state.doc.lineAt(node.from);
+      while (line.from <= node.to) {
+        if (!lineStarts.has(line.from)) {
+          lineStarts.add(line.from);
+          decorations.push(
+            Decoration.line({ class: 'cm-live-quote-line' }).range(line.from),
+          );
+        }
+
+        if (line.to >= node.to || line.number >= state.doc.lines) {
+          break;
+        }
+        line = state.doc.line(line.number + 1);
+      }
+    },
+  });
+
+  return decorations;
+};
+
+// Blockquote styling is attached as line decorations so quote visuals stay
 // aligned across wrapped and multi-line parser-recognized blockquote regions.
 export const quoteLineDecorationExtension = (): Extension =>
-  ViewPlugin.fromClass(
-    class {
-      decorations;
-
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
-      }
-
-      // line decoration placement only depends on content/layout changes.
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged) {
-          this.decorations = this.buildDecorations(update.view);
-        }
-      }
-
-      // each parsed blockquote spans one or more lines, and line
-      // decorations must be anchored at line starts for stable rendering.
-      buildDecorations(view: EditorView) {
-        const decorations: Range<Decoration>[] = [];
-        const { state } = view;
-        const tree = syntaxTree(state);
-        const lineStarts = new Set<number>();
-
-        tree.iterate({
-          enter: (node) => {
-            if (node.name !== 'Blockquote') {
-              return;
-            }
-
-            let line = state.doc.lineAt(node.from);
-            while (line.from <= node.to) {
-              if (!lineStarts.has(line.from)) {
-                lineStarts.add(line.from);
-                decorations.push(
-                  Decoration.line({ class: 'cm-live-quote-line' }).range(
-                    line.from,
-                  ),
-                );
-              }
-
-              if (line.to >= node.to || line.number >= state.doc.lines) {
-                break;
-              }
-              line = state.doc.line(line.number + 1);
-            }
-          },
-        });
-
-        return Decoration.set(decorations, true);
-      }
-    },
-    {
-      decorations: (viewPluginInstance) => viewPluginInstance.decorations,
-    },
+  createDecorationViewPlugin(
+    (update) => update.docChanged || update.viewportChanged,
+    buildQuoteLineDecorations,
   );
+
+// Marker ranges are replaced so users interact with highlighted prose while
+// the raw comment syntax remains persisted in the document source.
+const buildInlineCommentDecorations = (
+  view: EditorView,
+): Range<Decoration>[] => {
+  const decorations: Range<Decoration>[] = [];
+  const parsedComments = parseInlineCommentsFromMarkdown(
+    view.state.doc.toString(),
+  );
+
+  for (const comment of parsedComments) {
+    decorations.push(
+      Decoration.replace({}).range(
+        comment.startMarkerFrom,
+        comment.startMarkerTo,
+      ),
+    );
+    decorations.push(
+      Decoration.replace({}).range(comment.endMarkerFrom, comment.endMarkerTo),
+    );
+
+    if (comment.contentFrom < comment.contentTo) {
+      decorations.push(
+        Decoration.mark({ class: 'cm-inline-comment-range' }).range(
+          comment.contentFrom,
+          comment.contentTo,
+        ),
+      );
+    }
+  }
+
+  return decorations;
+};
 
 // Inline comments are stored as markdown HTML comment markers, so this plugin
 // hides the marker syntax and highlights the anchored text range for editing.
 export const inlineCommentDecorationExtension = (): Extension =>
-  ViewPlugin.fromClass(
-    class {
-      decorations;
-
-      constructor(view: EditorView) {
-        this.decorations = this.buildDecorations(view);
-      }
-
-      // Decoration placement only depends on document content and viewport.
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged) {
-          this.decorations = this.buildDecorations(update.view);
-        }
-      }
-
-      // Marker ranges are replaced so users interact with highlighted prose
-      // while the raw comment syntax remains persisted in the document source.
-      buildDecorations(view: EditorView) {
-        const decorations: Range<Decoration>[] = [];
-        const parsedComments = parseInlineCommentsFromMarkdown(
-          view.state.doc.toString(),
-        );
-
-        for (const comment of parsedComments) {
-          decorations.push(
-            Decoration.replace({}).range(
-              comment.startMarkerFrom,
-              comment.startMarkerTo,
-            ),
-          );
-          decorations.push(
-            Decoration.replace({}).range(
-              comment.endMarkerFrom,
-              comment.endMarkerTo,
-            ),
-          );
-
-          if (comment.contentFrom < comment.contentTo) {
-            decorations.push(
-              Decoration.mark({ class: 'cm-inline-comment-range' }).range(
-                comment.contentFrom,
-                comment.contentTo,
-              ),
-            );
-          }
-        }
-
-        return Decoration.set(decorations, true);
-      }
-    },
-    {
-      decorations: (viewPluginInstance) => viewPluginInstance.decorations,
-    },
+  createDecorationViewPlugin(
+    (update) => update.docChanged || update.viewportChanged,
+    buildInlineCommentDecorations,
   );

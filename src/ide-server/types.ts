@@ -2,6 +2,18 @@
 // Type definitions for the MCP-over-WebSocket IDE server that lets Claude Code
 // query Kale's editor state (open files, selections, diagnostics).
 //
+// Editor state types (SelectionRange, EditorSelection, OpenEditor) are defined
+// once in shared-types.ts and re-exported here so the IDE server module and
+// IPC boundary share one source of truth.
+//
+
+import type {
+  EditorSelection,
+  OpenEditor,
+  SelectionRange,
+} from '../shared-types';
+
+export type { EditorSelection, OpenEditor, SelectionRange };
 
 // ---------------------------------------------------------------------------
 // JSON-RPC 2.0 wire types
@@ -51,27 +63,6 @@ export type IdeLockFileContents = {
 // ---------------------------------------------------------------------------
 // Editor state types exposed to MCP tool handlers
 // ---------------------------------------------------------------------------
-
-/** A text selection range using line/column coordinates (0-based). */
-export type SelectionRange = {
-  start: { line: number; character: number };
-  end: { line: number; character: number };
-};
-
-/** The result of getCurrentSelection / getLatestSelection. */
-export type EditorSelection = {
-  filePath: string;
-  selectedText: string;
-  range: SelectionRange;
-} | null;
-
-/** A single open editor tab. */
-export type OpenEditor = {
-  filePath: string;
-  isActive: boolean;
-  /** Language identifier (e.g. "markdown"). */
-  languageId: string;
-};
 
 /** A single diagnostic entry from the editor. */
 export type DiagnosticEntry = {

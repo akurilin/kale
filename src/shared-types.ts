@@ -72,26 +72,29 @@ export type ResizeTerminalSessionRequest = {
 };
 
 // ---------------------------------------------------------------------------
-// IDE integration: editor state queries from main → renderer
+// IDE integration: editor state shared across main, renderer, and IDE server.
+// These are the canonical definitions — ide-server/types.ts re-exports them
+// so the two modules never drift out of sync.
 // ---------------------------------------------------------------------------
 
-/** Selection range using 0-based line/column coordinates. */
-export type IdeSelectionRange = {
+/** A text selection range using 0-based line/column coordinates. */
+export type SelectionRange = {
   start: { line: number; character: number };
   end: { line: number; character: number };
 };
 
-/** Response to ide:get-current-selection from the renderer. */
-export type IdeEditorSelectionResponse = {
+/** The result of getCurrentSelection / getLatestSelection. */
+export type EditorSelection = {
   filePath: string;
   selectedText: string;
-  range: IdeSelectionRange;
+  range: SelectionRange;
 } | null;
 
-/** A single open editor tab reported to the IDE server. */
-export type IdeOpenEditor = {
+/** A single open editor tab. */
+export type OpenEditor = {
   filePath: string;
   isActive: boolean;
+  /** Language identifier (e.g. "markdown"). */
   languageId: string;
 };
 
@@ -99,5 +102,5 @@ export type IdeOpenEditor = {
 export type IdeSelectionChangedEvent = {
   filePath: string;
   selectedText: string;
-  range: IdeSelectionRange;
+  range: SelectionRange;
 };
