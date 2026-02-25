@@ -18,6 +18,7 @@ import {
   DocumentCommentsPane,
   type DocumentCommentsPaneHandle,
 } from './DocumentCommentsPane';
+import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
 import { TerminalPane } from './TerminalPane';
 
@@ -79,6 +80,12 @@ export const App = () => {
     null,
   );
   const isSuppressingLifecycleSaveRef = useRef(false);
+  // When a three-way merge produces content that differs from disk, this ref
+  // holds the actual disk content so the post-replacement callback can set
+  // lastSavedContent to what's truly persisted (not the merged result). This
+  // lets the save controller correctly detect the merged content as dirty and
+  // persist it on the next save cycle. The ref is consumed once and cleared.
+  const pendingDiskContentForSaveSyncRef = useRef<string | null>(null);
   const saveControllerRef = useRef<ReturnType<
     typeof createSaveController
   > | null>(null);
@@ -121,9 +128,27 @@ export const App = () => {
   // of in applyLoadedDocument) guarantees that stale save timers from
   // keystrokes typed during the async reload gap are cleared at the right
   // moment — after the editor content is actually replaced.
+  //
+  // When a three-way merge produced content that differs from disk, the
+  // pending ref overrides lastSavedContent to the actual disk content so the
+  // save controller sees the merged editor content as dirty and will persist
+  // it. A save is scheduled immediately so the merge result reaches disk
+  // without waiting for the user to type again.
   const handleDocumentContentReplacedFromDisk = useCallback(
     (replacedWithContent: string) => {
-      saveController.markContentAsSavedFromLoad(replacedWithContent);
+      const actualDiskContent = pendingDiskContentForSaveSyncRef.current;
+      pendingDiskContentForSaveSyncRef.current = null;
+
+      if (actualDiskContent !== null) {
+        // Merge case: the editor now shows merged content that differs from
+        // disk. Set lastSavedContent to what's actually on disk so the save
+        // controller detects dirty state, then schedule a save to persist.
+        saveController.markContentAsSavedFromLoad(actualDiskContent);
+        saveController.scheduleSave(replacedWithContent);
+      } else {
+        // Normal case: editor content matches what was loaded from disk.
+        saveController.markContentAsSavedFromLoad(replacedWithContent);
+      }
     },
     [saveController],
   );
@@ -181,12 +206,50 @@ export const App = () => {
               return;
             }
 
-            // Genuine external change — update the editor. The
-            // applyLoadedDocument flow will propagate the new content to
-            // MarkdownEditorPane, which calls onDocumentContentReplacedFromDisk
-            // after the editor dispatch to sync save state at the right moment.
-            applyLoadedDocument(reloadedDocument);
-            setSaveStatusText('Reloaded from disk');
+            // Genuine external change. Check if the user has unsaved edits
+            // that should be preserved via three-way merge.
+            const currentEditorContent =
+              documentCommentsPaneRef.current?.getCurrentContent();
+            const editorHasUnsavedEdits =
+              currentEditorContent != null &&
+              currentEditorContent !== lastSavedContent;
+
+            if (editorHasUnsavedEdits) {
+              // Three-way merge: base (last save) × ours (editor) × theirs
+              // (disk). Non-conflicting edits from both sides are preserved;
+              // conflicts resolve in favor of the disk version.
+              const mergeResult = mergeDocumentLines(
+                lastSavedContent,
+                currentEditorContent,
+                reloadedDocument.content,
+              );
+
+              if (mergeResult.content !== reloadedDocument.content) {
+                // Merge preserved user edits — tell the post-replacement
+                // callback to use the actual disk content as lastSavedContent
+                // so the save controller will persist the merged result.
+                pendingDiskContentForSaveSyncRef.current =
+                  reloadedDocument.content;
+              }
+
+              const mergedDocument = {
+                ...reloadedDocument,
+                content: mergeResult.content,
+              };
+              applyLoadedDocument(mergedDocument);
+
+              if (mergeResult.content === reloadedDocument.content) {
+                setSaveStatusText('Reloaded from disk');
+              } else if (mergeResult.hadConflicts) {
+                setSaveStatusText('Merged (some edits overwritten)');
+              } else {
+                setSaveStatusText('Merged with external changes');
+              }
+            } else {
+              // Editor is clean — apply the disk content directly.
+              applyLoadedDocument(reloadedDocument);
+              setSaveStatusText('Reloaded from disk');
+            }
           } catch (error) {
             setSaveStatusText('Reload failed');
             console.error(error);
