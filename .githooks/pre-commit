@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Why: Run fast, staged-only code quality checks before secret scanning so the
+# commit is blocked early on fixable issues and only touches files the user
+# intentionally staged.
+if ! command -v npx >/dev/null 2>&1; then
+  echo "pre-commit: npx is not available; cannot run lint-staged." >&2
+  exit 1
+fi
+
+echo "pre-commit: formatting/linting staged files with lint-staged..."
+npx lint-staged
+
+# Why: Block accidental secret commits before they enter history by scanning
+# only the staged diff, which keeps the hook fast enough for normal development.
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed; skipping secret scan." >&2
+  echo "Install gitleaks to enable local secret scanning." >&2
+  exit 0
+fi
+
+echo "pre-commit: scanning staged changes with gitleaks..."
+gitleaks git . --staged --no-banner --redact

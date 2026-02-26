@@ -25,6 +25,17 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - Package app: `npm run package`
 - Build distributables: `npm run make`
 
+## Git Hooks (Local)
+
+This repo includes a local pre-commit hook at `.githooks/pre-commit` that formats/lints staged files with `lint-staged` (including `shellcheck` for shell scripts) and runs `gitleaks` against staged changes to catch accidental secret commits before they enter git history.
+
+- Enable repo-managed hooks once per clone: `git config core.hooksPath .githooks`
+- Install dependencies (includes local `lint-staged`): `npm install`
+- Install `gitleaks` locally (for example via Homebrew): `brew install gitleaks`
+- Install `shellcheck` locally (for example via Homebrew): `brew install shellcheck`
+- Hook flow: `lint-staged` (staged format/lint + shellcheck for `*.sh`) -> `gitleaks` (staged secret scan)
+- Verify manually on staged changes: `gitleaks git . --staged --no-banner --redact`
+
 **Notes:**
 - The script runs Electron directly (`./node_modules/.bin/electron .vite/build/main.js`) rather than through `electron-forge start`, which requires a TTY to stay alive.
 - `ws` and `node-pty` are Vite externals, so the Electron binary must run from the project root where `node_modules` is available.
