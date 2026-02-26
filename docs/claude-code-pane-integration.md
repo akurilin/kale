@@ -192,7 +192,7 @@ Each open file gets its own persistent Claude Code session. Sessions survive app
 
 ### How Claude Code CLI sessions work
 
-The Claude Code CLI stores sessions as JSONL files at `~/.claude/projects/<encoded-path>/<session-uuid>.jsonl`. The encoded path replaces `/` with `-` (e.g., `/Users/alex/code/kale` becomes `-Users-alex-code-kale`).
+The Claude Code CLI stores sessions as JSONL files at `~/.claude/projects/<encoded-path>/<session-uuid>.jsonl`. The encoded path replaces `/` with `-` (e.g., `/home/user/code/kale` becomes `-home-user-code-kale`).
 
 This path/layout is treated here as currently observed behavior and should be re-verified against the Claude Code version Kale targets.
 
@@ -213,8 +213,8 @@ Kale maintains a mapping from document path to Claude Code session UUID. This ca
 
 ```json
 {
-  "/Users/alex/writing/essay.md": "550e8400-e29b-41d4-a716-446655440000",
-  "/Users/alex/writing/notes.md": "6fa459ea-ee8a-3ca4-894e-db77e160355e"
+  "/home/user/writing/essay.md": "550e8400-e29b-41d4-a716-446655440000",
+  "/home/user/writing/notes.md": "6fa459ea-ee8a-3ca4-894e-db77e160355e"
 }
 ```
 
@@ -226,7 +226,7 @@ This working-directory behavior should be validated with the current Claude Code
 
 This means Kale must always spawn `claude` with `cwd` set to `path.dirname(filePath)` for the active document, and must use the same directory consistently for a given file to make session resumption work.
 
-The encoded path replaces `/` with `-` (e.g., `/Users/alex/writing` becomes `-Users-alex-writing`).
+The encoded path replaces `/` with `-` (e.g., `/home/user/writing` becomes `-home-user-writing`).
 
 ### Session resume flow
 

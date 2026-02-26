@@ -81,7 +81,7 @@ Once connected, Claude Code can call these tools on the IDE server via JSON-RPC 
   "method": "tools/call",
   "params": {
     "name": "getDiagnostics",
-    "arguments": { "uri": "file:///Users/alex/code/kale/src/main.ts" }
+    "arguments": { "uri": "file:///home/user/code/kale/src/main.ts" }
   }
 }
 ```

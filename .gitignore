@@ -91,3 +91,6 @@ dist/
 
 # Electron-Forge
 out/
+
+# Playwright MCP
+.playwright-mcp/
