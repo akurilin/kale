@@ -30,6 +30,8 @@ export type RestoreMarkdownFromGitResponse =
 export type StartTerminalSessionRequest = {
   cwd: string;
   targetFilePath: string;
+  initialCols?: number;
+  initialRows?: number;
 };
 
 export type StartTerminalSessionResponse =

@@ -24,6 +24,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 ## Run Commands
 
 - Start in development: `npm start`
+- Start in development and explicitly open docked DevTools: `KALE_OPEN_DEVTOOLS=1 npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp` as a JPG: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Run unit tests: `npm test`
@@ -80,7 +81,7 @@ The E2E test (`tests/e2e/happy-path.js`) launches the full Electron app via Play
 - `src/renderer/InlineCommentCard.tsx`: individual comment card UI (textarea auto-size, delete action, autofocus, resize reporting for layout).
 - `src/renderer/line-merge.ts`: pure line-level three-way merge function for reconciling concurrent user and external (Claude) edits to the same document. Uses `node-diff3`; conflicts resolve in favor of the disk version.
 - `src/renderer/inline-comments.ts`: parser/helpers for hidden HTML comment markers used as the canonical inline-comment source of truth.
-- `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app, including preset prompt buttons that inject common Claude requests into the active terminal session and submit them automatically.
+- `src/renderer/TerminalPane.tsx`: reusable embedded PTY terminal pane component used by the main app, including xterm fit/resize synchronization for PTY geometry and preset prompt buttons that inject common Claude requests into the active terminal session and submit them automatically.
 - `docs/`: product and architecture documentation (requirements, decisions, planning notes).
 - `docs/todos.md`: tracked known issues and deferred fixes.
 - `mockups/`: static UI mockups/prototypes used to explore interaction and visual direction.
@@ -98,7 +99,7 @@ The Electron main process is now organized as a thin orchestrator plus domain se
 - `src/main.ts` wires Electron lifecycle events (`ready`, `activate`, `window-all-closed`) to service startup/shutdown and IPC registration.
 - `src/main/window.ts` owns BrowserWindow creation and Forge/Vite renderer/preload entry loading.
 - `src/main/markdown-file-service.ts` owns active markdown file state, settings persistence, file open/load/save/restore IPC handlers, and chokidar-based file watching/broadcasts.
-- `src/main/terminal-session-service.ts` owns PTY session state, Claude CLI startup validation/prompt-template preload, and terminal IPC handlers.
+- `src/main/terminal-session-service.ts` owns PTY session state, Claude CLI startup validation/prompt-template preload, terminal IPC handlers, and renderer-provided initial PTY geometry for correct first-frame full-screen CLI rendering.
 - `src/main/ide-integration-service.ts` owns IDE MCP server lifecycle, cached editor selection state, and the `ide:selection-changed` IPC handler/debounced Claude notifications.
 
 Cross-service coordination stays explicit through small APIs/callbacks (for example, terminal and IDE services read the active file path from the markdown file service) rather than through a single shared runtime-state object.
