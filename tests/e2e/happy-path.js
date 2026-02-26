@@ -55,8 +55,15 @@ const runHappyPathTest = async () => {
 
   copyRuntimeAssetsToBuildDir();
 
+  // On Linux CI (GitHub Actions), Chromium's sandbox refuses to run as root.
+  // --no-sandbox and --disable-gpu avoid that crash without affecting the test.
+  const electronArgs = [path.join(BUILD_DIR, 'main.js')];
+  if (process.platform === 'linux') {
+    electronArgs.push('--no-sandbox', '--disable-gpu');
+  }
+
   const electronApp = await electron.launch({
-    args: [path.join(BUILD_DIR, 'main.js')],
+    args: electronArgs,
     env: {
       ...process.env,
       KALE_HEADLESS: '1',
