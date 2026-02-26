@@ -3,14 +3,18 @@
 // renderer entry stays focused on app composition instead of editor internals.
 //
 import { syntaxTree } from '@codemirror/language';
-import { type Extension, type Range } from '@codemirror/state';
+import { Prec, type Extension, type Range } from '@codemirror/state';
 import {
   Decoration,
   EditorView,
   ViewPlugin,
+  keymap,
   type ViewUpdate,
 } from '@codemirror/view';
-import { parseInlineCommentsFromMarkdown } from './inline-comments';
+import {
+  parseInlineCommentsFromMarkdown,
+  type InlineComment,
+} from './inline-comments';
 
 const markerNodes = new Set([
   'HeaderMark',
@@ -277,4 +281,141 @@ export const inlineCommentDecorationExtension = (): Extension =>
   createDecorationViewPlugin(
     (update) => update.docChanged || update.viewportChanged,
     buildInlineCommentDecorations,
+  );
+
+// ---------------------------------------------------------------------------
+// Inline comment marker cursor/deletion protection
+//
+// The replace decorations above hide the HTML comment markers visually, but
+// the underlying document characters remain. Without explicit protection the
+// cursor can land inside a hidden marker (one arrow-key press at a time) and
+// Backspace/Delete can remove individual marker characters, corrupting the
+// comment syntax and causing raw marker text to suddenly appear.
+//
+// Two complementary extensions solve this:
+//
+// 1. atomicRanges – tells CodeMirror that cursor motion should skip over
+//    marker character ranges entirely, jumping from one boundary to the other.
+//
+// 2. A high-precedence keymap interceptor for Backspace/Delete – when the
+//    character that would normally be deleted falls inside a hidden marker,
+//    the deletion is redirected to the nearest visible character instead.
+// ---------------------------------------------------------------------------
+
+// Check whether a document position falls inside any comment marker range.
+// Returns the marker boundaries if so, or null if the position is in visible
+// content or outside any comment altogether.
+const findContainingMarkerRange = (
+  pos: number,
+  comments: InlineComment[],
+): { markerFrom: number; markerTo: number } | null => {
+  for (const comment of comments) {
+    if (pos >= comment.startMarkerFrom && pos < comment.startMarkerTo) {
+      return {
+        markerFrom: comment.startMarkerFrom,
+        markerTo: comment.startMarkerTo,
+      };
+    }
+    if (pos >= comment.endMarkerFrom && pos < comment.endMarkerTo) {
+      return {
+        markerFrom: comment.endMarkerFrom,
+        markerTo: comment.endMarkerTo,
+      };
+    }
+  }
+  return null;
+};
+
+// Intercepts Backspace when the character behind the cursor is inside a hidden
+// comment marker. Instead of corrupting the marker, the deletion skips the
+// marker and removes the nearest visible character before it.
+const markerAwareBackspace = (view: EditorView): boolean => {
+  const { state } = view;
+  const { main } = state.selection;
+
+  // Only handle collapsed cursors – selection-based deletion is fine as-is.
+  if (!main.empty || main.head === 0) {
+    return false;
+  }
+
+  const comments = parseInlineCommentsFromMarkdown(state.doc.toString());
+  const marker = findContainingMarkerRange(main.head - 1, comments);
+
+  if (!marker) {
+    return false;
+  }
+
+  // Skip the entire marker and delete the character just before it instead.
+  if (marker.markerFrom > 0) {
+    view.dispatch({
+      changes: { from: marker.markerFrom - 1, to: marker.markerFrom },
+      selection: { anchor: marker.markerFrom - 1 },
+    });
+  }
+  return true;
+};
+
+// Intercepts Delete (forward) when the character at the cursor is inside a
+// hidden comment marker. The deletion skips the marker and removes the nearest
+// visible character after it.
+const markerAwareDelete = (view: EditorView): boolean => {
+  const { state } = view;
+  const { main } = state.selection;
+
+  if (!main.empty || main.head >= state.doc.length) {
+    return false;
+  }
+
+  const comments = parseInlineCommentsFromMarkdown(state.doc.toString());
+  const marker = findContainingMarkerRange(main.head, comments);
+
+  if (!marker) {
+    return false;
+  }
+
+  // Skip the entire marker and delete the character just after it instead.
+  if (marker.markerTo < state.doc.length) {
+    view.dispatch({
+      changes: { from: marker.markerTo, to: marker.markerTo + 1 },
+    });
+  }
+  return true;
+};
+
+// Explicit atomic ranges ensure cursor motion (arrow keys, Home/End, mouse
+// clicks) never places the caret inside a hidden comment marker. This is a
+// belt-and-suspenders complement to the replace decorations which also imply
+// atomicity, guarding against edge cases in decoration timing or focus.
+export const inlineCommentAtomicRangesExtension = (): Extension =>
+  EditorView.atomicRanges.of((view) => {
+    const comments = parseInlineCommentsFromMarkdown(view.state.doc.toString());
+    const ranges: Range<Decoration>[] = [];
+
+    for (const comment of comments) {
+      if (comment.startMarkerFrom < comment.startMarkerTo) {
+        ranges.push(
+          Decoration.mark({}).range(
+            comment.startMarkerFrom,
+            comment.startMarkerTo,
+          ),
+        );
+      }
+      if (comment.endMarkerFrom < comment.endMarkerTo) {
+        ranges.push(
+          Decoration.mark({}).range(comment.endMarkerFrom, comment.endMarkerTo),
+        );
+      }
+    }
+
+    return Decoration.set(ranges, true);
+  });
+
+// High-precedence keymap that prevents Backspace and Delete from corrupting
+// hidden comment markers by redirecting the deletion to visible content.
+export const inlineCommentEditGuardExtension = (): Extension =>
+  Prec.high(
+    keymap.of([
+      { key: 'Backspace', run: markerAwareBackspace },
+      { key: 'Delete', run: markerAwareDelete },
+    ]),
   );

@@ -1,11 +1,5 @@
-# Project Notes
-
-This is an Electron project using Electron Forge. The goal of this app is to be a modern tool for editing
-prose combining the power of coding agents and an IDE with the beautful aesthetics of a writing tool.
-
-# Workflow
-
 - !IMPORTANT: do not commit unless explitictly told to by the user
+- It is currently year 2026, assume that when searching for documentation
 
 ## Coding style
 
@@ -14,11 +8,6 @@ prose combining the power of coding agents and an IDE with the beautful aestheti
 - Add comments to sections that may be not obvious to future readers, focus on WHY something is implemented and implemented that particular way
 - Preserve comments when copying code around and refactoring
 - Keep comments updated as you're changing the logic, make sure they still reflect what's happening in the logic
-
-## Facts
-
-- Use the `date` command to check what date it is before looking up things on the web
-  including a year. The current year might not be what you think it is, `date` is the source of truth.
 
 ## Documentation Policy
 
@@ -30,18 +19,17 @@ prose combining the power of coding agents and an IDE with the beautful aestheti
 
 - The agent can use the `gh` tool to interact with GitHub in general.
 
-## Testing
+# QA / Testing / Manually exercising the app
 
+- The app can only be driven via CDP (Playwright as a Node Library). Use this approach when you
+  need o programmatically interact with the running Electron app — clicking, typing, reading content, etc.
+  Screenshots are handled by another script. You must manually write node js code and execute it in order to
+  drive the app since MCP will not work.
 - Never use Playwright MCP to test or drive the app — it runs its own isolated browser and cannot
   connect to the Electron process. See "Driving the App via CDP" below for the correct approach.
 - For quick visual verification, use `scripts/capture_npm_start_window.sh` to screenshot an
   already-running `kale` window. Kill the app process after you're done verifying.
 - After finishing a batch of changes, run `npm run format` and `npm run lint` before wrapping up
-
-## Driving the App via CDP (Playwright as a Node Library)
-
-Use this approach when you need to programmatically interact with the running Electron app —
-clicking, typing, reading content, taking screenshots, etc.
 
 ### Why not Playwright MCP?
 
@@ -57,6 +45,12 @@ scripts/start-with-cdp.sh
 
 This builds the app, launches Electron with `--remote-debugging-port=9222`, and waits until CDP
 is ready. Use `--skip-build` to reuse a previous build.
+
+**No manual cleanup needed:** The script automatically kills any existing Electron/CDP instance
+on the same port before launching, so you never need to `pkill` beforehand.
+
+After launching, wait **5 seconds** for the UI to fully render before connecting with Playwright
+(this machine is fast enough that 5 s is plenty).
 
 ### Step 2: Connect and get the app page
 

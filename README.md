@@ -25,24 +25,6 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - Package app: `npm run package`
 - Build distributables: `npm run make`
 
-## Playwright / CDP Automation
-
-External tools (Playwright, etc.) can connect to the running app via Chrome DevTools Protocol to click, type, take screenshots, and read page content. This works natively on macOS — no Docker, Xvfb, or Linux required.
-
-**How it works:** The `start-with-cdp.sh` script passes `--remote-debugging-port=9222` to the Electron binary, enabling Chromium's CDP endpoint. Playwright then connects over CDP and gets a standard `Page` object for the app window.
-
-**Quick start:** `scripts/start-with-cdp.sh` builds the Vite bundles, copies runtime assets, launches Electron with CDP on port 9222, and waits until the endpoint is ready. Use `--skip-build` to reuse a previous build. Stop the app with `pkill -f 'Electron .vite'`.
-
-**Connect from Node.js with Playwright:**
-```js
-const { chromium } = require('playwright');
-const browser = await chromium.connectOverCDP('http://localhost:9222');
-const page = browser.contexts()[0].pages().find(p => !p.url().startsWith('devtools://'));
-await page.click('.cm-editor');
-await page.keyboard.type('Hello from Playwright!');
-await page.screenshot({ path: '/tmp/screenshot.png' });
-```
-
 **Notes:**
 - The script runs Electron directly (`./node_modules/.bin/electron .vite/build/main.js`) rather than through `electron-forge start`, which requires a TTY to stay alive.
 - `ws` and `node-pty` are Vite externals, so the Electron binary must run from the project root where `node_modules` is available.
