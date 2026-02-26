@@ -83,5 +83,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Install Electron system dependencies
+        run: npx playwright install-deps
       - name: Run E2E tests under xvfb
         run: xvfb-run -a npm run test:e2e

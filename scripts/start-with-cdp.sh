@@ -50,7 +50,7 @@ cd "$PROJECT_ROOT"
 ELECTRON_PID=$!
 
 # Wait for CDP to become available.
-for i in $(seq 1 20); do
+for _attempt in $(seq 1 20); do
   if curl -s "http://localhost:$CDP_PORT/json/version" >/dev/null 2>&1; then
     echo "CDP ready on http://localhost:$CDP_PORT (Electron PID: $ELECTRON_PID)"
     echo ""
