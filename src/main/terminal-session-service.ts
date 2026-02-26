@@ -103,6 +103,20 @@ export const createTerminalSessionService = (
   const createTerminalSessionId = () =>
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
+  // Renderer-provided geometry lets full-screen CLIs render their first frame
+  // at the real pane size instead of booting at a placeholder PTY geometry and
+  // relying on a later resize to repair the display.
+  const resolveInitialPtyGeometryForSpawn = (
+    request: StartTerminalSessionRequest,
+  ) => {
+    const safeColumns = Math.max(1, Math.floor(request.initialCols ?? 120));
+    const safeRows = Math.max(1, Math.floor(request.initialRows ?? 40));
+    return {
+      cols: safeColumns,
+      rows: safeRows,
+    };
+  };
+
   // Terminal launches always append Kale-specific prose guidance and derive the
   // target file from the active editor when the renderer omits a path.
   const resolveTerminalLaunchCommand = async (
@@ -129,6 +143,7 @@ export const createTerminalSessionService = (
   ): Promise<StartTerminalSessionResponse> => {
     const { command, args } = await resolveTerminalLaunchCommand(request);
     const sessionId = createTerminalSessionId();
+    const initialPtyGeometry = resolveInitialPtyGeometryForSpawn(request);
 
     try {
       const terminalProcess = nodePty.spawn(command, args, {
@@ -139,8 +154,8 @@ export const createTerminalSessionService = (
         // this inherits Electron/dev-process vars and any sensitive shell vars.
         env: process.env,
         name: 'xterm-color',
-        cols: 120,
-        rows: 40,
+        cols: initialPtyGeometry.cols,
+        rows: initialPtyGeometry.rows,
       });
 
       terminalSessionsById.set(sessionId, terminalProcess);
