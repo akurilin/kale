@@ -65,7 +65,8 @@ The E2E test (`tests/e2e/happy-path.js`) launches the full Electron app via Play
 - `src/preload.ts`: preload bridge that exposes typed `markdownApi`, `terminalApi`, and `ideServerApi` methods/events to the renderer via `contextBridge`.
 - `src/shared-types.ts`: canonical IPC payload/type contracts shared by main, preload, renderer, and IDE integration code.
 - `src/renderer/main.tsx`: renderer entry that mounts the React app shell.
-- `src/renderer/`: extracted renderer modules for CodeMirror extensions, save/autosave controller logic, and line-level three-way merge.
+- `src/renderer/`: extracted renderer modules for CodeMirror extensions, save/autosave controller logic, line-level three-way merge, and typed IPC API wrappers (`markdown-api.ts`, `terminal-api.ts`, `ide-server-api.ts`) that the React components use to talk to the main process.
+- `src/renderer/App.tsx`: main React app shell that composes the document editor, terminal pane, and file-operation chrome.
 - `src/renderer/DocumentCommentsPane.tsx`: document editor + inline comments orchestration (selection comment action, anchor-based floating comment layout/packing, sidebar wiring, autofocus handoff).
 - `src/renderer/MarkdownEditorPane.tsx`: imperative CodeMirror wrapper that exposes editor content and range-anchor geometry to the React layout layer.
 - `src/renderer/InlineCommentsSidebar.tsx`: presentational floating comments rail renderer (absolute-positioned card slots in the right column).
