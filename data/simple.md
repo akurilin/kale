@@ -1,0 +1,19 @@
+# Hello this is an h1
+
+## This is an h2
+
+### This is an h3
+
+#### This is an h4
+
+##### This is an h5
+
+###### This Is an h6?!
+
+**This is bold** and this is *italicized*
+
+<!-- @comment:c_readability_01 start | "This opening sentence is a run-on — consider breaking it into two sentences after 'money printer.'" -->Maybe the VC money hit the bank, maybe your company has proven itself to be an unstoppable money printer, and you've decided that it's time for you to venture into the wide world and do your best at attracting THE BEST (TODO replace with Hugo link to other blog post).<!-- @comment:c_readability_01 end --> Full of enthusiasm, you can't wait to get out there and tell the world about the company, the roles you have open, why someone would want to join you. But an obvious question immediately comes to mind: <!-- @comment:c_readability_02 start | "Awkward phrasing — the comma before 'said The Best' trips the reader up. Consider: 'where are you going to find The Best?'" -->where are you going to find said The Best?<!-- @comment:c_readability_02 end --> <!-- @comment:c_readability_05 start | "Five back-to-back questions overwhelm the reader. Consider collapsing a few into a shorter setup, or start a new paragraph here to give a visual breath." -->Where do they go to learn about companies like yours? Are they even looking for a new job right now? Are you going to meet them somewhere where you can tastefully let them know about the opportunity without bending the rules of whatever community you're meeting them in? And are you going to be one of the hundreds of employers all shouting their interest at them, fishing where everybody else is, and ultimately relying on pure luck to stand apart?<!-- @comment:c_readability_05 end -->
+
+The brutal truth, <!-- @comment:c_readability_06 start | "This aside may confuse readers unfamiliar with LLMs and will likely date quickly. Consider cutting it or replacing with something more timeless." -->as the LLMs like to say, <!-- @comment:c_readability_06 end -->is that there's no standard, spammable move that will net you great access to talent. Every employer on the market is looking for alpha. They want great talent that they can get the best deal on. If you're doing what everybody else is doing, you will get what everybody else is getting, which is perfectly average results. <!-- @comment:c_readability_03 start | "Hard to parse — the em-dash parenthetical breaks the sentence's thread. Also 'Likely' is capitalized mid-sentence. Consider pulling the aside into its own sentence." -->Maybe ok for a stable big company that is able to keep exploiting a dominant market position—likely works in the short term, but you can't sustain that forever—but not for your startup that needs to generate a lot of high-quality work on limited runway or cash flow.<!-- @comment:c_readability_03 end -->
+
+<!-- @comment:c_readability_04 start | "This list mixes abstract factors (stage, cycle, trajectory) with identity (who you are as…). Splitting into two sentences would make it easier to follow." -->Where you look for talent and how you stand out have to be unique to the company stage, the market cycle, the company trajectory, who you are as a team, as founders, as a CTO.<!-- @comment:c_readability_04 end --> What works miraculously for one firm might feel wrong for you, and vice versa. <!-- @comment:c_readability_07 start | "Three chained 'and' clauses make this sentence hard to parse in one pass. Consider splitting after 'hiring taste' — e.g. 'It also shifts with the evidence you collect…'" -->And where you search for greatness also evolves with your hiring taste, and the evidence you collect about what's working, and what's no longer bearing fruit.<!-- @comment:c_readability_07 end -->

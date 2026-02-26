@@ -15,11 +15,11 @@ import type {
 const BUNDLED_SAMPLE_MARKDOWN_FILE = path.resolve(
   app.getAppPath(),
   'data',
-  'what-the-best-looks-like.md',
+  'simple.md',
 );
 // We store the active document in userData by default so packaged apps never try
 // to write back into the app bundle / asar.
-const DEFAULT_USER_FILE_NAME = 'what-the-best-looks-like.md';
+const DEFAULT_USER_FILE_NAME = 'simple.md';
 const SETTINGS_FILE_NAME = 'settings.json';
 const execFileAsync = promisify(execFile);
 

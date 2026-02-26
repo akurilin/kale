@@ -5,6 +5,21 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
 
+// Running the Electron binary directly (e.g. for CDP/Playwright automation)
+// defaults the app name to "Electron", which moves userData to a different
+// directory and breaks settings/file-restore continuity. Force the canonical
+// name so all launch methods share the same userData path.
+app.setName('kale');
+
+// Enable Chrome DevTools Protocol on a fixed port so external tools (Playwright,
+// etc.) can connect to and drive the running app for testing and automation.
+if (process.env.KALE_CDP_PORT) {
+  app.commandLine.appendSwitch(
+    'remote-debugging-port',
+    process.env.KALE_CDP_PORT,
+  );
+}
+
 import { createIdeIntegrationService } from './main/ide-integration-service';
 import { createMarkdownFileService } from './main/markdown-file-service';
 import { createTerminalSessionService } from './main/terminal-session-service';
