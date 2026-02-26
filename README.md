@@ -15,6 +15,8 @@ Kale integrates with Claude Code through its IDE MCP server (activated with `/id
 
 Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into the tool I wished existed.
 
+![Kale — document editor with inline comments and integrated Claude Code terminal](assets/readme-screenshot.jpg)
+
 ## Technology
 
 This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a React renderer shell.

@@ -1,29 +1,18 @@
-+++
-title = """
-What "The Best" Looks Like
-"""
-date = "2025-12-28T09:00:00-08:00"
-draft = false
-description = """
-A startup CTO's guide to what "the best" really means—how to spot non-obvious high performers and the traits that make early-stage teams win.
-"""
-tags = ["cto", "startups", "leadership", "management", "hiring", "recruiting", "talent-acquisition", "company-building"]
-popular = true
-+++
+# What "The Best" Looks Like
 
 > Talent hits a target no one else can hit. Genius hits a target no one else can see.
 >
 > —Arthur Schopenhauer
 
-The second that the next round of funding hits the bank, every new CTO starts obsessing over the same thing: *Who the hell do I hire next?* The answer is surprisingly non-obvious. You're told that you always want—scratch that, *need*—the best of the best, your startup's future depends on it. You're told your company is unique, special, and it requires the most hardcore among researchers, designers, engineers, and product managers. You never skimp on who builds the golden goose. You can't succeed with any less than that.
+The second that the next round of funding hits the bank, every new CTO starts obsessing over the same thing: *Who the hell do I hire next?* The answer is surprisingly non-obvious. You're told that you always want—scratch that, *need*—the best of the best, your startup's future depends on it. You're told your company is unique, special, and it requires the most hardcore among researchers, designers, engineers, and product managers. <!-- @comment:c_078c65b7a3a2 start | "Too many idioms?" -->You never skimp on who builds the golden goose<!-- @comment:c_078c65b7a3a2 end -->. You can't succeed with any less than that.
 
 But, is that *actually* true?
 
-Every startup-hustle YouTube video, VC podcast and celeb founder interview regurgitates that the key to success is to hire the very best people, no matter what it takes. And yet you live in the real world, with real-world constraints. You have only so much money in the bank. Only so much time and bandwidth to hire. Only so much attention in a given day. And you're not alone in your hunt. You're competing with hundreds of other players in your geography, industry, and problem space looking for "the best." Many of them have a more famous brand, more cash, more promising equity, more charming founders, and maybe even a high production value promo video showcasing happy employees, rare wood office counters and a shoes-off policy.
+Every startup-hustle YouTube video, VC podcast and celeb founder interview regurgitates that the key to success is to hire the very best people, no matter what it takes. And yet you live in the real world, with real-world constraints. <!-- @comment:c_4a46a29ad901 start | "Too many short sentences back-to-back, improve the flow." -->You have only so much money in the bank. Only so much time and bandwidth to hire. Only so much attention in a given day. And you're not alone in your hunt.<!-- @comment:c_4a46a29ad901 end --> You're competing with hundreds of other players in your geography, industry, and problem space looking for "the best." Many of them have a more famous brand, more cash, more promising equity, more charming founders, and maybe even a high production value promo video showcasing happy employees, rare wood office counters and a shoes-off policy.
 
 Will you actually hire the best of the best against those odds? Many years ago I found myself in this pickle and I had to learn all the relevant lessons the hard way. I share these lessons here, so that you don't have to struggle through that same maze yourself. My pain is your gain.
 
-My first time around the startup world in 2012, I hardly knew what I was doing and relied mostly on luck—and unfortunately, firing—to end up with a team I could be proud of. I had no real point of reference for greatness, for what "the best" in our area could look like, and building that model required lots of experimentation, with high highs and many low lows. 
+<!-- @comment:c_4526ba0c20a1 start | "Needs a better lead-in." -->My first time around the startup world in 2012, I hardly knew what I was doing and relied mostly on luck—and unfortunately, firing—to end up with a team I could be proud of. I had no real point of reference for greatness, for what "the best" in our area could look like, and building that model required lots of experimentation, with high highs and many low lows. <!-- @comment:c_4526ba0c20a1 end -->
 
 The story of David, our brilliant infrastructure ops engineer at Freckle, has stayed with me ever since. David applied to the company back when we were only hiring for an ops role. We were growing slowly, so there was zero room for anybody who wasn't absolutely essential on the team. We had no open-ended extra seat for a smart person who just happened to be on the market, unlike some companies these days.
 
