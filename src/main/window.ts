@@ -4,6 +4,16 @@ import path from 'node:path';
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
 
+// Development visibility of DevTools is env-controlled so layout-sensitive UI
+// bugs can be reproduced without the extra docked DevTools relayout.
+const shouldOpenDevTools = (isHeadless: boolean) => {
+  if (isHeadless) {
+    return false;
+  }
+
+  return process.env.KALE_OPEN_DEVTOOLS === '1';
+};
+
 // Window sizing is environment-configurable in development so contributors can
 // quickly test layouts without changing checked-in defaults.
 const parseWindowDimension = (value: string | undefined, fallback: number) => {
@@ -44,9 +54,9 @@ export const createMainWindow = () => {
     );
   }
 
-  // DevTools are kept open in this prototype to speed iteration while main
-  // process and renderer integration are still changing frequently.
-  if (!isHeadless) {
+  // DevTools are opt-in because a docked DevTools window can trigger extra
+  // startup relayouts that hide timing bugs in layout-sensitive components.
+  if (shouldOpenDevTools(isHeadless)) {
     mainWindow.webContents.openDevTools();
   }
 

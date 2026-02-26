@@ -71,6 +71,15 @@ const buildTargetContextKey = (
   return `${targetFilePath}::${targetWorkingDirectory}`;
 };
 
+// xterm geometry can be stale on the same tick as open()/layout changes, so
+// startup code waits for paint frames before finalizing PTY screen dimensions.
+const waitForNextAnimationFrame = () =>
+  new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      resolve();
+    });
+  });
+
 export const TerminalPane = ({
   targetFilePath,
   targetWorkingDirectory,
@@ -96,6 +105,57 @@ export const TerminalPane = ({
   const lastActivatedTargetContextKeyRef = useRef<string | null>(null);
   const activeTargetFilePathRef = useLatestRef(targetFilePath);
   const activeTargetWorkingDirectoryRef = useLatestRef(targetWorkingDirectory);
+
+  // This helper keeps all fit callers (startup, resize, and session sync) on
+  // one geometry path so PTY sizing matches the same xterm measurement logic.
+  const fitTerminalAndReadGeometry = useCallback(() => {
+    const terminal = xtermRef.current;
+    const fitAddon = fitAddonRef.current;
+    if (!terminal || !fitAddon) {
+      return null;
+    }
+
+    fitAddon.fit();
+    const columns = terminal.cols;
+    const rows = terminal.rows;
+    if (columns <= 0 || rows <= 0) {
+      return null;
+    }
+
+    return {
+      cols: columns,
+      rows,
+    };
+  }, []);
+
+  // Resizes are forwarded immediately so terminal UIs redraw at the renderer's
+  // current size instead of waiting for user input to trigger a screen refresh.
+  const refitTerminalAndSyncActivePtySize = useCallback(() => {
+    const activeSessionId = sessionRef.current?.sessionId;
+    const fittedGeometry = fitTerminalAndReadGeometry();
+    if (!activeSessionId || !fittedGeometry) {
+      return;
+    }
+
+    void getTerminalApi().resizeSession({
+      sessionId: activeSessionId,
+      cols: fittedGeometry.cols,
+      rows: fittedGeometry.rows,
+    });
+  }, [fitTerminalAndReadGeometry]);
+
+  // Claude Code paints a full-screen interface as soon as the PTY starts, so
+  // startup waits through a couple of animation frames to avoid spawning with
+  // stale geometry from the initial xterm mount/layout tick.
+  const measureStableTerminalGeometryBeforeSessionStart =
+    useCallback(async () => {
+      let latestGeometry = fitTerminalAndReadGeometry();
+      await waitForNextAnimationFrame();
+      latestGeometry = fitTerminalAndReadGeometry() ?? latestGeometry;
+      await waitForNextAnimationFrame();
+      latestGeometry = fitTerminalAndReadGeometry() ?? latestGeometry;
+      return latestGeometry;
+    }, [fitTerminalAndReadGeometry]);
 
   // sessionRef is kept as a manual ref because restartForTargetContext writes
   // it imperatively (before the React render cycle) to prevent delayed exit
@@ -127,13 +187,10 @@ export const TerminalPane = ({
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(hostElement);
-    fitAddon.fit();
-    terminal.focus();
-    terminal.writeln('kale terminal');
-    terminal.writeln('');
-
     xtermRef.current = terminal;
     fitAddonRef.current = fitAddon;
+    fitTerminalAndReadGeometry();
+    terminal.focus();
 
     const xtermInputDisposable = terminal.onData((data) => {
       const activeSessionId = sessionRef.current?.sessionId;
@@ -144,45 +201,38 @@ export const TerminalPane = ({
       void getTerminalApi().sendInput(activeSessionId, data);
     });
 
-    // PTY geometry must track xterm size so full-screen TUIs and wrapping stay
-    // correct when the pane is resized by layout changes or window resizing.
-    const syncPtySizeToActiveSession = async () => {
-      const activeSessionId = sessionRef.current?.sessionId;
-      if (!activeSessionId) {
-        return;
-      }
-
-      const columns = terminal.cols;
-      const rows = terminal.rows;
-      if (columns <= 0 || rows <= 0) {
-        return;
-      }
-
-      await getTerminalApi().resizeSession({
-        sessionId: activeSessionId,
-        cols: columns,
-        rows,
-      });
-    };
-
-    const refitTerminalAndSyncPty = () => {
-      fitAddon.fit();
-      void syncPtySizeToActiveSession();
-    };
-
     const resizeObserver = new ResizeObserver(() => {
-      refitTerminalAndSyncPty();
+      refitTerminalAndSyncActivePtySize();
     });
     resizeObserver.observe(hostElement);
 
+    let isDisposed = false;
+    // xterm's first fit can be early relative to CSS/grid measurement, so run
+    // a couple of follow-up fits that mimic the later user-resize recovery path.
+    const runDeferredInitialRefits = async () => {
+      await waitForNextAnimationFrame();
+      if (isDisposed) {
+        return;
+      }
+      refitTerminalAndSyncActivePtySize();
+
+      await waitForNextAnimationFrame();
+      if (isDisposed) {
+        return;
+      }
+      refitTerminalAndSyncActivePtySize();
+    };
+    void runDeferredInitialRefits();
+
     return () => {
+      isDisposed = true;
       resizeObserver.disconnect();
       xtermInputDisposable.dispose();
       terminal.dispose();
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  }, []);
+  }, [fitTerminalAndReadGeometry, refitTerminalAndSyncActivePtySize]);
 
   // Streamed process events are global to the window, so the pane filters by
   // active session id and ignores traffic for prior or sibling terminal panes.
@@ -269,28 +319,26 @@ export const TerminalPane = ({
         return;
       }
 
-      setSession({
+      const nextSessionState: TerminalSessionState = {
         sessionId: startResponse.sessionId,
         pid: startResponse.pid,
         command: startResponse.command,
         args: startResponse.args,
-      });
+      };
+      // Claude can emit control sequences immediately after spawn; setting the
+      // ref synchronously prevents startup chunks from being dropped while
+      // React is still committing the matching state update.
+      sessionRef.current = nextSessionState;
+      setSession(nextSessionState);
       setStatusText(`Running (pid ${startResponse.pid})`);
-      xtermRef.current?.writeln('');
-      xtermRef.current?.writeln(
-        `[session started] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
-      );
-      xtermRef.current?.writeln(`[cwd] ${startResponse.cwd}`);
-      xtermRef.current?.writeln(`[target] ${startResponse.targetFilePath}`);
-      xtermRef.current?.writeln('');
-      fitAddonRef.current?.fit();
+      const fittedGeometry = fitTerminalAndReadGeometry();
       void getTerminalApi().resizeSession({
         sessionId: startResponse.sessionId,
-        cols: xtermRef.current?.cols ?? 120,
-        rows: xtermRef.current?.rows ?? 40,
+        cols: fittedGeometry?.cols ?? 120,
+        rows: fittedGeometry?.rows ?? 40,
       });
     },
-    [],
+    [fitTerminalAndReadGeometry],
   );
 
   // This helper centralizes session start behavior so file-change auto-restart
@@ -316,11 +364,15 @@ export const TerminalPane = ({
         requestedWorkingDirectory?.trim() ??
         workingDirectoryInputRef.current.trim();
       try {
+        const initialTerminalGeometry =
+          await measureStableTerminalGeometryBeforeSessionStart();
         const startResponse = await getTerminalApi().startSession({
           cwd:
             normalizedRequestedWorkingDirectory ||
             currentTargetWorkingDirectory,
           targetFilePath: currentTargetFilePath,
+          initialCols: initialTerminalGeometry?.cols,
+          initialRows: initialTerminalGeometry?.rows,
         });
         handleStartSessionResponse(startResponse);
       } catch (error) {
@@ -338,7 +390,10 @@ export const TerminalPane = ({
         setIsStartingSession(false);
       }
     },
-    [handleStartSessionResponse],
+    [
+      handleStartSessionResponse,
+      measureStableTerminalGeometryBeforeSessionStart,
+    ],
   );
 
   // File switches should produce a clean CLI session in the new file's folder,
@@ -375,9 +430,6 @@ export const TerminalPane = ({
       }
 
       xtermRef.current?.clear();
-      xtermRef.current?.writeln('[terminal reset for file]');
-      xtermRef.current?.writeln(targetFilePath ?? '');
-      xtermRef.current?.writeln('');
 
       await startSessionForTargetContext(targetWorkingDirectory ?? undefined);
     };
