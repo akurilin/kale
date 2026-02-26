@@ -89,9 +89,13 @@ const runHappyPathTest = async () => {
     console.log('--- END FILE BEFORE ---\n');
 
     // --- Type a new paragraph at the end of the document ---
+    // CodeMirror maps Cmd+ArrowDown on macOS and Ctrl+End on Linux to
+    // "go to end of document", so pick the right shortcut for the platform.
+    const goToEndOfDocument =
+      process.platform === 'darwin' ? 'Meta+ArrowDown' : 'Control+End';
     console.log('Typing test paragraph...');
     await page.click('.cm-content');
-    await page.keyboard.press('Meta+ArrowDown');
+    await page.keyboard.press(goToEndOfDocument);
     await page.keyboard.press('Enter');
     await page.keyboard.press('Enter');
     await page.keyboard.type(TEST_PARAGRAPH, { delay: 10 });
