@@ -11,15 +11,6 @@ import started from 'electron-squirrel-startup';
 // name so all launch methods share the same userData path.
 app.setName('kale');
 
-// Enable Chrome DevTools Protocol on a fixed port so external tools (Playwright,
-// etc.) can connect to and drive the running app for testing and automation.
-if (process.env.KALE_CDP_PORT) {
-  app.commandLine.appendSwitch(
-    'remote-debugging-port',
-    process.env.KALE_CDP_PORT,
-  );
-}
-
 import { createIdeIntegrationService } from './main/ide-integration-service';
 import { createMarkdownFileService } from './main/markdown-file-service';
 import { createTerminalSessionService } from './main/terminal-session-service';
