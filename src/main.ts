@@ -11,6 +11,12 @@ import started from 'electron-squirrel-startup';
 // name so all launch methods share the same userData path.
 app.setName('kale');
 
+// E2E tests pass a custom userData directory to isolate test state from the
+// user's real app data. Must be set before any code calls app.getPath('userData').
+if (process.env.KALE_USER_DATA_DIR) {
+  app.setPath('userData', process.env.KALE_USER_DATA_DIR);
+}
+
 import { createIdeIntegrationService } from './main/ide-integration-service';
 import { createMarkdownFileService } from './main/markdown-file-service';
 import { createTerminalSessionService } from './main/terminal-session-service';
@@ -36,15 +42,19 @@ ideIntegrationService.registerIpcHandlers(ipcMain);
 
 // App startup validates terminal/runtime prerequisites before opening a window
 // so missing Claude dependencies fail early with a visible fatal error.
+// E2E tests skip terminal validation because the Claude CLI may not be
+// available in CI environments and the terminal feature is not under test.
 const startApplication = async () => {
-  try {
-    await terminalSessionService.prepareRuntimeOrThrow();
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : 'Unknown startup prompt error';
-    console.error(`Fatal startup error: ${errorMessage}`);
-    app.exit(1);
-    return;
+  if (!process.env.KALE_SKIP_TERMINAL_VALIDATION) {
+    try {
+      await terminalSessionService.prepareRuntimeOrThrow();
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown startup prompt error';
+      console.error(`Fatal startup error: ${errorMessage}`);
+      app.exit(1);
+      return;
+    }
   }
 
   createMainWindow();

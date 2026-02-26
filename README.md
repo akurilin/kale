@@ -17,8 +17,9 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - Start in development: `npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp` as a JPG: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
-- Run tests: `npm test`
-- Run tests in watch mode: `npm run test:watch`
+- Run unit tests: `npm test`
+- Run unit tests in watch mode: `npm run test:watch`
+- Run E2E test (builds the app first): `npm run test:e2e`
 - Format files: `npm run format`
 - Check formatting: `npm run format:check`
 - Lint: `npm run lint`
@@ -41,6 +42,18 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 - `ws` and `node-pty` are Vite externals, so the Electron binary must run from the project root where `node_modules` is available.
 - The CDP port defaults to 9222 and can be overridden with the `KALE_CDP_PORT` env var in the script.
 - DevDependency: `playwright` must be installed (`npm install playwright --save-dev`).
+
+## E2E Testing
+
+The E2E test (`tests/e2e/happy-path.js`) launches the full Electron app via Playwright's `_electron.launch()`, types a paragraph, adds an inline comment, waits for autosave, and verifies both the paragraph and comment markers are persisted on disk.
+
+- Run: `npm run test:e2e` (builds the app first, then runs the test)
+- The test creates an isolated temporary `userData` directory so it never touches your real app state.
+- Three environment variables control E2E-relevant behavior:
+  - `KALE_HEADLESS=1` — hides the BrowserWindow and suppresses DevTools.
+  - `KALE_SKIP_TERMINAL_VALIDATION=1` — skips the Claude CLI startup check (not needed for editor tests, and unavailable in CI).
+  - `KALE_USER_DATA_DIR=<path>` — overrides the Electron `userData` directory for state isolation.
+- **Linux CI (GitHub Actions):** Electron requires a display even with `show: false`. Wrap the test with `xvfb-run -a npm run test:e2e`.
 
 ## Folder Overview
 
@@ -65,6 +78,7 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 - `data/`: example markdown files the app can edit
 - `src/ide-server/`: MCP-over-WebSocket server that lets Claude Code CLI query Kale's editor state (open files, selections, diagnostics). See `docs/claude-code-ide-protocol.md` for the protocol spec.
 - `src/types/`: ambient TypeScript declarations for packages whose types cannot be resolved by `moduleResolution: "node"`.
+- `tests/e2e/`: Playwright-based end-to-end tests that launch the full Electron app and verify user-facing workflows.
 - `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).
 
 ## Main Process Architecture

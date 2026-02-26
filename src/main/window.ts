@@ -14,6 +14,10 @@ const parseWindowDimension = (value: string | undefined, fallback: number) => {
 // The main process creates renderer windows so preload wiring and Forge/Vite
 // entrypoint resolution stay centralized and consistent across app restarts.
 export const createMainWindow = () => {
+  // Headless mode hides the window and suppresses DevTools so E2E tests and CI
+  // pipelines can drive the app without needing a visible display.
+  const isHeadless = process.env.KALE_HEADLESS === '1';
+
   const windowWidth = parseWindowDimension(
     process.env.KALE_WINDOW_WIDTH,
     DEFAULT_WINDOW_WIDTH,
@@ -26,6 +30,7 @@ export const createMainWindow = () => {
   const mainWindow = new BrowserWindow({
     width: windowWidth,
     height: windowHeight,
+    show: !isHeadless,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -41,7 +46,9 @@ export const createMainWindow = () => {
 
   // DevTools are kept open in this prototype to speed iteration while main
   // process and renderer integration are still changing frequently.
-  mainWindow.webContents.openDevTools();
+  if (!isHeadless) {
+    mainWindow.webContents.openDevTools();
+  }
 
   return mainWindow;
 };
