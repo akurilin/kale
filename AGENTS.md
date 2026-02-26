@@ -46,8 +46,19 @@ scripts/start-with-cdp.sh
 This builds the app, launches Electron with `--remote-debugging-port=9222`, and waits until CDP
 is ready. Use `--skip-build` to reuse a previous build.
 
+**Agent default:** Prefer a fresh build (`scripts/start-with-cdp.sh` without `--skip-build`) for
+CDP automation runs. Only use `--skip-build` when reusing a build you just created and validated
+in the same session. A stale `.vite/build` can point at a Vite dev server URL (for example
+`http://localhost:5173`) and cause the Electron window to fail to load.
+
 **No manual cleanup needed:** The script automatically kills any existing Electron/CDP instance
 on the same port before launching, so you never need to `pkill` beforehand.
+
+**Codex/agent execution quirk:** In managed shell execution environments (including Codex),
+background processes may be terminated when the launching command session exits. Do not run
+`scripts/start-with-cdp.sh` as a one-shot command and then let that shell session end before
+connecting Playwright. Launch it in a persistent PTY session and keep that session alive until
+the CDP-driven interaction is complete (for example, by tailing `/tmp/kale-cdp.log`).
 
 After launching, wait **5 seconds** for the UI to fully render before connecting with Playwright
 (this machine is fast enough that 5 s is plenty).
