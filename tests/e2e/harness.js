@@ -110,26 +110,55 @@ const getGoToEndOfDocumentShortcut = () => {
 /**
  * Why: after comment creation, focus can move to the sidebar textarea; editor
  * boundary tests need explicit focus on .cm-content before key presses while
- * preserving the current selection/cursor state.
+ * preserving the current selection/cursor state. Comment-card autofocus runs
+ * asynchronously, so focus is retried until editor ownership is stable.
  */
 const focusEditorContentArea = async (page) => {
   await page.bringToFront();
-  await page.evaluate(() => {
-    const editorContentElement = document.querySelector('.cm-content');
-    if (!editorContentElement) {
-      throw new Error('Missing .cm-content editor element');
+  for (let focusAttempt = 0; focusAttempt < 20; focusAttempt += 1) {
+    await page.evaluate(() => {
+      const editorContentElement = document.querySelector('.cm-content');
+      if (!editorContentElement) {
+        throw new Error('Missing .cm-content editor element');
+      }
+      editorContentElement.focus();
+    });
+
+    await page.waitForTimeout(50);
+    const editorOwnsFocus = await page.evaluate(() => {
+      const editorRootElement = document.querySelector('.cm-editor');
+      return Boolean(
+        editorRootElement &&
+        editorRootElement.classList.contains('cm-focused') &&
+        document.activeElement &&
+        editorRootElement.contains(document.activeElement),
+      );
+    });
+    if (editorOwnsFocus) {
+      return;
     }
-    editorContentElement.focus();
-  });
-  await page.waitForFunction(() => {
+  }
+
+  const debugState = await page.evaluate(() => {
     const editorRootElement = document.querySelector('.cm-editor');
-    return Boolean(
-      editorRootElement &&
-      editorRootElement.classList.contains('cm-focused') &&
-      document.activeElement &&
-      editorRootElement.contains(document.activeElement),
-    );
+    const selection = window.getSelection();
+    const activeElement = document.activeElement;
+    return {
+      editorFocused: Boolean(
+        editorRootElement?.classList.contains('cm-focused'),
+      ),
+      activeElementTag: activeElement?.tagName ?? null,
+      activeElementClassName:
+        activeElement && 'className' in activeElement
+          ? String(activeElement.className)
+          : null,
+      selectionText: selection?.toString() ?? '',
+      selectionRangeCount: selection?.rangeCount ?? 0,
+    };
   });
+  throw new Error(
+    `Editor focus could not be stabilized before boundary key input. Debug state: ${JSON.stringify(debugState)}`,
+  );
 };
 
 /**
@@ -163,6 +192,17 @@ const createInlineCommentFromCurrentSelection = async (page) => {
   await page.waitForSelector('.inline-comment-card-input', {
     timeout: 5_000,
   });
+  await page.waitForFunction(
+    () => {
+      const inlineCommentInputs = Array.from(
+        document.querySelectorAll('.inline-comment-card-input'),
+      );
+      return inlineCommentInputs.some((inlineCommentInputElement) => {
+        return document.activeElement === inlineCommentInputElement;
+      });
+    },
+    { timeout: 5_000 },
+  );
 };
 
 /**
