@@ -13,7 +13,7 @@
     "lint": "eslint --ext .ts,.tsx .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "electron-forge package && node tests/e2e/happy-path.js",
+    "test:e2e": "electron-forge package && node tests/e2e/run.js",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown"
   },

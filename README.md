@@ -55,10 +55,18 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 
 ## E2E Testing
 
-The E2E test (`tests/e2e/happy-path.js`) launches the full Electron app via Playwright's `_electron.launch()`, types a paragraph, adds an inline comment, waits for autosave, and verifies both the paragraph and comment markers are persisted on disk.
+The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs two scenarios:
 
-- Run: `npm run test:e2e` (builds the app first, then runs the test)
-- The test creates an isolated temporary `userData` directory so it never touches your real app state.
+1. Happy path: type a paragraph, add an inline comment, wait for autosave, and verify markers persist on disk.
+2. Inline-comment boundary regression: start from a blank document, create inline comments, type whitespace at comment start/end boundaries, and verify whitespace stays outside the comment range.
+
+- Run: `npm run test:e2e` (builds the app first, then runs the suite)
+- The suite creates an isolated temporary `userData` directory per scenario so it never touches your real app state.
+- Blank-document startup for E2E is supported by pre-seeding `<userData>/simple.md` before app launch (the same filename the app uses for its default writable document).
+- E2E files are organized as:
+  - `tests/e2e/run.js` — suite entrypoint.
+  - `tests/e2e/harness.js` — shared launch/editor/assertion utilities.
+  - `tests/e2e/scenarios/*.scenario.js` — one file per scenario.
 - Three environment variables control E2E-relevant behavior:
   - `KALE_HEADLESS=1` — hides the BrowserWindow and suppresses DevTools.
   - `KALE_SKIP_TERMINAL_VALIDATION=1` — skips the Claude CLI startup check (not needed for editor tests, and unavailable in CI).
@@ -89,7 +97,7 @@ The E2E test (`tests/e2e/happy-path.js`) launches the full Electron app via Play
 - `data/`: example markdown files the app can edit
 - `src/ide-server/`: MCP-over-WebSocket server that lets Claude Code CLI query Kale's editor state (open files, selections, diagnostics). See `docs/claude-code-ide-protocol.md` for the protocol spec.
 - `src/types/`: ambient TypeScript declarations for packages whose types cannot be resolved by `moduleResolution: "node"`.
-- `tests/e2e/`: Playwright-based end-to-end tests that launch the full Electron app and verify user-facing workflows.
+- `tests/e2e/`: Playwright-based end-to-end suite (`run.js`) plus a shared harness and scenario-per-file coverage modules under `tests/e2e/scenarios/`.
 - `AGENTS.md`: repository-specific agent instructions (with `CLAUDE.md` symlinked to it at the repo root).
 
 ## Main Process Architecture
@@ -113,6 +121,14 @@ The editor and the filesystem stay in sync through content-based comparison rath
 3. **Self-save detection**: when a file-change notification arrives, the renderer compares the disk content to `saveController.getLastSavedContent()`. If they match, the notification is the echo-back from the app's own save and is ignored.
 4. **External change with three-way merge**: if the disk content differs from the last saved content, a genuine external change occurred. When the editor has unsaved user edits, `mergeDocumentLines(base, ours, theirs)` reconciles both sets of changes at line granularity — non-conflicting edits from both sides are preserved, and conflicts resolve in favor of the disk version (external wins). If the merge preserved user edits, a save is scheduled automatically to persist the merged result.
 5. **Post-replacement save sync**: `markContentAsSavedFromLoad` runs after the CodeMirror dispatch (not before), so any save timers created by keystrokes during the async reload gap are cleared at the right moment. When a merge produced content that differs from disk, the save controller's `lastSavedContent` is set to the actual disk content so it correctly detects the merged editor content as dirty.
+
+## Inline Comment Editing Behavior
+
+Inline comments are persisted as hidden HTML comment markers around the selected text span. The editor enforces marker-safe cursor and edit semantics so user editing stays on visible prose:
+
+1. Cursor movement treats marker ranges as atomic and skips over hidden marker text.
+2. Backspace/Delete near marker boundaries delete visible content, never marker characters.
+3. Whitespace typed at the exact start or end boundary of an inline comment (`Space`, `Tab`, `Enter`) is inserted **outside** the comment range instead of expanding the annotation by accident.
 
 ## Claude Code IDE Integration
 

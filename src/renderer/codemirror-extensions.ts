@@ -284,7 +284,7 @@ export const inlineCommentDecorationExtension = (): Extension =>
   );
 
 // ---------------------------------------------------------------------------
-// Inline comment marker cursor/deletion protection
+// Inline comment marker cursor/deletion protection and edge typing policy
 //
 // The replace decorations above hide the HTML comment markers visually, but
 // the underlying document characters remain. Without explicit protection the
@@ -292,12 +292,20 @@ export const inlineCommentDecorationExtension = (): Extension =>
 // Backspace/Delete can remove individual marker characters, corrupting the
 // comment syntax and causing raw marker text to suddenly appear.
 //
-// Two complementary extensions solve this:
+// We also need boundary-aware typing behavior: when the cursor sits exactly at
+// a comment edge, whitespace insertion should happen outside the comment range
+// (matching Google Docs-style anchoring) rather than expanding the annotation
+// by accident.
+//
+// Three complementary behaviors solve this:
 //
 // 1. atomicRanges – tells CodeMirror that cursor motion should skip over
 //    marker character ranges entirely, jumping from one boundary to the other.
 //
-// 2. A high-precedence keymap interceptor for Backspace/Delete – when the
+// 2. A high-precedence keymap interceptor for edge whitespace insertion –
+//    Space/Tab/Enter inserted at a comment boundary is redirected outside.
+//
+// 3. A high-precedence keymap interceptor for Backspace/Delete – when the
 //    character that would normally be deleted falls inside a hidden marker,
 //    the deletion is redirected to the nearest visible character instead.
 // ---------------------------------------------------------------------------
@@ -324,6 +332,69 @@ const findContainingMarkerRange = (
     }
   }
   return null;
+};
+
+// Find whether a collapsed cursor sits exactly on an inline comment boundary.
+// Returning the outside insertion position lets edge typing keep ranges stable
+// while preserving the same visible caret behavior.
+const findInlineCommentEdgeInsertionPosition = (
+  cursorPos: number,
+  comments: InlineComment[],
+): number | null => {
+  for (const comment of comments) {
+    if (cursorPos === comment.contentFrom) {
+      return comment.startMarkerFrom;
+    }
+    if (cursorPos === comment.contentTo) {
+      return comment.endMarkerTo;
+    }
+  }
+
+  return null;
+};
+
+// Insert whitespace outside a comment range when the cursor is exactly on a
+// comment edge. Returning false defers to default CodeMirror key handling.
+const insertWhitespaceOutsideInlineCommentEdge = (
+  view: EditorView,
+  whitespaceText: string,
+): boolean => {
+  const { state } = view;
+  const { main } = state.selection;
+  if (!main.empty) {
+    return false;
+  }
+
+  const comments = parseInlineCommentsFromMarkdown(state.doc.toString());
+  const insertionFrom = findInlineCommentEdgeInsertionPosition(
+    main.head,
+    comments,
+  );
+  if (insertionFrom === null) {
+    return false;
+  }
+
+  view.dispatch({
+    changes: { from: insertionFrom, insert: whitespaceText },
+    selection: { anchor: insertionFrom + whitespaceText.length },
+    userEvent: 'input.type',
+  });
+  return true;
+};
+
+// Space at a comment boundary should not silently expand the highlighted range.
+const inlineCommentEdgeAwareSpace = (view: EditorView): boolean => {
+  return insertWhitespaceOutsideInlineCommentEdge(view, ' ');
+};
+
+// Tab at a comment boundary should shift content outside the annotation range.
+const inlineCommentEdgeAwareTab = (view: EditorView): boolean => {
+  return insertWhitespaceOutsideInlineCommentEdge(view, '\t');
+};
+
+// Enter at a comment boundary should create a newline outside the annotation.
+const inlineCommentEdgeAwareEnter = (view: EditorView): boolean => {
+  return insertWhitespaceOutsideInlineCommentEdge(view, '\n');
 };
 
 // Intercepts Backspace when the character behind the cursor is inside a hidden
@@ -411,10 +482,15 @@ export const inlineCommentAtomicRangesExtension = (): Extension =>
   });
 
 // High-precedence keymap that prevents Backspace and Delete from corrupting
-// hidden comment markers by redirecting the deletion to visible content.
+// hidden comment markers, and prevents edge whitespace typing from expanding
+// inline comment ranges accidentally.
 export const inlineCommentEditGuardExtension = (): Extension =>
   Prec.high(
     keymap.of([
+      { key: 'Space', run: inlineCommentEdgeAwareSpace },
+      { key: 'Tab', run: inlineCommentEdgeAwareTab },
+      { key: 'Enter', run: inlineCommentEdgeAwareEnter },
+      { key: 'Shift-Enter', run: inlineCommentEdgeAwareEnter },
       { key: 'Backspace', run: markerAwareBackspace },
       { key: 'Delete', run: markerAwareDelete },
     ]),
