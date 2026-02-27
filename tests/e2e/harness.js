@@ -109,15 +109,26 @@ const getGoToEndOfDocumentShortcut = () => {
 
 /**
  * Why: after comment creation, focus can move to the sidebar textarea; editor
- * boundary tests need explicit focus on .cm-content before key presses.
+ * boundary tests need explicit focus on .cm-content before key presses while
+ * preserving the current selection/cursor state.
  */
 const focusEditorContentArea = async (page) => {
+  await page.bringToFront();
   await page.evaluate(() => {
     const editorContentElement = document.querySelector('.cm-content');
     if (!editorContentElement) {
       throw new Error('Missing .cm-content editor element');
     }
     editorContentElement.focus();
+  });
+  await page.waitForFunction(() => {
+    const editorRootElement = document.querySelector('.cm-editor');
+    return Boolean(
+      editorRootElement &&
+      editorRootElement.classList.contains('cm-focused') &&
+      document.activeElement &&
+      editorRootElement.contains(document.activeElement),
+    );
   });
 };
 
@@ -126,14 +137,69 @@ const focusEditorContentArea = async (page) => {
  * tests should funnel through one wait-and-click helper to reduce flakiness.
  */
 const createInlineCommentFromCurrentSelection = async (page) => {
-  await page.waitForSelector('.inline-comment-selection-action', {
-    timeout: 5_000,
-  });
+  try {
+    await page.waitForSelector('.inline-comment-selection-action', {
+      timeout: 5_000,
+    });
+  } catch (error) {
+    const debugState = await page.evaluate(() => {
+      const editorRootElement = document.querySelector('.cm-editor');
+      const selection = window.getSelection();
+      return {
+        editorFocused: Boolean(
+          editorRootElement?.classList.contains('cm-focused'),
+        ),
+        activeElementTag: document.activeElement?.tagName ?? null,
+        selectionText: selection?.toString() ?? '',
+        selectionRangeCount: selection?.rangeCount ?? 0,
+      };
+    });
+    throw new Error(
+      `Comment action button did not appear for current selection. Debug state: ${JSON.stringify(debugState)}. Original error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
   await page.click('.inline-comment-selection-action');
 
   await page.waitForSelector('.inline-comment-card-input', {
     timeout: 5_000,
   });
+};
+
+/**
+ * Why: when typing starts from a new scenario step we need a real pointer focus
+ * event so Linux/Xvfb consistently treats the editor window as active.
+ */
+const clickEditorContentArea = async (page) => {
+  await page.bringToFront();
+  await page.click('.cm-content');
+  await page.waitForFunction(() => {
+    const editorRootElement = document.querySelector('.cm-editor');
+    return Boolean(
+      editorRootElement &&
+      editorRootElement.classList.contains('cm-focused') &&
+      document.activeElement &&
+      editorRootElement.contains(document.activeElement),
+    );
+  });
+};
+
+/**
+ * Why: Home/End key behavior can vary across Linux environments, so selecting
+ * the exact typed word via repeated Shift+ArrowLeft stays deterministic.
+ */
+const selectTrailingWordByCharacterLength = async (
+  page,
+  trailingWordCharacterLength,
+) => {
+  await page.keyboard.down('Shift');
+  for (
+    let cursorMoveCount = 0;
+    cursorMoveCount < trailingWordCharacterLength;
+    cursorMoveCount += 1
+  ) {
+    await page.keyboard.press('ArrowLeft');
+  }
+  await page.keyboard.up('Shift');
 };
 
 /**
@@ -146,7 +212,7 @@ const appendCommentedWordAtDocumentEnd = async (
   { word, insertLineBreakBeforeWord },
 ) => {
   const goToEndOfDocument = getGoToEndOfDocumentShortcut();
-  await focusEditorContentArea(page);
+  await clickEditorContentArea(page);
   await page.keyboard.press(goToEndOfDocument);
 
   if (insertLineBreakBeforeWord) {
@@ -154,9 +220,7 @@ const appendCommentedWordAtDocumentEnd = async (
   }
 
   await page.keyboard.type(word, { delay: 10 });
-  await page.keyboard.down('Shift');
-  await page.keyboard.press('Home');
-  await page.keyboard.up('Shift');
+  await selectTrailingWordByCharacterLength(page, word.length);
   await createInlineCommentFromCurrentSelection(page);
 };
 

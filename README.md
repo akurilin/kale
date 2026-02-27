@@ -63,6 +63,7 @@ The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright
 - Run: `npm run test:e2e` (builds the app first, then runs the suite)
 - The suite creates an isolated temporary `userData` directory per scenario so it never touches your real app state.
 - Blank-document startup for E2E is supported by pre-seeding `<userData>/simple.md` before app launch (the same filename the app uses for its default writable document).
+- The shared E2E harness uses explicit editor focus handshakes and character-count-based `Shift+ArrowLeft` selection (instead of `Shift+Home`) to keep inline-comment selection deterministic on Linux/Xvfb.
 - E2E files are organized as:
   - `tests/e2e/run.js` — suite entrypoint.
   - `tests/e2e/harness.js` — shared launch/editor/assertion utilities.
