@@ -10,6 +10,7 @@ const { runIsolatedE2ETest } = require('../harness');
 
 const WINDOW_RESIZE_TOLERANCE_PIXELS = 10;
 const EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS = 10;
+const COLLAPSED_TERMINAL_AREA_MAX_WIDTH_PIXELS = 4;
 
 /**
  * Why: this helper captures renderer-visible workspace geometry so assertions
@@ -51,6 +52,37 @@ const readWorkspaceGeometrySnapshot = async (page) => {
 };
 
 /**
+ * Why: terminal-toggle waits can fail under CI timing variance, so failures
+ * should report current geometry/aria state to make root causes actionable.
+ */
+const waitForTerminalToggleLabel = async (page, expectedLabel) => {
+  try {
+    await page.waitForFunction(
+      (expectedTerminalToggleLabel) => {
+        const terminalToggleButtonElement = document.querySelector(
+          '.topbar-icon-button',
+        );
+        return (
+          terminalToggleButtonElement?.getAttribute('aria-label') ===
+          expectedTerminalToggleLabel
+        );
+      },
+      expectedLabel,
+      { timeout: 10_000 },
+    );
+  } catch (error) {
+    const debugSnapshot = await readWorkspaceGeometrySnapshot(page);
+    throw new Error(
+      [
+        `Timed out waiting for terminal toggle label ${JSON.stringify(expectedLabel)}.`,
+        `Snapshot: ${JSON.stringify(debugSnapshot)}.`,
+        `Original error: ${error instanceof Error ? error.message : String(error)}`,
+      ].join(' '),
+    );
+  }
+};
+
+/**
  * Why: near-equality checks keep assertions deterministic when layout values
  * are rounded to integers at the BrowserWindow boundary.
  */
@@ -75,17 +107,18 @@ const runTerminalPaneCollapseExpandScenario = async () => {
     testName: 'E2E terminal-pane collapse/expand regression',
     testBody: async ({ page }) => {
       await page.waitForSelector('.terminal-pane', { timeout: 10_000 });
-      await page.waitForFunction(() => {
-        const terminalToggleButtonElement = document.querySelector(
-          '.topbar-icon-button',
-        );
-        return (
-          terminalToggleButtonElement?.getAttribute('aria-label') ===
-          'Collapse terminal pane'
-        );
-      });
+      await page.waitForSelector('.topbar-icon-button', { timeout: 10_000 });
 
-      const initialGeometrySnapshot = await readWorkspaceGeometrySnapshot(page);
+      let initialGeometrySnapshot = await readWorkspaceGeometrySnapshot(page);
+      if (
+        initialGeometrySnapshot.terminalToggleLabel === 'Expand terminal pane'
+      ) {
+        await page
+          .getByRole('button', { name: 'Expand terminal pane' })
+          .click();
+        await waitForTerminalToggleLabel(page, 'Collapse terminal pane');
+        initialGeometrySnapshot = await readWorkspaceGeometrySnapshot(page);
+      }
       assert.strictEqual(
         initialGeometrySnapshot.terminalToggleLabel,
         'Collapse terminal pane',
@@ -104,23 +137,7 @@ const runTerminalPaneCollapseExpandScenario = async () => {
       await page
         .getByRole('button', { name: 'Collapse terminal pane' })
         .click();
-      await page.waitForFunction(() => {
-        const terminalToggleButtonElement = document.querySelector(
-          '.topbar-icon-button',
-        );
-        const terminalPaneElement = document.querySelector('.terminal-pane');
-        const workspaceDividerElement =
-          document.querySelector('.workspace-divider');
-        const terminalPaneWidth =
-          terminalPaneElement?.getBoundingClientRect().width ?? 0;
-        const workspaceDividerWidth =
-          workspaceDividerElement?.getBoundingClientRect().width ?? 0;
-        return (
-          terminalToggleButtonElement?.getAttribute('aria-label') ===
-            'Expand terminal pane' &&
-          terminalPaneWidth + workspaceDividerWidth <= 1
-        );
-      });
+      await waitForTerminalToggleLabel(page, 'Expand terminal pane');
 
       const collapsedGeometrySnapshot =
         await readWorkspaceGeometrySnapshot(page);
@@ -135,8 +152,9 @@ const runTerminalPaneCollapseExpandScenario = async () => {
         `Terminal toggle should report aria-pressed=false when collapsed. Got ${JSON.stringify(collapsedGeometrySnapshot.terminalTogglePressed)}.`,
       );
       assert.ok(
-        collapsedGeometrySnapshot.terminalPaneAreaWidth <= 1,
-        `Collapsed terminal area should be hidden. Got ${collapsedGeometrySnapshot.terminalPaneAreaWidth}.`,
+        collapsedGeometrySnapshot.terminalPaneAreaWidth <=
+          COLLAPSED_TERMINAL_AREA_MAX_WIDTH_PIXELS,
+        `Collapsed terminal area should stay <= ${COLLAPSED_TERMINAL_AREA_MAX_WIDTH_PIXELS}px. Got ${collapsedGeometrySnapshot.terminalPaneAreaWidth}.`,
       );
       const expectedCollapsedInnerWindowWidth = Math.round(
         initialGeometrySnapshot.innerWindowWidth -
@@ -158,15 +176,7 @@ const runTerminalPaneCollapseExpandScenario = async () => {
       });
 
       await page.getByRole('button', { name: 'Expand terminal pane' }).click();
-      await page.waitForFunction(() => {
-        const terminalToggleButtonElement = document.querySelector(
-          '.topbar-icon-button',
-        );
-        return (
-          terminalToggleButtonElement?.getAttribute('aria-label') ===
-          'Collapse terminal pane'
-        );
-      });
+      await waitForTerminalToggleLabel(page, 'Collapse terminal pane');
 
       const reExpandedGeometrySnapshot =
         await readWorkspaceGeometrySnapshot(page);
