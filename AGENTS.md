@@ -153,3 +153,7 @@ const { chromium } = require('playwright');
 })();
 "
 ```
+
+### Where to create test files
+
+Use /tmp and its sub-folders to create one-off markdown files for QA testing
