@@ -20,7 +20,7 @@ if (process.env.KALE_USER_DATA_DIR) {
 import { createIdeIntegrationService } from './main/ide-integration-service';
 import { createMarkdownFileService } from './main/markdown-file-service';
 import { createTerminalSessionService } from './main/terminal-session-service';
-import { createMainWindow } from './main/window';
+import { createMainWindow, registerWindowIpcHandlers } from './main/window';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -39,6 +39,7 @@ const ideIntegrationService = createIdeIntegrationService({
 markdownFileService.registerIpcHandlers(ipcMain);
 terminalSessionService.registerIpcHandlers(ipcMain);
 ideIntegrationService.registerIpcHandlers(ipcMain);
+registerWindowIpcHandlers(ipcMain);
 
 // App startup validates terminal/runtime prerequisites before opening a window
 // so missing Claude dependencies fail early with a visible fatal error.

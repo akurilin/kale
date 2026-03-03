@@ -6,6 +6,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type {
+  AdjustWindowWidthRequest,
+  AdjustWindowWidthResponse,
   ExternalMarkdownFileChangedEvent,
   IdeSelectionChangedEvent,
   LoadMarkdownResponse,
@@ -105,4 +107,13 @@ contextBridge.exposeInMainWorld('ideServerApi', {
   reportSelectionChanged: (event: IdeSelectionChangedEvent): void => {
     ipcRenderer.send('ide:selection-changed', event);
   },
+});
+
+// Window controls stay explicit in preload so renderer layout code can request
+// native size adjustments without direct Electron access.
+contextBridge.exposeInMainWorld('windowApi', {
+  adjustWindowWidthBy: (
+    request: AdjustWindowWidthRequest,
+  ): Promise<AdjustWindowWidthResponse> =>
+    ipcRenderer.invoke('window:adjust-width-by', request),
 });

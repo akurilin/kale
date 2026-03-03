@@ -73,6 +73,17 @@ export type ResizeTerminalSessionRequest = {
   rows: number;
 };
 
+export type AdjustWindowWidthRequest = {
+  deltaWidth: number;
+};
+
+export type AdjustWindowWidthResponse = {
+  ok: boolean;
+  appliedWidth: number;
+  appliedHeight: number;
+  wasClamped: boolean;
+};
+
 // ---------------------------------------------------------------------------
 // IDE integration: editor state shared across main, renderer, and IDE server.
 // These are the canonical definitions — ide-server/types.ts re-exports them

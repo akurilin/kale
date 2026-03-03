@@ -25,6 +25,7 @@ import { getIdeServerApi } from './ide-server-api';
 import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
 import { TerminalPane } from './TerminalPane';
+import { getWindowApi } from './window-api';
 
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
@@ -32,6 +33,8 @@ const INITIAL_SAVE_STATUS_TEXT = 'Ready';
 const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
 const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
 const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
+const DEFAULT_TERMINAL_PANE_COLLAPSED = false;
+const DEFAULT_TERMINAL_PANE_AREA_WIDTH_PIXELS = 420;
 
 // The renderer needs a folder path for terminal startup, so this helper keeps
 // path parsing local and avoids coupling the pane to full document responses.
@@ -62,6 +65,82 @@ const clampEditorPaneWidthRatio = (editorPaneWidthRatio: number) => {
   );
 };
 
+// The split grid is driven from one helper so expand/collapse can swap layouts
+// without duplicating track strings across JSX and resize code.
+const buildWorkspaceSplitColumnsValue = (
+  editorPaneWidthRatio: number,
+  isTerminalPaneCollapsed: boolean,
+) => {
+  if (isTerminalPaneCollapsed) {
+    return '1fr 0px 0fr';
+  }
+
+  return `${editorPaneWidthRatio}fr 8px ${1 - editorPaneWidthRatio}fr`;
+};
+
+// The app resizes the native window by the exact hidden/revealed pane width so
+// collapsing the terminal does not leave a blank canvas gap in the editor area.
+const measureVisibleTerminalPaneAreaWidthPixels = (
+  workspaceElement: HTMLElement | null,
+) => {
+  if (!workspaceElement) {
+    return 0;
+  }
+
+  const terminalPaneElement =
+    workspaceElement.querySelector<HTMLElement>('.terminal-pane');
+  const workspaceDividerElement =
+    workspaceElement.querySelector<HTMLElement>('.workspace-divider');
+  const terminalPaneWidth =
+    terminalPaneElement?.getBoundingClientRect().width ?? 0;
+  const workspaceDividerWidth =
+    workspaceDividerElement?.getBoundingClientRect().width ?? 0;
+  return Math.max(0, Math.round(terminalPaneWidth + workspaceDividerWidth));
+};
+
+// Keeping the toggle icon as a tiny component avoids repeating SVG markup in
+// the top bar and makes expanded/collapsed semantics explicit at the call site.
+const TerminalPaneToggleIcon = ({
+  isTerminalPaneCollapsed,
+}: {
+  isTerminalPaneCollapsed: boolean;
+}) => (
+  <svg
+    className={`topbar-terminal-toggle-icon ${
+      isTerminalPaneCollapsed ? '' : 'topbar-terminal-toggle-icon--active'
+    }`.trim()}
+    viewBox="0 0 20 20"
+    width="16"
+    height="16"
+    aria-hidden="true"
+  >
+    <rect
+      className="topbar-terminal-toggle-icon-outline"
+      x="1.5"
+      y="2.5"
+      width="17"
+      height="15"
+      rx="3"
+    />
+    <rect
+      className="topbar-terminal-toggle-icon-main-pane"
+      x="3"
+      y="4"
+      width="10"
+      height="12"
+      rx="1.8"
+    />
+    <rect
+      className="topbar-terminal-toggle-icon-terminal-pane"
+      x="13.5"
+      y="4"
+      width="3.5"
+      height="12"
+      rx="1.2"
+    />
+  </svg>
+);
+
 // React owns shell composition and lifecycle wiring here because those flows
 // benefit from explicit state transitions more than imperative DOM queries.
 export const App = () => {
@@ -76,10 +155,16 @@ export const App = () => {
   const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
     DEFAULT_EDITOR_PANE_WIDTH_RATIO,
   );
+  const [isTerminalPaneCollapsed, setIsTerminalPaneCollapsed] = useState(
+    DEFAULT_TERMINAL_PANE_COLLAPSED,
+  );
   const documentCommentsPaneRef = useRef<DocumentCommentsPaneHandle | null>(
     null,
   );
   const workspaceElementRef = useRef<HTMLElement | null>(null);
+  const lastExpandedTerminalPaneAreaWidthPixelsRef = useRef<number>(
+    DEFAULT_TERMINAL_PANE_AREA_WIDTH_PIXELS,
+  );
   const activeWorkspaceDividerDragCleanupRef = useRef<(() => void) | null>(
     null,
   );
@@ -409,6 +494,10 @@ export const App = () => {
   const startWorkspaceDividerDrag = (
     event: ReactMouseEvent<HTMLDivElement>,
   ) => {
+    if (isTerminalPaneCollapsed) {
+      return;
+    }
+
     event.preventDefault();
     activeWorkspaceDividerDragCleanupRef.current?.();
 
@@ -434,6 +523,48 @@ export const App = () => {
     window.addEventListener('mouseup', finishWorkspaceDividerDrag);
     resizeWorkspacePanesFromClientX(event.clientX);
   };
+
+  // Expanding/collapsing should feel like one intentional layout action, so
+  // this callback updates split state and asks main to resize the native window
+  // by the pane area width that was hidden or restored.
+  const toggleTerminalPaneCollapsedState = useCallback(() => {
+    if (isTerminalPaneCollapsed) {
+      const widthToExpandByPixels = Math.max(
+        1,
+        Math.round(lastExpandedTerminalPaneAreaWidthPixelsRef.current),
+      );
+      setIsTerminalPaneCollapsed(false);
+      void getWindowApi()
+        .adjustWindowWidthBy({ deltaWidth: widthToExpandByPixels })
+        .catch((error: unknown) => {
+          console.error(error);
+        });
+      return;
+    }
+
+    const measuredTerminalPaneAreaWidthPixels =
+      measureVisibleTerminalPaneAreaWidthPixels(workspaceElementRef.current);
+    if (measuredTerminalPaneAreaWidthPixels > 0) {
+      lastExpandedTerminalPaneAreaWidthPixelsRef.current =
+        measuredTerminalPaneAreaWidthPixels;
+    }
+
+    activeWorkspaceDividerDragCleanupRef.current?.();
+    setIsTerminalPaneCollapsed(true);
+    void getWindowApi()
+      .adjustWindowWidthBy({
+        deltaWidth: -lastExpandedTerminalPaneAreaWidthPixelsRef.current,
+      })
+      .catch((error: unknown) => {
+        console.error(error);
+      });
+  }, [isTerminalPaneCollapsed]);
+
+  // The label and title stay in sync so screen readers and pointer users both
+  // get clear affordance for the same toggle action.
+  const terminalPaneToggleLabel = isTerminalPaneCollapsed
+    ? 'Expand terminal pane'
+    : 'Collapse terminal pane';
 
   return (
     <>
@@ -461,13 +592,34 @@ export const App = () => {
         </button>
         <div className="file-path">{loadedDocument?.filePath ?? ''}</div>
         <div className="save-status">{saveStatusText}</div>
+        <button
+          className={`topbar-icon-button ${
+            isTerminalPaneCollapsed ? '' : 'topbar-icon-button--active'
+          }`.trim()}
+          type="button"
+          aria-label={terminalPaneToggleLabel}
+          aria-pressed={!isTerminalPaneCollapsed}
+          title={terminalPaneToggleLabel}
+          onClick={() => {
+            toggleTerminalPaneCollapsedState();
+          }}
+        >
+          <TerminalPaneToggleIcon
+            isTerminalPaneCollapsed={isTerminalPaneCollapsed}
+          />
+        </button>
       </header>
       <main
-        className="workspace workspace--split"
+        className={`workspace workspace--split ${
+          isTerminalPaneCollapsed ? 'workspace--terminal-collapsed' : ''
+        }`.trim()}
         ref={workspaceElementRef}
         style={
           {
-            '--workspace-split-columns': `${editorPaneWidthRatio}fr 8px ${1 - editorPaneWidthRatio}fr`,
+            '--workspace-split-columns': buildWorkspaceSplitColumnsValue(
+              editorPaneWidthRatio,
+              isTerminalPaneCollapsed,
+            ),
           } as CSSProperties
         }
       >
@@ -497,7 +649,9 @@ export const App = () => {
           />
         </section>
         <div
-          className="workspace-divider"
+          className={`workspace-divider ${
+            isTerminalPaneCollapsed ? 'workspace-divider--collapsed' : ''
+          }`.trim()}
           aria-hidden="true"
           onMouseDown={startWorkspaceDividerDrag}
         />

@@ -1,5 +1,10 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen, type IpcMain } from 'electron';
 import path from 'node:path';
+
+import type {
+  AdjustWindowWidthRequest,
+  AdjustWindowWidthResponse,
+} from '../shared-types';
 
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
@@ -19,6 +24,66 @@ const shouldOpenDevTools = (isHeadless: boolean) => {
 const parseWindowDimension = (value: string | undefined, fallback: number) => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+// Window-size mutations must stay bounded by both the active display work area
+// and BrowserWindow minimum constraints so layout toggles never push the app
+// off-screen or below an unusable size.
+const clampWindowWidthToSafeBounds = (
+  browserWindow: BrowserWindow,
+  requestedWidth: number,
+) => {
+  const [minimumWindowWidth] = browserWindow.getMinimumSize();
+  const activeDisplay = screen.getDisplayMatching(browserWindow.getBounds());
+  const maximumWindowWidth = activeDisplay.workArea.width;
+  return Math.max(
+    minimumWindowWidth,
+    Math.min(maximumWindowWidth, requestedWidth),
+  );
+};
+
+// This handler lets renderer layout toggles adjust the native window width
+// while keeping authority in main over clamping and per-window ownership.
+export const registerWindowIpcHandlers = (ipcMain: IpcMain) => {
+  ipcMain.handle(
+    'window:adjust-width-by',
+    async (
+      event,
+      request: AdjustWindowWidthRequest,
+    ): Promise<AdjustWindowWidthResponse> => {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      if (!browserWindow) {
+        return {
+          ok: false,
+          appliedWidth: 0,
+          appliedHeight: 0,
+          wasClamped: false,
+        };
+      }
+
+      const [currentWindowWidth, currentWindowHeight] = browserWindow.getSize();
+      const requestedWindowWidth = Math.round(
+        currentWindowWidth + request.deltaWidth,
+      );
+      const nextWindowWidth = clampWindowWidthToSafeBounds(
+        browserWindow,
+        requestedWindowWidth,
+      );
+      const wasClamped = nextWindowWidth !== requestedWindowWidth;
+
+      if (nextWindowWidth !== currentWindowWidth) {
+        browserWindow.setSize(nextWindowWidth, currentWindowHeight);
+      }
+
+      const [appliedWidth, appliedHeight] = browserWindow.getSize();
+      return {
+        ok: true,
+        appliedWidth,
+        appliedHeight,
+        wasClamped,
+      };
+    },
+  );
 };
 
 // The main process creates renderer windows so preload wiring and Forge/Vite

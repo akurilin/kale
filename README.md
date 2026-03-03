@@ -21,6 +21,15 @@ Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into t
 
 This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a React renderer shell.
 
+## Workspace Layout
+
+- The top bar includes a terminal pane toggle button (top-right) with Cursor-style active/inactive states:
+  - active/lit = terminal pane expanded
+  - dim = terminal pane collapsed
+- Collapsing the terminal hides the right pane and keeps the editor as the primary writing surface.
+- The terminal pane stays mounted while collapsed, so the underlying PTY session remains alive and is restored instantly when expanded.
+- Toggling collapse/expand automatically resizes the native window width by the terminal-pane area, avoiding large blank editor space after collapsing.
+
 ## Run Commands
 
 - Start in development: `npm start`
