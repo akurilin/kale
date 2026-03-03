@@ -26,6 +26,21 @@ const parseWindowDimension = (value: string | undefined, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+// Startup dimensions should respect the active display work area so later
+// width-delta toggles (like terminal collapse/expand) are computed from a
+// realistic baseline instead of a size that is already off-screen.
+const clampInitialWindowSizeToPrimaryDisplay = (
+  requestedWidth: number,
+  requestedHeight: number,
+) => {
+  const { width: maximumWidth, height: maximumHeight } =
+    screen.getPrimaryDisplay().workAreaSize;
+  return {
+    width: Math.min(requestedWidth, maximumWidth),
+    height: Math.min(requestedHeight, maximumHeight),
+  };
+};
+
 // Window-size mutations must stay bounded by both the active display work area
 // and BrowserWindow minimum constraints so layout toggles never push the app
 // off-screen or below an unusable size.
@@ -101,10 +116,12 @@ export const createMainWindow = () => {
     process.env.KALE_WINDOW_HEIGHT,
     DEFAULT_WINDOW_HEIGHT,
   );
+  const { width: safeWindowWidth, height: safeWindowHeight } =
+    clampInitialWindowSizeToPrimaryDisplay(windowWidth, windowHeight);
 
   const mainWindow = new BrowserWindow({
-    width: windowWidth,
-    height: windowHeight,
+    width: safeWindowWidth,
+    height: safeWindowHeight,
     show: !isHeadless,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
