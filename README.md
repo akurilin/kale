@@ -34,7 +34,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 
 - Start in development: `npm start`
 - Start in development and explicitly open docked DevTools: `KALE_OPEN_DEVTOOLS=1 npm start`
-- Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
+- Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start` (requested dimensions are clamped to the active display work area)
 - Start in development with a forced startup markdown file path (overrides persisted last-opened-file for that app session): `KALE_STARTUP_MARKDOWN_FILE_PATH=/tmp/kale-repro.md npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp` as a JPG: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Run unit tests: `npm test`
@@ -76,7 +76,7 @@ The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright
 - Run: `npm run test:e2e` (builds the app first, then runs the suite)
 - The suite creates an isolated temporary `userData` directory per scenario so it never touches your real app state.
 - Blank-document startup for E2E is supported by pre-seeding `<userData>/simple.md` before app launch (the same filename the app uses for its default writable document).
-- The shared E2E harness uses explicit editor focus handshakes and character-count-based `Shift+ArrowLeft` selection (instead of `Shift+Home`) to keep inline-comment selection deterministic on Linux/Xvfb.
+- The shared E2E harness uses explicit editor focus handshakes and character-count-based `Shift+ArrowLeft` selection (instead of `Shift+Home`) to keep inline-comment selection deterministic on Linux/Xvfb, including retrying viewport-offset selections until they are non-empty before creating inline comments.
 - E2E files are organized as:
   - `tests/e2e/run.js` — suite entrypoint.
   - `tests/e2e/harness.js` — shared launch/editor/assertion utilities.

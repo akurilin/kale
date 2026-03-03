@@ -12,6 +12,7 @@ const {
   escapeRegExp,
   getGoToEndOfDocumentShortcut,
   runIsolatedE2ETest,
+  selectTrailingTextByCharacterLength,
 } = require('../harness');
 
 const TEST_PARAGRAPH = 'This paragraph was created by the E2E happy-path test.';
@@ -37,10 +38,7 @@ const runHappyPathScenario = async () => {
       await page.keyboard.press('Enter');
       await page.keyboard.type(TEST_PARAGRAPH, { delay: 10 });
 
-      await page.keyboard.press('Home');
-      await page.keyboard.down('Shift');
-      await page.keyboard.press('End');
-      await page.keyboard.up('Shift');
+      await selectTrailingTextByCharacterLength(page, TEST_PARAGRAPH.length);
 
       await createInlineCommentFromCurrentSelection(page);
 

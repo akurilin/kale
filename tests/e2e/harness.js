@@ -227,14 +227,14 @@ const clickEditorContentArea = async (page) => {
  * Why: Home/End key behavior can vary across Linux environments, so selecting
  * the exact typed word via repeated Shift+ArrowLeft stays deterministic.
  */
-const selectTrailingWordByCharacterLength = async (
+const selectTrailingTextByCharacterLength = async (
   page,
-  trailingWordCharacterLength,
+  trailingTextCharacterLength,
 ) => {
   await page.keyboard.down('Shift');
   for (
     let cursorMoveCount = 0;
-    cursorMoveCount < trailingWordCharacterLength;
+    cursorMoveCount < trailingTextCharacterLength;
     cursorMoveCount += 1
   ) {
     await page.keyboard.press('ArrowLeft');
@@ -260,7 +260,7 @@ const appendCommentedWordAtDocumentEnd = async (
   }
 
   await page.keyboard.type(word, { delay: 10 });
-  await selectTrailingWordByCharacterLength(page, word.length);
+  await selectTrailingTextByCharacterLength(page, word.length);
   await createInlineCommentFromCurrentSelection(page);
 };
 
@@ -348,4 +348,5 @@ module.exports = {
   focusEditorContentArea,
   getGoToEndOfDocumentShortcut,
   runIsolatedE2ETest,
+  selectTrailingTextByCharacterLength,
 };
