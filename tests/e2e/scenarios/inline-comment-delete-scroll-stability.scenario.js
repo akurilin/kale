@@ -7,6 +7,7 @@ const assert = require('node:assert');
 
 const {
   createInlineCommentFromCurrentSelection,
+  focusEditorContentArea,
   runIsolatedE2ETest,
 } = require('../harness');
 
@@ -41,13 +42,29 @@ const createInlineCommentAtViewportOffset = async (
   scrollerBoundingBox,
   viewportClickY,
 ) => {
-  await page.mouse.click(scrollerBoundingBox.x + 220, viewportClickY);
-  await page.keyboard.down('Shift');
-  for (let moveIndex = 0; moveIndex < 14; moveIndex += 1) {
-    await page.keyboard.press('ArrowRight');
+  for (let selectionAttempt = 0; selectionAttempt < 3; selectionAttempt += 1) {
+    await page.mouse.click(scrollerBoundingBox.x + 220, viewportClickY);
+    await focusEditorContentArea(page);
+
+    await page.keyboard.down('Shift');
+    for (let moveIndex = 0; moveIndex < 14; moveIndex += 1) {
+      await page.keyboard.press('ArrowRight');
+    }
+    await page.keyboard.up('Shift');
+
+    const hasVisibleSelection = await page.evaluate(() => {
+      const selection = window.getSelection();
+      return Boolean(selection && selection.toString().trim().length > 0);
+    });
+    if (hasVisibleSelection) {
+      await createInlineCommentFromCurrentSelection(page);
+      return;
+    }
   }
-  await page.keyboard.up('Shift');
-  await createInlineCommentFromCurrentSelection(page);
+
+  throw new Error(
+    'Failed to create a stable non-empty editor selection before inline comment creation.',
+  );
 };
 
 /**
