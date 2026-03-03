@@ -10,7 +10,7 @@ const { runIsolatedE2ETest } = require('../harness');
 
 const WINDOW_RESIZE_TOLERANCE_PIXELS = 10;
 const EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS = 10;
-const COLLAPSED_TERMINAL_AREA_MAX_WIDTH_PIXELS = 4;
+const COLLAPSED_TERMINAL_AREA_MAX_PRIMARY_AXIS_PIXELS = 4;
 
 /**
  * Why: this helper captures renderer-visible workspace geometry so assertions
@@ -31,18 +31,37 @@ const readWorkspaceGeometrySnapshot = async (page) => {
       editorPaneElement?.getBoundingClientRect().width ?? 0;
     const terminalPaneWidth =
       terminalPaneElement?.getBoundingClientRect().width ?? 0;
+    const terminalPaneHeight =
+      terminalPaneElement?.getBoundingClientRect().height ?? 0;
     const workspaceDividerWidth =
       workspaceDividerElement?.getBoundingClientRect().width ?? 0;
+    const workspaceDividerHeight =
+      workspaceDividerElement?.getBoundingClientRect().height ?? 0;
+    const workspaceComputedStyle = workspaceElement
+      ? window.getComputedStyle(workspaceElement)
+      : null;
+    const isVerticalStackedLayout =
+      workspaceComputedStyle?.display === 'flex' &&
+      workspaceComputedStyle?.flexDirection === 'column';
+    const terminalPanePrimaryAxisFootprint = isVerticalStackedLayout
+      ? terminalPaneHeight + workspaceDividerHeight
+      : terminalPaneWidth + workspaceDividerWidth;
 
     return {
       innerWindowWidth: window.innerWidth,
       workspaceSplitColumns: workspaceElement
         ? window.getComputedStyle(workspaceElement).gridTemplateColumns
         : '',
+      workspaceDisplay: workspaceComputedStyle?.display ?? '',
+      workspaceFlexDirection: workspaceComputedStyle?.flexDirection ?? '',
+      isVerticalStackedLayout,
       editorPaneWidth,
       terminalPaneWidth,
+      terminalPaneHeight,
       workspaceDividerWidth,
+      workspaceDividerHeight,
       terminalPaneAreaWidth: terminalPaneWidth + workspaceDividerWidth,
+      terminalPanePrimaryAxisFootprint,
       terminalToggleLabel:
         terminalToggleButtonElement?.getAttribute('aria-label') ?? null,
       terminalTogglePressed:
@@ -152,9 +171,9 @@ const runTerminalPaneCollapseExpandScenario = async () => {
         `Terminal toggle should report aria-pressed=false when collapsed. Got ${JSON.stringify(collapsedGeometrySnapshot.terminalTogglePressed)}.`,
       );
       assert.ok(
-        collapsedGeometrySnapshot.terminalPaneAreaWidth <=
-          COLLAPSED_TERMINAL_AREA_MAX_WIDTH_PIXELS,
-        `Collapsed terminal area should stay <= ${COLLAPSED_TERMINAL_AREA_MAX_WIDTH_PIXELS}px. Got ${collapsedGeometrySnapshot.terminalPaneAreaWidth}.`,
+        collapsedGeometrySnapshot.terminalPanePrimaryAxisFootprint <=
+          COLLAPSED_TERMINAL_AREA_MAX_PRIMARY_AXIS_PIXELS,
+        `Collapsed terminal area should stay <= ${COLLAPSED_TERMINAL_AREA_MAX_PRIMARY_AXIS_PIXELS}px on the active layout axis. Got ${collapsedGeometrySnapshot.terminalPanePrimaryAxisFootprint}.`,
       );
       const expectedCollapsedInnerWindowWidth = Math.round(
         initialGeometrySnapshot.innerWindowWidth -
@@ -167,13 +186,31 @@ const runTerminalPaneCollapseExpandScenario = async () => {
         assertionDescription:
           'Collapsed window width should shrink by terminal pane area width',
       });
-      assertWithinTolerance({
-        actualValue: collapsedGeometrySnapshot.editorPaneWidth,
-        expectedValue: initialGeometrySnapshot.editorPaneWidth,
-        tolerancePixels: EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS,
-        assertionDescription:
-          'Editor pane width should stay stable when terminal collapses',
-      });
+      if (
+        collapsedGeometrySnapshot.isVerticalStackedLayout ===
+        initialGeometrySnapshot.isVerticalStackedLayout
+      ) {
+        assertWithinTolerance({
+          actualValue: collapsedGeometrySnapshot.editorPaneWidth,
+          expectedValue: initialGeometrySnapshot.editorPaneWidth,
+          tolerancePixels: EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS,
+          assertionDescription:
+            'Editor pane width should stay stable when terminal collapses',
+        });
+      } else {
+        assert.ok(
+          collapsedGeometrySnapshot.editorPaneWidth >=
+            initialGeometrySnapshot.editorPaneWidth -
+              EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS,
+          [
+            'Editor pane width should not shrink when responsive layout switches during collapse.',
+            `Initial width: ${initialGeometrySnapshot.editorPaneWidth}.`,
+            `Collapsed width: ${collapsedGeometrySnapshot.editorPaneWidth}.`,
+            `Initial vertical layout: ${initialGeometrySnapshot.isVerticalStackedLayout}.`,
+            `Collapsed vertical layout: ${collapsedGeometrySnapshot.isVerticalStackedLayout}.`,
+          ].join(' '),
+        );
+      }
 
       await page.getByRole('button', { name: 'Expand terminal pane' }).click();
       await waitForTerminalToggleLabel(page, 'Collapse terminal pane');
