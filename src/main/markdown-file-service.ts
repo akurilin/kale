@@ -21,6 +21,8 @@ const BUNDLED_SAMPLE_MARKDOWN_FILE = path.resolve(
 // to write back into the app bundle / asar.
 const DEFAULT_USER_FILE_NAME = 'simple.md';
 const SETTINGS_FILE_NAME = 'settings.json';
+const FORCED_STARTUP_MARKDOWN_FILE_PATH_ENV_VAR =
+  'KALE_STARTUP_MARKDOWN_FILE_PATH';
 const execFileAsync = promisify(execFile);
 
 type AppSettings = {
@@ -177,6 +179,51 @@ export const createMarkdownFileService = () => {
     await writeSettings(settings);
   };
 
+  // Test and automation workflows need a deterministic startup file path that
+  // bypasses persisted settings, so this reads and normalizes that override.
+  const getForcedStartupMarkdownFilePathFromEnvironment = () => {
+    const configuredPath =
+      process.env[FORCED_STARTUP_MARKDOWN_FILE_PATH_ENV_VAR];
+    if (!configuredPath) {
+      return null;
+    }
+
+    const trimmedPath = configuredPath.trim();
+    if (trimmedPath.length === 0) {
+      return null;
+    }
+
+    return path.resolve(trimmedPath);
+  };
+
+  // For QA flows we allow the forced startup file path to point at a
+  // not-yet-created markdown file, and eagerly create it as an empty document.
+  const ensureForcedStartupMarkdownFilePath = async () => {
+    const forcedStartupMarkdownFilePath =
+      getForcedStartupMarkdownFilePathFromEnvironment();
+    if (!forcedStartupMarkdownFilePath) {
+      return null;
+    }
+
+    if (await canReadFile(forcedStartupMarkdownFilePath)) {
+      return forcedStartupMarkdownFilePath;
+    }
+
+    try {
+      await fs.mkdir(path.dirname(forcedStartupMarkdownFilePath), {
+        recursive: true,
+      });
+      await fs.writeFile(forcedStartupMarkdownFilePath, '', 'utf8');
+      return forcedStartupMarkdownFilePath;
+    } catch (error) {
+      console.error(
+        `Could not create forced startup markdown file at ${forcedStartupMarkdownFilePath}`,
+        error,
+      );
+      return null;
+    }
+  };
+
   // The active file pointer is validated lazily because files can be moved or
   // deleted outside Kale between operations and after restart.
   const ensureCurrentMarkdownFilePath = async () => {
@@ -184,6 +231,13 @@ export const createMarkdownFileService = () => {
       currentMarkdownFilePath &&
       (await canReadFile(currentMarkdownFilePath))
     ) {
+      return currentMarkdownFilePath;
+    }
+
+    const forcedStartupMarkdownFilePath =
+      await ensureForcedStartupMarkdownFilePath();
+    if (forcedStartupMarkdownFilePath) {
+      currentMarkdownFilePath = forcedStartupMarkdownFilePath;
       return currentMarkdownFilePath;
     }
 

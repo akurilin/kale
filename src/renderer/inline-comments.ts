@@ -30,6 +30,10 @@ type ParsedEndMarker = {
 };
 
 type MarkerToken = ParsedStartMarker | ParsedEndMarker;
+type InlineCommentTextPayloadRange = {
+  payloadFrom: number;
+  payloadTo: number;
+};
 
 const INLINE_COMMENT_MARKER_PATTERN =
   /<!--\s*@comment:([A-Za-z0-9_-]+)\s+(start|end)(?:\s*\|\s*([\s\S]*?))?\s*-->/g;
@@ -175,14 +179,13 @@ export const createInlineCommentEndMarker = (commentId: string): string => {
 };
 
 /**
- * Why: the sidebar editor needs a targeted string replacement path that only
- * mutates one comment payload while preserving the anchored document range.
+ * Why: sidebar edits need direct marker payload coordinates so callers can
+ * apply minimal in-place document changes without replacing the full file.
  */
-export const updateInlineCommentTextInMarkdown = (
+export const findInlineCommentTextPayloadRangeInMarkdown = (
   markdownContent: string,
   commentId: string,
-  nextCommentText: string,
-): string | null => {
+): InlineCommentTextPayloadRange | null => {
   const targetComment = parseInlineCommentsFromMarkdown(markdownContent).find(
     (comment) => comment.id === commentId,
   );
@@ -211,12 +214,32 @@ export const updateInlineCommentTextInMarkdown = (
   const payloadFrom =
     targetComment.startMarkerFrom + payloadIndexWithinStartMarker;
   const payloadTo = payloadFrom + existingPayload.length;
+  return { payloadFrom, payloadTo };
+};
+
+/**
+ * Why: the sidebar editor needs a targeted string replacement path that only
+ * mutates one comment payload while preserving the anchored document range.
+ */
+export const updateInlineCommentTextInMarkdown = (
+  markdownContent: string,
+  commentId: string,
+  nextCommentText: string,
+): string | null => {
+  const targetPayloadRange = findInlineCommentTextPayloadRangeInMarkdown(
+    markdownContent,
+    commentId,
+  );
+  if (!targetPayloadRange) {
+    return null;
+  }
+
   const encodedCommentText = encodeInlineCommentTextForMarker(nextCommentText);
 
   return (
-    markdownContent.slice(0, payloadFrom) +
+    markdownContent.slice(0, targetPayloadRange.payloadFrom) +
     encodedCommentText +
-    markdownContent.slice(payloadTo)
+    markdownContent.slice(targetPayloadRange.payloadTo)
   );
 };
 

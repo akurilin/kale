@@ -35,6 +35,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - Start in development: `npm start`
 - Start in development and explicitly open docked DevTools: `KALE_OPEN_DEVTOOLS=1 npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start`
+- Start in development with a forced startup markdown file path (overrides persisted last-opened-file for that app session): `KALE_STARTUP_MARKDOWN_FILE_PATH=/tmp/kale-repro.md npm start`
 - Capture a screenshot of an already-running `kale` Electron window into `/tmp` as a JPG: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Run unit tests: `npm test`
 - Run unit tests in watch mode: `npm run test:watch`
@@ -64,11 +65,12 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 
 ## E2E Testing
 
-The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs three scenarios:
+The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs four scenarios:
 
 1. Happy path: type a paragraph, add an inline comment, wait for autosave, and verify markers persist on disk.
 2. Inline-comment boundary regression: start from a blank document, create inline comments, type whitespace at comment start/end boundaries, and verify whitespace stays outside the comment range.
-3. Terminal pane collapse/expand regression: toggle the terminal pane from the top bar and verify terminal-area visibility plus window-width shrink/restore behavior so collapse does not leave blank editor space.
+3. Inline-comment typing scroll stability regression: from mid-document, create an inline comment near the top of the viewport and verify typing in the comment textarea does not move editor scroll on each keystroke.
+4. Terminal pane collapse/expand regression: toggle the terminal pane from the top bar and verify terminal-area visibility plus window-width shrink/restore behavior so collapse does not leave blank editor space.
 
 - Run: `npm run test:e2e` (builds the app first, then runs the suite)
 - The suite creates an isolated temporary `userData` directory per scenario so it never touches your real app state.
@@ -78,10 +80,11 @@ The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright
   - `tests/e2e/run.js` — suite entrypoint.
   - `tests/e2e/harness.js` — shared launch/editor/assertion utilities.
   - `tests/e2e/scenarios/*.scenario.js` — one file per scenario.
-- Three environment variables control E2E-relevant behavior:
+- Four environment variables control E2E-relevant behavior:
   - `KALE_HEADLESS=1` — hides the BrowserWindow and suppresses DevTools.
   - `KALE_SKIP_TERMINAL_VALIDATION=1` — skips the Claude CLI startup check (not needed for editor tests, and unavailable in CI).
   - `KALE_USER_DATA_DIR=<path>` — overrides the Electron `userData` directory for state isolation.
+  - `KALE_STARTUP_MARKDOWN_FILE_PATH=<path>` — forces startup to open that file path (and creates it if missing) instead of using persisted last-opened settings.
 - **Linux CI (GitHub Actions):** Electron requires a display even with `show: false`. Wrap the test with `xvfb-run -a npm run test:e2e`.
 
 ## Folder Overview
@@ -140,6 +143,7 @@ Inline comments are persisted as hidden HTML comment markers around the selected
 1. Cursor movement treats marker ranges as atomic and skips over hidden marker text.
 2. Backspace/Delete near marker boundaries delete visible content, never marker characters.
 3. Whitespace typed at the exact start or end boundary of an inline comment (`Space`, `Tab`, `Enter`) is inserted **outside** the comment range instead of expanding the annotation by accident.
+4. Sidebar comment typing updates only the comment-marker payload range in-place (instead of replacing the full document), which keeps the editor viewport stable while users type in floating comment cards.
 
 ## Claude Code IDE Integration
 

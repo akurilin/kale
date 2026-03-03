@@ -55,8 +55,9 @@ import {
   createInlineCommentId,
   createInlineCommentStartMarker,
   doesSelectionOverlapExistingInlineComment,
+  encodeInlineCommentTextForMarker,
+  findInlineCommentTextPayloadRangeInMarkdown,
   removeInlineCommentMarkersFromMarkdown,
-  updateInlineCommentTextInMarkdown,
 } from './inline-comments';
 
 /**
@@ -418,19 +419,42 @@ const MarkdownEditorPaneImpl = (
           return false;
         }
 
-        const nextMarkdownContent = updateInlineCommentTextInMarkdown(
-          editorView.state.doc.toString(),
+        const currentMarkdownContent = editorView.state.doc.toString();
+        const payloadRange = findInlineCommentTextPayloadRangeInMarkdown(
+          currentMarkdownContent,
           commentId,
-          nextCommentText,
         );
-        if (nextMarkdownContent === null) {
+        if (!payloadRange) {
           return false;
         }
 
-        dispatchFullDocumentReplacementPreservingCursor(
-          editorView,
-          nextMarkdownContent,
-        );
+        // Updating only the marker payload avoids full-document replacement
+        // transactions, which can trigger viewport jumps while a sidebar
+        // textarea owns focus and emits keystrokes character-by-character.
+        const encodedCommentText =
+          encodeInlineCommentTextForMarker(nextCommentText);
+        const scrollTopBeforeInlineCommentTextUpdate =
+          editorView.scrollDOM.scrollTop;
+        editorView.dispatch({
+          changes: {
+            from: payloadRange.payloadFrom,
+            to: payloadRange.payloadTo,
+            insert: encodedCommentText,
+          },
+          scrollIntoView: false,
+        });
+
+        // CodeMirror may perform a late scroll adjustment after dispatch when
+        // selection mapping lands near hidden marker boundaries. Restoring the
+        // pre-edit scrollTop on the next frame keeps the viewport stable while
+        // typing in inline comment cards.
+        requestAnimationFrame(() => {
+          if (editorViewRef.current === editorView) {
+            editorView.scrollDOM.scrollTop =
+              scrollTopBeforeInlineCommentTextUpdate;
+          }
+        });
+
         return true;
       },
       deleteInlineCommentById: (commentId: string) => {
