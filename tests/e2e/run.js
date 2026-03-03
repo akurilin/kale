@@ -7,6 +7,9 @@ const { runHappyPathScenario } = require('./scenarios/happy-path.scenario');
 const {
   runInlineCommentBoundaryWhitespaceScenario,
 } = require('./scenarios/inline-comment-boundary-whitespace.scenario');
+const {
+  runTerminalPaneCollapseExpandScenario,
+} = require('./scenarios/terminal-pane-collapse-expand.scenario');
 
 /**
  * Why: sequential execution avoids cross-test interference between isolated
@@ -15,6 +18,7 @@ const {
 const runAllE2ETests = async () => {
   await runHappyPathScenario();
   await runInlineCommentBoundaryWhitespaceScenario();
+  await runTerminalPaneCollapseExpandScenario();
   console.log('\nAll E2E tests passed!');
 };
 

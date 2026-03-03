@@ -64,10 +64,11 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 
 ## E2E Testing
 
-The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs two scenarios:
+The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs three scenarios:
 
 1. Happy path: type a paragraph, add an inline comment, wait for autosave, and verify markers persist on disk.
 2. Inline-comment boundary regression: start from a blank document, create inline comments, type whitespace at comment start/end boundaries, and verify whitespace stays outside the comment range.
+3. Terminal pane collapse/expand regression: toggle the terminal pane from the top bar and verify terminal-area visibility plus window-width shrink/restore behavior so collapse does not leave blank editor space.
 
 - Run: `npm run test:e2e` (builds the app first, then runs the suite)
 - The suite creates an isolated temporary `userData` directory per scenario so it never touches your real app state.
