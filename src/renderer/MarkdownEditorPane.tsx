@@ -57,14 +57,14 @@ import {
   doesSelectionOverlapExistingInlineComment,
   encodeInlineCommentTextForMarker,
   findInlineCommentTextPayloadRangeInMarkdown,
-  removeInlineCommentMarkersFromMarkdown,
+  parseInlineCommentsFromMarkdown,
 } from './inline-comments';
 
 /**
- * Why: several operations replace the entire document content (external reload,
- * comment text update, comment deletion). A full-document replacement dispatch
- * collapses the cursor to position 0 and can reset the viewport, so this helper
- * preserves and restores the cursor's line/column and the scroll position.
+ * Why: external disk reloads replace the entire document content in one shot.
+ * A full-document replacement dispatch collapses the cursor to position 0 and
+ * can reset the viewport, so this helper preserves/restores cursor line-column
+ * and scroll position across that replacement.
  */
 const dispatchFullDocumentReplacementPreservingCursor = (
   editorView: EditorView,
@@ -463,18 +463,48 @@ const MarkdownEditorPaneImpl = (
           return false;
         }
 
-        const nextMarkdownContent = removeInlineCommentMarkersFromMarkdown(
-          editorView.state.doc.toString(),
-          commentId,
-        );
-        if (nextMarkdownContent === null) {
+        const currentMarkdownContent = editorView.state.doc.toString();
+        const targetInlineComment = parseInlineCommentsFromMarkdown(
+          currentMarkdownContent,
+        ).find((comment) => comment.id === commentId);
+        if (!targetInlineComment) {
           return false;
         }
 
-        dispatchFullDocumentReplacementPreservingCursor(
-          editorView,
-          nextMarkdownContent,
-        );
+        const scrollTopBeforeInlineCommentDelete =
+          editorView.scrollDOM.scrollTop;
+        editorView.dispatch({
+          changes: [
+            {
+              from: targetInlineComment.endMarkerFrom,
+              to: targetInlineComment.endMarkerTo,
+              insert: '',
+            },
+            {
+              from: targetInlineComment.startMarkerFrom,
+              to: targetInlineComment.startMarkerTo,
+              insert: '',
+            },
+          ],
+          scrollIntoView: false,
+        });
+
+        // Deleting hidden marker spans can still trigger a late viewport
+        // adjustment after dispatch; restoring the prior scrollTop on the next
+        // frame keeps mid-document deletion visually stable.
+        requestAnimationFrame(() => {
+          if (editorViewRef.current === editorView) {
+            editorView.scrollDOM.scrollTop = scrollTopBeforeInlineCommentDelete;
+          }
+        });
+
+        const didDeleteInlineComment = parseInlineCommentsFromMarkdown(
+          editorView.state.doc.toString(),
+        ).every((comment) => comment.id !== commentId);
+        if (!didDeleteInlineComment) {
+          return false;
+        }
+
         return true;
       },
     }),

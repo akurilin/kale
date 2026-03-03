@@ -65,12 +65,13 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 
 ## E2E Testing
 
-The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs four scenarios:
+The E2E suite (`tests/e2e/run.js`) launches the full Electron app via Playwright's `_electron.launch()` and runs five scenarios:
 
 1. Happy path: type a paragraph, add an inline comment, wait for autosave, and verify markers persist on disk.
 2. Inline-comment boundary regression: start from a blank document, create inline comments, type whitespace at comment start/end boundaries, and verify whitespace stays outside the comment range.
 3. Inline-comment typing scroll stability regression: from mid-document, create an inline comment near the top of the viewport and verify typing in the comment textarea does not move editor scroll on each keystroke.
-4. Terminal pane collapse/expand regression: toggle the terminal pane from the top bar and verify terminal-area visibility plus window-width shrink/restore behavior so collapse does not leave blank editor space.
+4. Inline-comment delete scroll stability regression: from mid-document, create comments near the top/middle/bottom of the viewport and verify resolving those comments does not move editor scroll.
+5. Terminal pane collapse/expand regression: toggle the terminal pane from the top bar and verify terminal-area visibility plus window-width shrink/restore behavior so collapse does not leave blank editor space.
 
 - Run: `npm run test:e2e` (builds the app first, then runs the suite)
 - The suite creates an isolated temporary `userData` directory per scenario so it never touches your real app state.
@@ -144,6 +145,7 @@ Inline comments are persisted as hidden HTML comment markers around the selected
 2. Backspace/Delete near marker boundaries delete visible content, never marker characters.
 3. Whitespace typed at the exact start or end boundary of an inline comment (`Space`, `Tab`, `Enter`) is inserted **outside** the comment range instead of expanding the annotation by accident.
 4. Sidebar comment typing updates only the comment-marker payload range in-place (instead of replacing the full document), which keeps the editor viewport stable while users type in floating comment cards.
+5. Sidebar comment deletion removes only the start/end marker ranges in-place (instead of replacing the full document), preserving viewport stability while resolving comments.
 
 ## Claude Code IDE Integration
 

@@ -11,6 +11,9 @@ const {
   runInlineCommentTypingScrollStabilityScenario,
 } = require('./scenarios/inline-comment-typing-scroll-stability.scenario');
 const {
+  runInlineCommentDeleteScrollStabilityScenario,
+} = require('./scenarios/inline-comment-delete-scroll-stability.scenario');
+const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
 
@@ -22,6 +25,7 @@ const runAllE2ETests = async () => {
   await runHappyPathScenario();
   await runInlineCommentBoundaryWhitespaceScenario();
   await runInlineCommentTypingScrollStabilityScenario();
+  await runInlineCommentDeleteScrollStabilityScenario();
   await runTerminalPaneCollapseExpandScenario();
   console.log('\nAll E2E tests passed!');
 };
