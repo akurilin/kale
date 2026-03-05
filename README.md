@@ -163,7 +163,8 @@ Kale runs an MCP (Model Context Protocol) server over WebSocket so Claude Code C
 
 1. On startup, the main process starts a WebSocket server on a random port (10000–65535) bound to `127.0.0.1`.
 2. A lock file is written to `~/.claude/ide/<port>.lock` containing the PID, workspace folders, IDE name ("Kale"), and an auth token (UUID).
-3. Claude Code CLI discovers the server by scanning the lock file directory and connects with the auth token in an HTTP header.
-4. The server exposes MCP tools: `getCurrentSelection`, `getLatestSelection`, `getOpenEditors`, `getDiagnostics`.
-5. The renderer pushes selection changes to main via IPC; main caches the latest state and broadcasts `selection_changed` notifications to connected clients (50ms debounce). Claude Code consumes the selection context on prompt submission — this is standard behavior across all IDE integrations.
-6. On shutdown, the server closes all connections and removes the lock file.
+3. The advertised workspace folder follows the active markdown file's directory and is refreshed when `Open...` switches to a file in a different folder.
+4. Claude Code CLI discovers the server by scanning the lock file directory and connects with the auth token in an HTTP header.
+5. The server exposes MCP tools: `getCurrentSelection`, `getLatestSelection`, `getOpenEditors`, `getDiagnostics`.
+6. The renderer pushes selection changes to main via IPC; main caches the latest state and broadcasts `selection_changed` notifications to connected clients (50ms debounce). Claude Code consumes the selection context on prompt submission — this is standard behavior across all IDE integrations.
+7. On shutdown, the server closes all connections and removes the lock file.

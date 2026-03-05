@@ -2,6 +2,7 @@
 // This is the Electron main process entry that wires app lifecycle to the
 // extracted markdown, terminal, IDE, and window modules.
 //
+import path from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
 
@@ -35,11 +36,32 @@ const terminalSessionService = createTerminalSessionService({
 const ideIntegrationService = createIdeIntegrationService({
   getCurrentMarkdownFilePath: markdownFileService.getCurrentMarkdownFilePath,
 });
+const removeCurrentMarkdownFilePathChangedListener =
+  markdownFileService.onCurrentMarkdownFilePathChanged((nextFilePath) => {
+    void ideIntegrationService.updateWorkspaceFolders([
+      path.dirname(nextFilePath),
+    ]);
+  });
 
 markdownFileService.registerIpcHandlers(ipcMain);
 terminalSessionService.registerIpcHandlers(ipcMain);
 ideIntegrationService.registerIpcHandlers(ipcMain);
 registerWindowIpcHandlers(ipcMain);
+
+// Claude Code checks IDE workspace folders against the terminal cwd, so this
+// helper aligns lock-file workspace metadata to the active markdown file path.
+const syncIdeWorkspaceFoldersToCurrentMarkdownFileContext = async () => {
+  try {
+    const currentMarkdownWorkingDirectory =
+      await markdownFileService.resolveCurrentMarkdownWorkingDirectory();
+    await ideIntegrationService.startSafely([currentMarkdownWorkingDirectory]);
+  } catch (error) {
+    console.error(
+      'Failed to resolve IDE workspace folder from active markdown file (non-fatal):',
+      error,
+    );
+  }
+};
 
 // App startup validates terminal/runtime prerequisites before opening a window
 // so missing Claude dependencies fail early with a visible fatal error.
@@ -61,8 +83,9 @@ const startApplication = async () => {
   createMainWindow();
 
   // Start the IDE MCP server after a window exists so the app remains usable
-  // even if the optional integration fails to initialize.
-  void ideIntegrationService.startSafely([process.cwd()]);
+  // even if the optional integration fails to initialize. Workspace folders are
+  // sourced from the active markdown file context so they match Claude cwd.
+  await syncIdeWorkspaceFoldersToCurrentMarkdownFileContext();
 };
 
 // Electron only allows certain APIs after the ready event, so all startup work
@@ -75,6 +98,7 @@ app.on('ready', () => {
 // PTYs before quitting (except on macOS where apps commonly stay active).
 app.on('window-all-closed', () => {
   const shutdownServicesAndMaybeQuit = async () => {
+    removeCurrentMarkdownFilePathChangedListener();
     await markdownFileService.shutdown();
     await ideIntegrationService.shutdown();
     await terminalSessionService.shutdown();

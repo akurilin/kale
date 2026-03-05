@@ -40,6 +40,9 @@ export const createMarkdownFileService = () => {
   let currentMarkdownFilePath: string | null = null;
   let activeMarkdownFileWatcher: FSWatcher | null = null;
   let watchedMarkdownFilePath: string | null = null;
+  const currentMarkdownFilePathChangedListeners = new Set<
+    (filePath: string) => void
+  >();
   let pendingFileChangeBroadcastDebounceTimeout: ReturnType<
     typeof setTimeout
   > | null = null;
@@ -175,10 +178,36 @@ export const createMarkdownFileService = () => {
     return targetFilePath;
   };
 
+  // IDE workspace synchronization depends on file-path transitions, so this
+  // helper fan-outs active-file updates to subscribers in main.
+  const emitCurrentMarkdownFilePathChanged = (filePath: string) => {
+    for (const listener of currentMarkdownFilePathChangedListeners) {
+      try {
+        listener(filePath);
+      } catch (error) {
+        console.error(
+          'Current markdown file-path listener threw (ignored):',
+          error,
+        );
+      }
+    }
+  };
+
+  // All file-path transitions should flow through one helper so watchers, IDE
+  // integration, and settings persistence observe the same canonical updates.
+  const updateCurrentMarkdownFilePath = (filePath: string) => {
+    if (currentMarkdownFilePath === filePath) {
+      return;
+    }
+
+    currentMarkdownFilePath = filePath;
+    emitCurrentMarkdownFilePathChanged(filePath);
+  };
+
   // Active-file updates always persist to settings so restart behavior matches
   // the most recent user choice regardless of which IPC path changed it.
   const setCurrentMarkdownFilePath = async (filePath: string) => {
-    currentMarkdownFilePath = filePath;
+    updateCurrentMarkdownFilePath(filePath);
     const settings = await readSettings();
     settings.lastOpenedFilePath = filePath;
     await writeSettings(settings);
@@ -242,8 +271,8 @@ export const createMarkdownFileService = () => {
     const forcedStartupMarkdownFilePath =
       await ensureForcedStartupMarkdownFilePath();
     if (forcedStartupMarkdownFilePath) {
-      currentMarkdownFilePath = forcedStartupMarkdownFilePath;
-      return currentMarkdownFilePath;
+      updateCurrentMarkdownFilePath(forcedStartupMarkdownFilePath);
+      return forcedStartupMarkdownFilePath;
     }
 
     const settings = await readSettings();
@@ -251,8 +280,8 @@ export const createMarkdownFileService = () => {
       settings.lastOpenedFilePath &&
       (await canReadFile(settings.lastOpenedFilePath))
     ) {
-      currentMarkdownFilePath = settings.lastOpenedFilePath;
-      return currentMarkdownFilePath;
+      updateCurrentMarkdownFilePath(settings.lastOpenedFilePath);
+      return settings.lastOpenedFilePath;
     }
 
     const defaultFilePath = await ensureDefaultUserFile();
@@ -263,6 +292,24 @@ export const createMarkdownFileService = () => {
   // Consumers that only need the current cached path (for IDE metadata, etc.)
   // should avoid forcing filesystem resolution or watcher side effects.
   const getCurrentMarkdownFilePath = () => currentMarkdownFilePath;
+
+  // Claude IDE lock-file workspace matching should follow the active document
+  // context, so this resolves the current file's containing directory.
+  const resolveCurrentMarkdownWorkingDirectory = async () => {
+    const filePath = await ensureCurrentMarkdownFilePath();
+    return path.dirname(filePath);
+  };
+
+  // Main-process services can subscribe to active-file path transitions so
+  // cross-cutting integrations (like Claude IDE workspace folders) stay aligned.
+  const onCurrentMarkdownFilePathChanged = (
+    listener: (filePath: string) => void,
+  ) => {
+    currentMarkdownFilePathChangedListeners.add(listener);
+    return () => {
+      currentMarkdownFilePathChangedListeners.delete(listener);
+    };
+  };
 
   // Editor load consolidates path resolution and watcher activation so the
   // renderer receives content from the same file that is being observed.
@@ -777,6 +824,8 @@ export const createMarkdownFileService = () => {
     registerIpcHandlers,
     ensureCurrentMarkdownFilePath,
     getCurrentMarkdownFilePath,
+    resolveCurrentMarkdownWorkingDirectory,
+    onCurrentMarkdownFilePathChanged,
     shutdown,
   };
 };
