@@ -165,6 +165,7 @@ Owns document lifecycle and top-level UI orchestration:
 - Handles open/restore/branch-switch/commit actions.
 - Handles terminal-pane collapse/expand and native width resize requests.
 - Pushes selection updates to IDE integration.
+- Maintains live editor word count state for the document header badge.
 - Flushes save on blur/beforeunload.
 
 ### Document + Inline Comments (`src/renderer/DocumentCommentsPane.tsx`)

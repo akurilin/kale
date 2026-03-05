@@ -161,12 +161,32 @@ const buildGitBranchLabel = (
   return 'HEAD (detached)';
 };
 
+// Progress feedback should reflect what users perceive while drafting, so word
+// counting treats each non-whitespace token in the current markdown as a word.
+const countWordsInMarkdownContent = (
+  markdownContent: string | null,
+): number => {
+  if (!markdownContent) {
+    return 0;
+  }
+
+  return markdownContent.match(/\S+/gu)?.length ?? 0;
+};
+
+// The title-row badge stays concise and readable by handling singular/plural
+// label formatting in one place.
+const formatWordCountLabel = (wordCount: number): string =>
+  `${wordCount.toLocaleString()} ${wordCount === 1 ? 'word' : 'words'}`;
+
 // React owns shell composition and lifecycle wiring here because those flows
 // benefit from explicit state transitions more than imperative DOM queries.
 export const App = () => {
   const [loadedDocument, setLoadedDocument] =
     useState<LoadMarkdownResponse | null>(null);
   const [loadedDocumentRevision, setLoadedDocumentRevision] = useState(0);
+  const [editorContentForWordCount, setEditorContentForWordCount] = useState<
+    string | null
+  >(null);
   const [saveStatusText, setSaveStatusText] = useState(
     INITIAL_SAVE_STATUS_TEXT,
   );
@@ -229,6 +249,12 @@ export const App = () => {
   const activeDocumentWorkingDirectory = getParentDirectoryPathFromFilePath(
     activeDocumentFilePath,
   );
+  const activeDocumentWordCount = countWordsInMarkdownContent(
+    editorContentForWordCount ?? loadedDocument?.content ?? null,
+  );
+  const activeDocumentWordCountLabel = formatWordCountLabel(
+    activeDocumentWordCount,
+  );
 
   // Loading a file updates both editor content and top-bar metadata. Save
   // state synchronization is intentionally deferred to after the editor
@@ -239,6 +265,7 @@ export const App = () => {
     (nextLoadedDocument: LoadMarkdownResponse) => {
       setLoadedDocument(nextLoadedDocument);
       setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
+      setEditorContentForWordCount(nextLoadedDocument.content);
       setSaveStatusText('Saved');
     },
     [],
@@ -257,6 +284,7 @@ export const App = () => {
   // without waiting for the user to type again.
   const handleDocumentContentReplacedFromDisk = useCallback(
     (replacedWithContent: string) => {
+      setEditorContentForWordCount(replacedWithContent);
       const actualDiskContent = pendingDiskContentForSaveSyncRef.current;
       pendingDiskContentForSaveSyncRef.current = null;
 
@@ -970,12 +998,18 @@ export const App = () => {
         }
       >
         <section className="pane workspace-pane workspace-pane--editor">
-          <div className="pane-title">Document</div>
+          <div className="pane-title">
+            <span>Document</span>
+            <span className="pane-title-word-count">
+              {activeDocumentWordCountLabel}
+            </span>
+          </div>
           <DocumentCommentsPane
             ref={documentCommentsPaneRef}
             loadedDocumentContent={loadedDocument?.content ?? null}
             loadedDocumentRevision={loadedDocumentRevision}
             onUserEditedDocument={(content) => {
+              setEditorContentForWordCount(content);
               saveController.scheduleSave(content);
             }}
             onDocumentContentReplacedFromDisk={
