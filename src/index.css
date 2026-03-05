@@ -448,6 +448,13 @@ body {
   font-style: italic;
 }
 
+.editor .cm-live-link-label {
+  color: #1f4d8e;
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.12em;
+}
+
 .editor .cm-line {
   padding-left: 12px;
 }

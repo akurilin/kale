@@ -188,6 +188,7 @@ Owns one long-lived `EditorView` instance and exposes an imperative handle.
 ### CodeMirror Extensions (`src/renderer/codemirror-extensions.ts`)
 
 - Markdown live-preview marker hiding.
+- Inactive-line link live-preview concealment for inline links, Hugo shortcode link destinations, and autolinks.
 - Heading + quote line decorations.
 - Inline comment marker hiding/highlight decorations.
 - Atomic marker ranges + guarded Backspace/Delete behavior.

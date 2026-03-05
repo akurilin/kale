@@ -3,6 +3,7 @@
 // renderer entry stays focused on app composition instead of editor internals.
 //
 import { syntaxTree } from '@codemirror/language';
+import type { SyntaxNode } from '@lezer/common';
 import {
   EditorSelection,
   Prec,
@@ -31,6 +32,8 @@ const markerNodes = new Set([
   'EmphasisMark',
   'CodeMark',
 ]);
+
+const livePreviewLinkLabelCssClassName = 'cm-live-link-label';
 
 const markdownHeadingNodeNameToLevel = new Map<string, number>([
   ['ATXHeading1', 1],
@@ -116,14 +119,300 @@ const isSelectionContextActive = (
   return false;
 };
 
-// syntax-tree-driven decoration generation is less fragile than
-// regex parsing and stays aligned with CodeMirror markdown semantics.
-const buildLivePreviewMarkerDecorations = (
-  view: EditorView,
-): Range<Decoration>[] => {
-  const decorations: Range<Decoration>[] = [];
-  const { state } = view;
-  const tree = syntaxTree(state);
+export type LivePreviewDecorationInstruction =
+  | {
+      type: 'replace';
+      from: number;
+      to: number;
+    }
+  | {
+      type: 'mark';
+      from: number;
+      to: number;
+      className: string;
+    };
+
+// Direct child-node filtering keeps link destination concealment strictly
+// syntax-aware and avoids brittle text scanning for parsed token boundaries.
+const listDirectChildSyntaxNodesByName = (
+  parentSyntaxNode: SyntaxNode,
+  childName: string,
+): SyntaxNode[] => {
+  const matchingChildNodes: SyntaxNode[] = [];
+  let childNode = parentSyntaxNode.firstChild;
+
+  while (childNode) {
+    if (childNode.name === childName) {
+      matchingChildNodes.push(childNode);
+    }
+    childNode = childNode.nextSibling;
+  }
+
+  return matchingChildNodes;
+};
+
+// Link live-preview transforms need exact label bracket ranges so the visible
+// label can remain while only markdown control characters are concealed.
+const findMarkdownLinkLabelBoundaryMarkerRanges = (
+  linkSyntaxNode: SyntaxNode,
+): {
+  openingLabelMarkerRange: { from: number; to: number };
+  closingLabelMarkerRange: { from: number; to: number };
+} | null => {
+  const linkMarkerNodes = listDirectChildSyntaxNodesByName(
+    linkSyntaxNode,
+    'LinkMark',
+  );
+  if (linkMarkerNodes.length < 2) {
+    return null;
+  }
+
+  const openingLabelMarkerNode = linkMarkerNodes[0];
+  const closingLabelMarkerNode = linkMarkerNodes[1];
+  return {
+    openingLabelMarkerRange: {
+      from: openingLabelMarkerNode.from,
+      to: openingLabelMarkerNode.to,
+    },
+    closingLabelMarkerRange: {
+      from: closingLabelMarkerNode.from,
+      to: closingLabelMarkerNode.to,
+    },
+  };
+};
+
+// Inline markdown links can contain URL plus optional title text, so hiding the
+// full `(destination ...)` span prevents stray whitespace leakage in preview.
+const findMarkdownInlineLinkDestinationRange = (
+  editorState: EditorState,
+  linkSyntaxNode: SyntaxNode,
+): { from: number; to: number } | null => {
+  let destinationStart: number | null = null;
+  let destinationEnd: number | null = null;
+  let childNode = linkSyntaxNode.firstChild;
+
+  while (childNode) {
+    if (childNode.name !== 'LinkMark') {
+      childNode = childNode.nextSibling;
+      continue;
+    }
+
+    const markerText = editorState.sliceDoc(childNode.from, childNode.to);
+    if (markerText === '(' && destinationStart === null) {
+      destinationStart = childNode.from;
+      childNode = childNode.nextSibling;
+      continue;
+    }
+
+    if (markerText === ')' && destinationStart !== null) {
+      destinationEnd = childNode.to;
+      break;
+    }
+
+    childNode = childNode.nextSibling;
+  }
+
+  if (destinationStart === null || destinationEnd === null) {
+    return null;
+  }
+
+  return { from: destinationStart, to: destinationEnd };
+};
+
+// Reference-style links encode destination metadata as a trailing label token
+// that should be hidden in preview so only the prose label remains visible.
+const findMarkdownReferenceLinkDestinationRange = (
+  linkSyntaxNode: SyntaxNode,
+): { from: number; to: number } | null => {
+  const referenceLabelNode = listDirectChildSyntaxNodesByName(
+    linkSyntaxNode,
+    'LinkLabel',
+  )[0];
+  if (!referenceLabelNode) {
+    return null;
+  }
+
+  return { from: referenceLabelNode.from, to: referenceLabelNode.to };
+};
+
+// Hugo shortcode detection operates on a parenthesized same-line segment so we
+// only conceal explicit shortcode destinations and never cross line boundaries.
+const findParenthesizedSegmentOnSameLine = (
+  editorState: EditorState,
+  parenthesisOpenPos: number,
+): { from: number; to: number; content: string } | null => {
+  if (
+    editorState.sliceDoc(parenthesisOpenPos, parenthesisOpenPos + 1) !== '('
+  ) {
+    return null;
+  }
+
+  const lineAtParenthesisOpen = editorState.doc.lineAt(parenthesisOpenPos);
+  let openParenthesisDepth = 0;
+  for (
+    let cursorPos = parenthesisOpenPos;
+    cursorPos < lineAtParenthesisOpen.to;
+    cursorPos += 1
+  ) {
+    const nextCharacter = editorState.sliceDoc(cursorPos, cursorPos + 1);
+    if (nextCharacter === '(') {
+      openParenthesisDepth += 1;
+      continue;
+    }
+
+    if (nextCharacter !== ')') {
+      continue;
+    }
+
+    openParenthesisDepth -= 1;
+    if (openParenthesisDepth !== 0) {
+      continue;
+    }
+
+    return {
+      from: parenthesisOpenPos,
+      to: cursorPos + 1,
+      content: editorState.sliceDoc(parenthesisOpenPos + 1, cursorPos),
+    };
+  }
+
+  return null;
+};
+
+// This predicate intentionally matches both Hugo shortcode delimiters (`{{<`
+// and `{{%`) so ref/relref and percent-shortcode forms share one code path.
+const isHugoShortcodeDestinationContent = (
+  destinationContent: string,
+): boolean => {
+  const trimmedDestinationContent = destinationContent.trim();
+  return (
+    /^\{\{<[\s\S]*>\}\}$/.test(trimmedDestinationContent) ||
+    /^\{\{%[\s\S]*%\}\}$/.test(trimmedDestinationContent)
+  );
+};
+
+// Hugo links are often authored as `[label]({{< ref ... >}})`, where only the
+// label is parsed as a Link node, so we conceal the raw shortcode destination.
+const findHugoShortcodeLinkDestinationRange = (
+  editorState: EditorState,
+  linkLabelEndPos: number,
+): { from: number; to: number } | null => {
+  const parenthesizedSegment = findParenthesizedSegmentOnSameLine(
+    editorState,
+    linkLabelEndPos,
+  );
+  if (!parenthesizedSegment) {
+    return null;
+  }
+
+  if (!isHugoShortcodeDestinationContent(parenthesizedSegment.content)) {
+    return null;
+  }
+
+  return { from: parenthesizedSegment.from, to: parenthesizedSegment.to };
+};
+
+// Inactive markdown links should show only visible label prose with link
+// styling, while raw destination syntax stays hidden until the line is active.
+const appendInactiveMarkdownLinkDecorations = (
+  editorState: EditorState,
+  linkSyntaxNode: SyntaxNode,
+  decorationInstructions: LivePreviewDecorationInstruction[],
+) => {
+  const labelBoundaryMarkerRanges =
+    findMarkdownLinkLabelBoundaryMarkerRanges(linkSyntaxNode);
+  if (!labelBoundaryMarkerRanges) {
+    return;
+  }
+
+  const inlineDestinationRange = findMarkdownInlineLinkDestinationRange(
+    editorState,
+    linkSyntaxNode,
+  );
+  const referenceDestinationRange =
+    findMarkdownReferenceLinkDestinationRange(linkSyntaxNode);
+  const hugoDestinationRange = findHugoShortcodeLinkDestinationRange(
+    editorState,
+    labelBoundaryMarkerRanges.closingLabelMarkerRange.to,
+  );
+  const destinationRangeToConceal =
+    inlineDestinationRange ?? referenceDestinationRange ?? hugoDestinationRange;
+
+  // Links without a destination (for example bracketed prose like "[0]") stay
+  // source-visible so this extension does not hide non-hyperlink content.
+  if (!destinationRangeToConceal) {
+    return;
+  }
+
+  decorationInstructions.push({
+    type: 'replace',
+    from: labelBoundaryMarkerRanges.openingLabelMarkerRange.from,
+    to: labelBoundaryMarkerRanges.openingLabelMarkerRange.to,
+  });
+  decorationInstructions.push({
+    type: 'replace',
+    from: labelBoundaryMarkerRanges.closingLabelMarkerRange.from,
+    to: labelBoundaryMarkerRanges.closingLabelMarkerRange.to,
+  });
+  decorationInstructions.push({
+    type: 'replace',
+    from: destinationRangeToConceal.from,
+    to: destinationRangeToConceal.to,
+  });
+
+  const linkLabelFrom = labelBoundaryMarkerRanges.openingLabelMarkerRange.to;
+  const linkLabelTo = labelBoundaryMarkerRanges.closingLabelMarkerRange.from;
+  if (linkLabelFrom < linkLabelTo) {
+    decorationInstructions.push({
+      type: 'mark',
+      from: linkLabelFrom,
+      to: linkLabelTo,
+      className: livePreviewLinkLabelCssClassName,
+    });
+  }
+};
+
+// Autolinks already expose the URL text itself as the visible title, so this
+// path hides only angle brackets and applies the same link label styling.
+const appendInactiveAutolinkDecorations = (
+  autolinkSyntaxNode: SyntaxNode,
+  decorationInstructions: LivePreviewDecorationInstruction[],
+) => {
+  const autolinkMarkerNodes = listDirectChildSyntaxNodesByName(
+    autolinkSyntaxNode,
+    'LinkMark',
+  );
+  for (const autolinkMarkerNode of autolinkMarkerNodes) {
+    decorationInstructions.push({
+      type: 'replace',
+      from: autolinkMarkerNode.from,
+      to: autolinkMarkerNode.to,
+    });
+  }
+
+  const autolinkUrlNode = listDirectChildSyntaxNodesByName(
+    autolinkSyntaxNode,
+    'URL',
+  )[0];
+  if (!autolinkUrlNode || autolinkUrlNode.from >= autolinkUrlNode.to) {
+    return;
+  }
+
+  decorationInstructions.push({
+    type: 'mark',
+    from: autolinkUrlNode.from,
+    to: autolinkUrlNode.to,
+    className: livePreviewLinkLabelCssClassName,
+  });
+};
+
+// Exposing instruction generation keeps live-preview behavior testable without
+// spinning up DOM-backed EditorView instances in unit tests.
+export const buildLivePreviewDecorationInstructionsForState = (
+  editorState: EditorState,
+): LivePreviewDecorationInstruction[] => {
+  const decorationInstructions: LivePreviewDecorationInstruction[] = [];
+  const tree = syntaxTree(editorState);
 
   tree.iterate({
     enter: (node) => {
@@ -132,22 +421,74 @@ const buildLivePreviewMarkerDecorations = (
         return;
       }
 
-      if (markerNodes.has(name) && !isSelectionContextActive(state, from, to)) {
+      if (
+        markerNodes.has(name) &&
+        !isSelectionContextActive(editorState, from, to)
+      ) {
         let hideTo = to;
 
         if (
           (name === 'HeaderMark' ||
             name === 'QuoteMark' ||
             name === 'ListMark') &&
-          state.sliceDoc(to, to + 1) === ' '
+          editorState.sliceDoc(to, to + 1) === ' '
         ) {
           hideTo = to + 1;
         }
 
-        decorations.push(Decoration.replace({}).range(from, hideTo));
+        decorationInstructions.push({
+          type: 'replace',
+          from,
+          to: hideTo,
+        });
+        return;
+      }
+
+      if (name === 'Link' && !isSelectionContextActive(editorState, from, to)) {
+        appendInactiveMarkdownLinkDecorations(
+          editorState,
+          node.node,
+          decorationInstructions,
+        );
+        return;
+      }
+
+      if (
+        name === 'Autolink' &&
+        !isSelectionContextActive(editorState, from, to)
+      ) {
+        appendInactiveAutolinkDecorations(node.node, decorationInstructions);
       }
     },
   });
+
+  return decorationInstructions;
+};
+
+// Syntax-tree-driven decoration generation is less fragile than regex parsing
+// and stays aligned with CodeMirror markdown semantics.
+const buildLivePreviewMarkerDecorations = (
+  view: EditorView,
+): Range<Decoration>[] => {
+  const decorations: Range<Decoration>[] = [];
+
+  for (const instruction of buildLivePreviewDecorationInstructionsForState(
+    view.state,
+  )) {
+    if (instruction.type === 'replace') {
+      decorations.push(
+        Decoration.replace({}).range(instruction.from, instruction.to),
+      );
+      continue;
+    }
+
+    decorations.push(
+      Decoration.mark({ class: instruction.className }).range(
+        instruction.from,
+        instruction.to,
+      ),
+    );
+  }
 
   return decorations;
 };

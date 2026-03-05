@@ -37,6 +37,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - The markdown editor supports prose-friendly formatting shortcuts:
   - `Cmd/Ctrl+B` toggles `**bold**` wrapping around the current selection.
   - `Cmd/Ctrl+I` toggles `*italic*` wrapping around the current selection (overrides CodeMirror's default parent-syntax selection binding).
+  - In live preview, inactive lines conceal markdown link syntax and show link labels as underlined prose for inline links (`[label](url)`), Hugo shortcode destinations (`[label]({{< ref ... >}})`), and autolinks (`<https://...>`). Active cursor lines keep raw markdown visible for editing.
 
 ## Run Commands
 
