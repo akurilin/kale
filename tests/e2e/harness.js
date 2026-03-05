@@ -330,7 +330,7 @@ const runIsolatedE2ETest = async ({
     const activeFilePath = await waitForAppToLoadAndGetActiveFilePath(page);
     console.log(`Active file: ${activeFilePath}`);
 
-    await testBody({ page, activeFilePath });
+    await testBody({ page, activeFilePath, electronApp });
 
     console.log(`${testName} passed.`);
   } finally {

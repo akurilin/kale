@@ -57,6 +57,18 @@ const clampWindowWidthToSafeBounds = (
   );
 };
 
+// Renderer layout measurements are reported in CSS pixels, but BrowserWindow
+// sizing APIs use DIP units. This conversion keeps width adjustments accurate
+// at non-default zoom factors (for example after Cmd+ plus/minus zoom changes).
+const convertCssPixelDeltaToWindowPixelDelta = (
+  cssPixelDelta: number,
+  zoomFactor: number,
+) => {
+  const safeZoomFactor =
+    Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
+  return cssPixelDelta * safeZoomFactor;
+};
+
 // This handler lets renderer layout toggles adjust the native window width
 // while keeping authority in main over clamping and per-window ownership.
 export const registerWindowIpcHandlers = (ipcMain: IpcMain) => {
@@ -77,8 +89,13 @@ export const registerWindowIpcHandlers = (ipcMain: IpcMain) => {
       }
 
       const [currentWindowWidth, currentWindowHeight] = browserWindow.getSize();
+      const zoomFactor = event.sender.getZoomFactor();
+      const windowPixelDelta = convertCssPixelDeltaToWindowPixelDelta(
+        request.deltaWidth,
+        zoomFactor,
+      );
       const requestedWindowWidth = Math.round(
-        currentWindowWidth + request.deltaWidth,
+        currentWindowWidth + windowPixelDelta,
       );
       const nextWindowWidth = clampWindowWidthToSafeBounds(
         browserWindow,
