@@ -23,7 +23,6 @@ import {
   DocumentCommentsPane,
   type DocumentCommentsPaneHandle,
 } from './DocumentCommentsPane';
-import { GitDiffPane } from './GitDiffPane';
 import { getIdeServerApi } from './ide-server-api';
 import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
@@ -184,22 +183,6 @@ export const App = () => {
     useState<string | null>(null);
   const [isSavingCurrentFileToGit, setIsSavingCurrentFileToGit] =
     useState(false);
-  const [isDiffViewEnabled, setIsDiffViewEnabled] = useState(false);
-  const [diffViewCurrentContent, setDiffViewCurrentContent] = useState('');
-  const [diffViewCommittedHeadContent, setDiffViewCommittedHeadContent] =
-    useState('');
-  const [
-    isLoadingDiffViewCommittedHeadContent,
-    setIsLoadingDiffViewCommittedHeadContent,
-  ] = useState(false);
-  const [
-    diffViewCommittedHeadLoadErrorText,
-    setDiffViewCommittedHeadLoadErrorText,
-  ] = useState<string | null>(null);
-  const [
-    isDiffViewCurrentFileTrackedInHead,
-    setIsDiffViewCurrentFileTrackedInHead,
-  ] = useState(false);
   const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
     DEFAULT_EDITOR_PANE_WIDTH_RATIO,
   );
@@ -216,7 +199,6 @@ export const App = () => {
   const activeWorkspaceDividerDragCleanupRef = useRef<(() => void) | null>(
     null,
   );
-  const activeDocumentFilePathRef = useRef<string | null>(null);
   const isSuppressingLifecycleSaveRef = useRef(false);
   const isSuppressingExternalMarkdownReloadRef = useRef(false);
   // When a three-way merge produces content that differs from disk, this ref
@@ -247,73 +229,6 @@ export const App = () => {
   const activeDocumentWorkingDirectory = getParentDirectoryPathFromFilePath(
     activeDocumentFilePath,
   );
-
-  // Async diff-baseline fetches compare against this ref so stale responses
-  // from prior file contexts are ignored instead of overwriting current state.
-  useEffect(() => {
-    activeDocumentFilePathRef.current = activeDocumentFilePath;
-  }, [activeDocumentFilePath]);
-
-  // Diff mode is read-only and hides the editor pane, so we snapshot current
-  // editor text before switching views to preserve unsaved in-memory edits.
-  const syncDiffViewCurrentContentFromEditor = useCallback(() => {
-    const currentEditorContent =
-      documentCommentsPaneRef.current?.getCurrentContent();
-    setDiffViewCurrentContent(
-      currentEditorContent ?? loadedDocument?.content ?? '',
-    );
-  }, [loadedDocument]);
-
-  // The side-by-side comparison always uses HEAD as the left baseline, so this
-  // loader resolves that content for the currently active file on demand.
-  const loadDiffViewCommittedHeadContentForCurrentDocument =
-    useCallback(async () => {
-      if (!loadedDocument) {
-        setIsLoadingDiffViewCommittedHeadContent(false);
-        setDiffViewCommittedHeadContent('');
-        setDiffViewCommittedHeadLoadErrorText(null);
-        setIsDiffViewCurrentFileTrackedInHead(false);
-        return;
-      }
-
-      const expectedFilePath = loadedDocument.filePath;
-      setIsLoadingDiffViewCommittedHeadContent(true);
-      setDiffViewCommittedHeadLoadErrorText(null);
-
-      try {
-        const response =
-          await getMarkdownApi().getCurrentMarkdownGitHeadContent();
-        if (activeDocumentFilePathRef.current !== expectedFilePath) {
-          return;
-        }
-
-        if (!response.ok) {
-          setDiffViewCommittedHeadContent('');
-          setIsDiffViewCurrentFileTrackedInHead(false);
-          setDiffViewCommittedHeadLoadErrorText(response.errorMessage);
-          return;
-        }
-
-        setDiffViewCommittedHeadContent(response.headContent);
-        setIsDiffViewCurrentFileTrackedInHead(response.isTrackedInHead);
-      } catch (error) {
-        if (activeDocumentFilePathRef.current !== expectedFilePath) {
-          return;
-        }
-
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Unknown Git HEAD diff error';
-        setDiffViewCommittedHeadContent('');
-        setIsDiffViewCurrentFileTrackedInHead(false);
-        setDiffViewCommittedHeadLoadErrorText(errorMessage);
-      } finally {
-        if (activeDocumentFilePathRef.current === expectedFilePath) {
-          setIsLoadingDiffViewCommittedHeadContent(false);
-        }
-      }
-    }, [loadedDocument]);
 
   // Loading a file updates both editor content and top-bar metadata. Save
   // state synchronization is intentionally deferred to after the editor
@@ -534,10 +449,6 @@ export const App = () => {
         response.didCreateCommit ? 'Committed' : 'No changes to commit',
       );
       void loadGitBranchStateForCurrentDocument(false);
-      if (isDiffViewEnabled) {
-        syncDiffViewCurrentContentFromEditor();
-        void loadDiffViewCommittedHeadContentForCurrentDocument();
-      }
     } catch (error) {
       setSaveStatusText('Save failed');
       console.error(error);
@@ -545,13 +456,10 @@ export const App = () => {
       setIsSavingCurrentFileToGit(false);
     }
   }, [
-    isDiffViewEnabled,
     isSavingCurrentFileToGit,
-    loadDiffViewCommittedHeadContentForCurrentDocument,
     loadGitBranchStateForCurrentDocument,
     loadedDocument,
     saveController,
-    syncDiffViewCurrentContentFromEditor,
   ]);
 
   // startup is async because the main process decides which file path/content
@@ -587,34 +495,6 @@ export const App = () => {
 
     void loadGitBranchStateForCurrentDocument(false);
   }, [loadedDocument, loadGitBranchStateForCurrentDocument]);
-
-  // Diff view should always render the freshest in-memory editor snapshot for
-  // the active file, including content loaded from restore/open/switch flows.
-  useEffect(() => {
-    if (!isDiffViewEnabled) {
-      return;
-    }
-
-    syncDiffViewCurrentContentFromEditor();
-  }, [
-    isDiffViewEnabled,
-    loadedDocumentRevision,
-    syncDiffViewCurrentContentFromEditor,
-  ]);
-
-  // Entering diff mode and switching files in diff mode both require a fresh
-  // HEAD baseline so the left column always reflects current git state.
-  useEffect(() => {
-    if (!isDiffViewEnabled) {
-      return;
-    }
-
-    void loadDiffViewCommittedHeadContentForCurrentDocument();
-  }, [
-    activeDocumentFilePath,
-    isDiffViewEnabled,
-    loadDiffViewCommittedHeadContentForCurrentDocument,
-  ]);
 
   // File-change notifications arrive for every disk write — including the
   // app's own saves. Content comparison against the save controller's last
@@ -918,32 +798,11 @@ export const App = () => {
       });
   }, [isTerminalPaneCollapsed]);
 
-  // Diff mode is a review context, so toggling captures the latest editor
-  // content before switching and avoids changing document/terminal state.
-  const toggleDiffViewEnabledState = useCallback(() => {
-    if (!loadedDocument) {
-      return;
-    }
-
-    if (!isDiffViewEnabled) {
-      syncDiffViewCurrentContentFromEditor();
-    }
-
-    setIsDiffViewEnabled((previousIsDiffViewEnabled) => {
-      return !previousIsDiffViewEnabled;
-    });
-  }, [isDiffViewEnabled, loadedDocument, syncDiffViewCurrentContentFromEditor]);
-
   // The label and title stay in sync so screen readers and pointer users both
   // get clear affordance for the same toggle action.
   const terminalPaneToggleLabel = isTerminalPaneCollapsed
     ? 'Expand terminal pane'
     : 'Collapse terminal pane';
-  const isDiffToggleDisabled =
-    !loadedDocument ||
-    isOpeningFile ||
-    isSwitchingGitBranch ||
-    isRestoringFromGit;
   const gitBranchSelectorValue =
     gitBranchState?.currentBranchName ?? GIT_BRANCH_UNAVAILABLE_OPTION_VALUE;
   const isGitBranchSelectorDisabled =
@@ -1024,20 +883,6 @@ export const App = () => {
           Open...
         </button>
         <button
-          className={`topbar-button ${
-            isDiffViewEnabled ? 'topbar-button--active' : ''
-          }`.trim()}
-          type="button"
-          onClick={() => {
-            toggleDiffViewEnabledState();
-          }}
-          disabled={isDiffToggleDisabled}
-          aria-pressed={isDiffViewEnabled}
-          title="Toggle side-by-side diff view"
-        >
-          diff
-        </button>
-        <button
           className="topbar-button"
           type="button"
           onClick={() => {
@@ -1093,29 +938,27 @@ export const App = () => {
         </button>
         <div className="file-path">{loadedDocument?.filePath ?? ''}</div>
         <div className="save-status">{saveStatusText}</div>
-        {isDiffViewEnabled ? null : (
-          <button
-            className={`topbar-icon-button ${
-              isTerminalPaneCollapsed ? '' : 'topbar-icon-button--active'
-            }`.trim()}
-            type="button"
-            aria-label={terminalPaneToggleLabel}
-            aria-pressed={!isTerminalPaneCollapsed}
-            title={terminalPaneToggleLabel}
-            onClick={() => {
-              toggleTerminalPaneCollapsedState();
-            }}
-          >
-            <TerminalPaneToggleIcon
-              isTerminalPaneCollapsed={isTerminalPaneCollapsed}
-            />
-          </button>
-        )}
+        <button
+          className={`topbar-icon-button ${
+            isTerminalPaneCollapsed ? '' : 'topbar-icon-button--active'
+          }`.trim()}
+          type="button"
+          aria-label={terminalPaneToggleLabel}
+          aria-pressed={!isTerminalPaneCollapsed}
+          title={terminalPaneToggleLabel}
+          onClick={() => {
+            toggleTerminalPaneCollapsedState();
+          }}
+        >
+          <TerminalPaneToggleIcon
+            isTerminalPaneCollapsed={isTerminalPaneCollapsed}
+          />
+        </button>
       </header>
       <main
         className={`workspace workspace--split ${
           isTerminalPaneCollapsed ? 'workspace--terminal-collapsed' : ''
-        } ${isDiffViewEnabled ? 'workspace--hidden-for-diff' : ''}`.trim()}
+        }`.trim()}
         ref={workspaceElementRef}
         style={
           {
@@ -1165,19 +1008,6 @@ export const App = () => {
           showMetadataPanel={false}
         />
       </main>
-      {isDiffViewEnabled ? (
-        <main className="workspace diff-workspace">
-          <GitDiffPane
-            committedHeadContent={diffViewCommittedHeadContent}
-            currentContent={diffViewCurrentContent}
-            isLoadingCommittedHeadContent={
-              isLoadingDiffViewCommittedHeadContent
-            }
-            committedHeadLoadErrorText={diffViewCommittedHeadLoadErrorText}
-            isCurrentFileTrackedInHead={isDiffViewCurrentFileTrackedInHead}
-          />
-        </main>
-      ) : null}
       {pendingGitBranchSwitchTarget ? (
         <div className="confirm-modal-backdrop" role="presentation">
           <div

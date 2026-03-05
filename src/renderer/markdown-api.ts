@@ -5,7 +5,6 @@
 
 import type {
   CommitCurrentMarkdownFileResponse,
-  GetCurrentMarkdownGitHeadContentResponse,
   GetCurrentMarkdownGitBranchStateResponse,
   ExternalMarkdownFileChangedEvent,
   LoadMarkdownResponse,
@@ -22,7 +21,6 @@ type MarkdownApi = {
   saveMarkdown: (content: string) => Promise<SaveMarkdownResponse>;
   restoreCurrentMarkdownFromGit: () => Promise<RestoreMarkdownFromGitResponse>;
   commitCurrentMarkdownFile: () => Promise<CommitCurrentMarkdownFileResponse>;
-  getCurrentMarkdownGitHeadContent: () => Promise<GetCurrentMarkdownGitHeadContentResponse>;
   getCurrentMarkdownGitBranchState: () => Promise<GetCurrentMarkdownGitBranchStateResponse>;
   switchCurrentMarkdownGitBranch: (
     request: SwitchCurrentMarkdownGitBranchRequest,

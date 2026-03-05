@@ -10,7 +10,6 @@ import type {
   AdjustWindowWidthResponse,
   CommitCurrentMarkdownFileResponse,
   ExternalMarkdownFileChangedEvent,
-  GetCurrentMarkdownGitHeadContentResponse,
   GetCurrentMarkdownGitBranchStateResponse,
   IdeSelectionChangedEvent,
   LoadMarkdownResponse,
@@ -39,9 +38,6 @@ contextBridge.exposeInMainWorld('markdownApi', {
     ipcRenderer.invoke('editor:restore-current-markdown-from-git'),
   commitCurrentMarkdownFile: (): Promise<CommitCurrentMarkdownFileResponse> =>
     ipcRenderer.invoke('editor:commit-current-markdown-file'),
-  getCurrentMarkdownGitHeadContent:
-    (): Promise<GetCurrentMarkdownGitHeadContentResponse> =>
-      ipcRenderer.invoke('editor:get-current-markdown-git-head-content'),
   getCurrentMarkdownGitBranchState:
     (): Promise<GetCurrentMarkdownGitBranchStateResponse> =>
       ipcRenderer.invoke('editor:get-current-markdown-git-branch-state'),
