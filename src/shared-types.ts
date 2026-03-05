@@ -27,6 +27,17 @@ export type RestoreMarkdownFromGitResponse =
   | ({ ok: true } & LoadMarkdownResponse)
   | { ok: false; errorMessage: string };
 
+export type GetCurrentMarkdownGitHeadContentResponse =
+  | {
+      ok: true;
+      headContent: string;
+      isTrackedInHead: boolean;
+    }
+  | {
+      ok: false;
+      errorMessage: string;
+    };
+
 export type CommitCurrentMarkdownFileResponse =
   | {
       ok: true;

@@ -9,6 +9,7 @@ import type {
   CommitCurrentMarkdownFileResponse,
   CurrentMarkdownGitBranchState,
   ExternalMarkdownFileChangedEvent,
+  GetCurrentMarkdownGitHeadContentResponse,
   GetCurrentMarkdownGitBranchStateResponse,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
@@ -423,6 +424,61 @@ export const createMarkdownFileService = () => {
     };
   };
 
+  // Diff view compares against the committed HEAD snapshot, so this helper
+  // reads one repository file at HEAD and gracefully handles untracked files.
+  const readRepositoryFileContentFromGitHead = async (
+    repositoryRoot: string,
+    repositoryRelativeFilePath: string,
+  ) => {
+    const normalizedRepositoryRelativeFilePath =
+      normalizeRepositoryRelativePathForGit(repositoryRelativeFilePath);
+    const gitObjectExpression = `HEAD:${normalizedRepositoryRelativeFilePath}`;
+
+    try {
+      await execFileAsync(
+        'git',
+        ['-C', repositoryRoot, 'cat-file', '-e', gitObjectExpression],
+        {
+          windowsHide: true,
+        },
+      );
+    } catch {
+      return {
+        isTrackedInHead: false,
+        content: '',
+      };
+    }
+
+    const { stdout } = await execFileAsync(
+      'git',
+      ['-C', repositoryRoot, 'show', gitObjectExpression],
+      {
+        windowsHide: true,
+        maxBuffer: 1024 * 1024 * 20,
+      },
+    );
+    return {
+      isTrackedInHead: true,
+      content: stdout,
+    };
+  };
+
+  // The renderer asks for HEAD content of the active document only, so this
+  // wrapper resolves repository coordinates once and delegates to the helper.
+  const readCurrentMarkdownFileContentFromGitHead = async (
+    filePath: string,
+  ) => {
+    const repositoryRoot = await resolveGitRepositoryRoot(filePath);
+    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+      repositoryRoot,
+      filePath,
+    );
+    return readRepositoryFileContentFromGitHead(
+      repositoryRoot,
+      repositoryRelativeFilePath,
+    );
+  };
+
   // Branch switching can only keep the current file open if that file exists
   // on the target branch, so this guard blocks confusing post-switch failures.
   const ensureBranchContainsCurrentFileOrThrow = async (
@@ -657,6 +713,28 @@ export const createMarkdownFileService = () => {
         } catch (error) {
           const errorMessage =
             error instanceof Error ? error.message : 'Unknown Git commit error';
+          return { ok: false, errorMessage };
+        }
+      },
+    );
+
+    ipcMain.handle(
+      'editor:get-current-markdown-git-head-content',
+      async (): Promise<GetCurrentMarkdownGitHeadContentResponse> => {
+        try {
+          const filePath = await ensureCurrentMarkdownFilePath();
+          const gitHeadContent =
+            await readCurrentMarkdownFileContentFromGitHead(filePath);
+          return {
+            ok: true,
+            headContent: gitHeadContent.content,
+            isTrackedInHead: gitHeadContent.isTrackedInHead,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : 'Unknown Git HEAD content read error';
           return { ok: false, errorMessage };
         }
       },
