@@ -27,6 +27,50 @@ export type RestoreMarkdownFromGitResponse =
   | ({ ok: true } & LoadMarkdownResponse)
   | { ok: false; errorMessage: string };
 
+export type CommitCurrentMarkdownFileResponse =
+  | {
+      ok: true;
+      didCreateCommit: boolean;
+      committedFilePath: string;
+      commitMessage: string;
+    }
+  | {
+      ok: false;
+      errorMessage: string;
+    };
+
+export type CurrentMarkdownGitBranchState = {
+  currentBranchName: string;
+  detachedHeadCommitShortSha: string | null;
+  branchNames: string[];
+  isCurrentFileModified: boolean;
+};
+
+export type GetCurrentMarkdownGitBranchStateResponse =
+  | {
+      ok: true;
+      gitBranchState: CurrentMarkdownGitBranchState;
+    }
+  | {
+      ok: false;
+      errorMessage: string;
+    };
+
+export type SwitchCurrentMarkdownGitBranchRequest = {
+  branchName: string;
+  discardCurrentFileChanges: boolean;
+};
+
+export type SwitchCurrentMarkdownGitBranchResponse =
+  | ({
+      ok: true;
+      gitBranchState: CurrentMarkdownGitBranchState;
+    } & LoadMarkdownResponse)
+  | {
+      ok: false;
+      errorMessage: string;
+    };
+
 export type StartTerminalSessionRequest = {
   cwd: string;
   targetFilePath: string;

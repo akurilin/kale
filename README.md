@@ -26,9 +26,17 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - The top bar includes a terminal pane toggle button (top-right) with Cursor-style active/inactive states:
   - active/lit = terminal pane expanded
   - dim = terminal pane collapsed
+- The top bar now includes git-aware file controls:
+  - `Restore Git` restores the current file to `HEAD` and discards local edits after confirmation.
+  - `Branch` dropdown lists local branches for the active file's repository and always reflects the current branch (including detached `HEAD` labeling).
+  - Switching branches prompts a confirmation modal (`Yes` / `Cancel`) when the current file has unsaved editor edits or git-detected local modifications.
+  - `Save` flushes editor edits, then runs `git add` + `git commit` for the active file only in that file's own git repository using a stock message: `Edits to <filename>`.
 - Collapsing the terminal hides the right pane and keeps the editor as the primary writing surface.
 - The terminal pane stays mounted while collapsed, so the underlying PTY session remains alive and is restored instantly when expanded.
 - Toggling collapse/expand automatically resizes the native window width by the terminal-pane area, avoiding large blank editor space after collapsing.
+- The markdown editor supports prose-friendly formatting shortcuts:
+  - `Cmd/Ctrl+B` toggles `**bold**` wrapping around the current selection.
+  - `Cmd/Ctrl+I` toggles `*italic*` wrapping around the current selection (overrides CodeMirror's default parent-syntax selection binding).
 
 ## Run Commands
 
@@ -121,7 +129,7 @@ The Electron main process is now organized as a thin orchestrator plus domain se
 
 - `src/main.ts` wires Electron lifecycle events (`ready`, `activate`, `window-all-closed`) to service startup/shutdown and IPC registration.
 - `src/main/window.ts` owns BrowserWindow creation and Forge/Vite renderer/preload entry loading.
-- `src/main/markdown-file-service.ts` owns active markdown file state, settings persistence, file open/load/save/restore IPC handlers, and chokidar-based file watching/broadcasts.
+- `src/main/markdown-file-service.ts` owns active markdown file state, settings persistence, file open/load/save/restore IPC handlers, git branch state/switch handlers for the active file, and chokidar-based file watching/broadcasts.
 - `src/main/terminal-session-service.ts` owns PTY session state, Claude CLI startup validation/prompt-template preload, terminal IPC handlers, and renderer-provided initial PTY geometry for correct first-frame full-screen CLI rendering.
 - `src/main/ide-integration-service.ts` owns IDE MCP server lifecycle, cached editor selection state, and the `ide:selection-changed` IPC handler/debounced Claude notifications.
 

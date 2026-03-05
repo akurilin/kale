@@ -6,10 +6,15 @@ import { promisify } from 'node:util';
 import { watch as watchWithChokidar, type FSWatcher } from 'chokidar';
 
 import type {
+  CommitCurrentMarkdownFileResponse,
+  CurrentMarkdownGitBranchState,
   ExternalMarkdownFileChangedEvent,
+  GetCurrentMarkdownGitBranchStateResponse,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   RestoreMarkdownFromGitResponse,
+  SwitchCurrentMarkdownGitBranchRequest,
+  SwitchCurrentMarkdownGitBranchResponse,
 } from '../shared-types';
 
 const BUNDLED_SAMPLE_MARKDOWN_FILE = path.resolve(
@@ -268,6 +273,21 @@ export const createMarkdownFileService = () => {
     return { content, filePath };
   };
 
+  // Git command errors vary by version/platform, so this helper keeps stderr
+  // extraction in one place for capability fallbacks and user-facing messages.
+  const getGitCommandErrorStderr = (error: unknown) => {
+    const gitCommandError = error as NodeJS.ErrnoException & {
+      stderr?: string;
+    };
+    return gitCommandError.stderr ?? '';
+  };
+
+  // Git pathspecs are slash-delimited across platforms, so repository-relative
+  // file paths are normalized before being passed to git commands.
+  const normalizeRepositoryRelativePathForGit = (
+    repositoryRelativePath: string,
+  ) => repositoryRelativePath.replace(/\\/g, '/');
+
   // Git restore for a specific file needs the repository root so both modern
   // and fallback commands target the exact document path deterministically.
   const resolveGitRepositoryRoot = async (filePath: string) => {
@@ -281,11 +301,191 @@ export const createMarkdownFileService = () => {
     return stdout.trim();
   };
 
+  // Local branch switching and status checks all target the same file path, so
+  // this helper centralizes repository-relative conversion for consistency.
+  const resolveRepositoryRelativeFilePath = (
+    repositoryRoot: string,
+    filePath: string,
+  ) =>
+    normalizeRepositoryRelativePathForGit(
+      path.relative(repositoryRoot, filePath),
+    );
+
+  // Save-to-git should operate on one active file only, so this helper scopes
+  // status checks to a single repository-relative path.
+  const readRepositoryFilePorcelainStatus = async (
+    repositoryRoot: string,
+    repositoryRelativeFilePath: string,
+  ) => {
+    const normalizedRepositoryRelativeFilePath =
+      normalizeRepositoryRelativePathForGit(repositoryRelativeFilePath);
+    const { stdout } = await execFileAsync(
+      'git',
+      [
+        '-C',
+        repositoryRoot,
+        'status',
+        '--porcelain',
+        '--',
+        normalizedRepositoryRelativeFilePath,
+      ],
+      {
+        windowsHide: true,
+      },
+    );
+    return stdout.trim();
+  };
+
+  // The Save action uses a deterministic commit message so users can persist
+  // quickly without waiting for an LLM-generated summary.
+  const buildStockCommitMessageForFilePath = (filePath: string) =>
+    `Edits to ${path.basename(filePath)}`;
+
+  // Branch dropdown UX requires current branch, available branch names, and
+  // whether the active file currently has local git modifications.
+  const readCurrentMarkdownGitBranchState = async (
+    filePath: string,
+  ): Promise<CurrentMarkdownGitBranchState> => {
+    const repositoryRoot = await resolveGitRepositoryRoot(filePath);
+    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+      repositoryRoot,
+      filePath,
+    );
+
+    const [{ stdout: currentBranchOutput }, { stdout: currentCommitOutput }] =
+      await Promise.all([
+        execFileAsync(
+          'git',
+          ['-C', repositoryRoot, 'branch', '--show-current'],
+          {
+            windowsHide: true,
+          },
+        ),
+        execFileAsync(
+          'git',
+          ['-C', repositoryRoot, 'rev-parse', '--short', 'HEAD'],
+          {
+            windowsHide: true,
+          },
+        ),
+      ]);
+
+    const currentBranchName = currentBranchOutput.trim();
+    const detachedHeadCommitShortSha =
+      currentBranchName.length === 0 ? currentCommitOutput.trim() : null;
+
+    const [{ stdout: branchListOutput }, { stdout: porcelainStatusOutput }] =
+      await Promise.all([
+        execFileAsync(
+          'git',
+          [
+            '-C',
+            repositoryRoot,
+            'branch',
+            '--list',
+            '--format=%(refname:short)',
+          ],
+          {
+            windowsHide: true,
+          },
+        ),
+        execFileAsync(
+          'git',
+          [
+            '-C',
+            repositoryRoot,
+            'status',
+            '--porcelain',
+            '--',
+            repositoryRelativeFilePath,
+          ],
+          {
+            windowsHide: true,
+          },
+        ),
+      ]);
+
+    const parsedBranchNames = branchListOutput
+      .split('\n')
+      .map((branchName) => branchName.trim())
+      .filter((branchName) => branchName.length > 0);
+    const normalizedCurrentBranchName =
+      currentBranchName.length > 0 ? currentBranchName : 'HEAD';
+    const branchNames = parsedBranchNames.includes(normalizedCurrentBranchName)
+      ? parsedBranchNames
+      : [normalizedCurrentBranchName, ...parsedBranchNames];
+
+    return {
+      currentBranchName: normalizedCurrentBranchName,
+      detachedHeadCommitShortSha,
+      branchNames,
+      isCurrentFileModified: porcelainStatusOutput.trim().length > 0,
+    };
+  };
+
+  // Branch switching can only keep the current file open if that file exists
+  // on the target branch, so this guard blocks confusing post-switch failures.
+  const ensureBranchContainsCurrentFileOrThrow = async (
+    repositoryRoot: string,
+    branchName: string,
+    repositoryRelativeFilePath: string,
+  ) => {
+    try {
+      await execFileAsync(
+        'git',
+        [
+          '-C',
+          repositoryRoot,
+          'cat-file',
+          '-e',
+          `${branchName}:${repositoryRelativeFilePath}`,
+        ],
+        {
+          windowsHide: true,
+        },
+      );
+    } catch {
+      throw new Error(
+        `Cannot switch to branch "${branchName}" because this file does not exist there.`,
+      );
+    }
+  };
+
+  // Git feature support varies by version, so switch/checkout compatibility is
+  // centralized here and reused by every branch-switching IPC path.
+  const switchRepositoryToGitBranch = async (
+    repositoryRoot: string,
+    branchName: string,
+  ) => {
+    try {
+      await execFileAsync('git', ['-C', repositoryRoot, 'switch', branchName], {
+        windowsHide: true,
+      });
+      return;
+    } catch (error) {
+      const stderr = getGitCommandErrorStderr(error);
+      const looksLikeUnsupportedSwitchCommand =
+        stderr.includes('not a git command') ||
+        stderr.includes('unknown subcommand') ||
+        stderr.includes('did you mean `checkout`');
+      if (!looksLikeUnsupportedSwitchCommand) {
+        throw error;
+      }
+    }
+
+    await execFileAsync('git', ['-C', repositoryRoot, 'checkout', branchName], {
+      windowsHide: true,
+    });
+  };
+
   // Restore-to-HEAD is destructive, so this helper centralizes the safest
   // command invocation and compatibility fallback in one audited place.
-  const restoreFileFromGitHead = async (filePath: string) => {
-    const repositoryRoot = await resolveGitRepositoryRoot(filePath);
-    const repositoryRelativeFilePath = path.relative(repositoryRoot, filePath);
+  const restoreRepositoryFileFromGitHead = async (
+    repositoryRoot: string,
+    repositoryRelativeFilePath: string,
+  ) => {
+    const normalizedRepositoryRelativeFilePath =
+      normalizeRepositoryRelativePathForGit(repositoryRelativeFilePath);
 
     try {
       await execFileAsync(
@@ -298,7 +498,7 @@ export const createMarkdownFileService = () => {
           '--staged',
           '--worktree',
           '--',
-          repositoryRelativeFilePath,
+          normalizedRepositoryRelativeFilePath,
         ],
         {
           windowsHide: true,
@@ -306,10 +506,7 @@ export const createMarkdownFileService = () => {
       );
       return;
     } catch (error) {
-      const gitCommandError = error as NodeJS.ErrnoException & {
-        stderr?: string;
-      };
-      const stderr = gitCommandError.stderr ?? '';
+      const stderr = getGitCommandErrorStderr(error);
       const looksLikeUnsupportedRestoreCommand =
         stderr.includes('not a git command') ||
         stderr.includes("unknown switch `s'") ||
@@ -327,12 +524,92 @@ export const createMarkdownFileService = () => {
         'checkout',
         'HEAD',
         '--',
-        repositoryRelativeFilePath,
+        normalizedRepositoryRelativeFilePath,
       ],
       {
         windowsHide: true,
       },
     );
+  };
+
+  // Existing UI actions restore the currently open file only, so this wrapper
+  // resolves repository coordinates once and delegates to the shared helper.
+  const restoreFileFromGitHead = async (filePath: string) => {
+    const repositoryRoot = await resolveGitRepositoryRoot(filePath);
+    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+      repositoryRoot,
+      filePath,
+    );
+    await restoreRepositoryFileFromGitHead(
+      repositoryRoot,
+      repositoryRelativeFilePath,
+    );
+  };
+
+  // Top-bar save should stage and commit only the active markdown file in the
+  // same repository that file belongs to, regardless of Kale's own repo path.
+  const commitCurrentMarkdownFileWithStockMessage = async (
+    filePath: string,
+  ) => {
+    const repositoryRoot = await resolveGitRepositoryRoot(filePath);
+    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+      repositoryRoot,
+      filePath,
+    );
+    const normalizedRepositoryRelativeFilePath =
+      normalizeRepositoryRelativePathForGit(repositoryRelativeFilePath);
+    const commitMessage = buildStockCommitMessageForFilePath(filePath);
+
+    const fileStatusBeforeAdd = await readRepositoryFilePorcelainStatus(
+      repositoryRoot,
+      repositoryRelativeFilePath,
+    );
+    if (fileStatusBeforeAdd.length === 0) {
+      return {
+        didCreateCommit: false,
+        commitMessage,
+      };
+    }
+
+    await execFileAsync(
+      'git',
+      ['-C', repositoryRoot, 'add', '--', normalizedRepositoryRelativeFilePath],
+      {
+        windowsHide: true,
+      },
+    );
+
+    const fileStatusAfterAdd = await readRepositoryFilePorcelainStatus(
+      repositoryRoot,
+      repositoryRelativeFilePath,
+    );
+    if (fileStatusAfterAdd.length === 0) {
+      return {
+        didCreateCommit: false,
+        commitMessage,
+      };
+    }
+
+    await execFileAsync(
+      'git',
+      [
+        '-C',
+        repositoryRoot,
+        'commit',
+        '-m',
+        commitMessage,
+        '--',
+        normalizedRepositoryRelativeFilePath,
+      ],
+      {
+        windowsHide: true,
+      },
+    );
+
+    return {
+      didCreateCommit: true,
+      commitMessage,
+    };
   };
 
   // Editor IPC lives with the markdown helpers so the public surface for file
@@ -359,6 +636,100 @@ export const createMarkdownFileService = () => {
             error instanceof Error
               ? error.message
               : 'Unknown Git restore error';
+          return { ok: false, errorMessage };
+        }
+      },
+    );
+
+    ipcMain.handle(
+      'editor:commit-current-markdown-file',
+      async (): Promise<CommitCurrentMarkdownFileResponse> => {
+        try {
+          const filePath = await ensureCurrentMarkdownFilePath();
+          const commitResult =
+            await commitCurrentMarkdownFileWithStockMessage(filePath);
+          return {
+            ok: true,
+            didCreateCommit: commitResult.didCreateCommit,
+            committedFilePath: filePath,
+            commitMessage: commitResult.commitMessage,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown Git commit error';
+          return { ok: false, errorMessage };
+        }
+      },
+    );
+
+    ipcMain.handle(
+      'editor:get-current-markdown-git-branch-state',
+      async (): Promise<GetCurrentMarkdownGitBranchStateResponse> => {
+        try {
+          const filePath = await ensureCurrentMarkdownFilePath();
+          const gitBranchState =
+            await readCurrentMarkdownGitBranchState(filePath);
+          return { ok: true, gitBranchState };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : 'Unknown Git branch state error';
+          return { ok: false, errorMessage };
+        }
+      },
+    );
+
+    ipcMain.handle(
+      'editor:switch-current-markdown-git-branch',
+      async (
+        _event,
+        request: SwitchCurrentMarkdownGitBranchRequest,
+      ): Promise<SwitchCurrentMarkdownGitBranchResponse> => {
+        try {
+          const normalizedBranchName = request.branchName.trim();
+          if (normalizedBranchName.length === 0) {
+            throw new Error('A target branch name is required.');
+          }
+
+          const filePath = await ensureCurrentMarkdownFilePath();
+          const repositoryRoot = await resolveGitRepositoryRoot(filePath);
+          const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+            repositoryRoot,
+            filePath,
+          );
+
+          await ensureBranchContainsCurrentFileOrThrow(
+            repositoryRoot,
+            normalizedBranchName,
+            repositoryRelativeFilePath,
+          );
+
+          if (request.discardCurrentFileChanges) {
+            await restoreRepositoryFileFromGitHead(
+              repositoryRoot,
+              repositoryRelativeFilePath,
+            );
+          }
+
+          await switchRepositoryToGitBranch(
+            repositoryRoot,
+            normalizedBranchName,
+          );
+          const content = await fs.readFile(filePath, 'utf8');
+          const gitBranchState =
+            await readCurrentMarkdownGitBranchState(filePath);
+          return {
+            ok: true,
+            filePath,
+            content,
+            gitBranchState,
+          };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : 'Unknown Git branch switch error';
           return { ok: false, errorMessage };
         }
       },

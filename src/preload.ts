@@ -8,7 +8,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AdjustWindowWidthRequest,
   AdjustWindowWidthResponse,
+  CommitCurrentMarkdownFileResponse,
   ExternalMarkdownFileChangedEvent,
+  GetCurrentMarkdownGitBranchStateResponse,
   IdeSelectionChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
@@ -16,6 +18,8 @@ import type {
   RestoreMarkdownFromGitResponse,
   StartTerminalSessionRequest,
   StartTerminalSessionResponse,
+  SwitchCurrentMarkdownGitBranchRequest,
+  SwitchCurrentMarkdownGitBranchResponse,
   TerminalSessionActionResponse,
   TerminalProcessDataEvent,
   TerminalProcessExitEvent,
@@ -32,6 +36,15 @@ contextBridge.exposeInMainWorld('markdownApi', {
     ipcRenderer.invoke('editor:save-markdown', content),
   restoreCurrentMarkdownFromGit: (): Promise<RestoreMarkdownFromGitResponse> =>
     ipcRenderer.invoke('editor:restore-current-markdown-from-git'),
+  commitCurrentMarkdownFile: (): Promise<CommitCurrentMarkdownFileResponse> =>
+    ipcRenderer.invoke('editor:commit-current-markdown-file'),
+  getCurrentMarkdownGitBranchState:
+    (): Promise<GetCurrentMarkdownGitBranchStateResponse> =>
+      ipcRenderer.invoke('editor:get-current-markdown-git-branch-state'),
+  switchCurrentMarkdownGitBranch: (
+    request: SwitchCurrentMarkdownGitBranchRequest,
+  ): Promise<SwitchCurrentMarkdownGitBranchResponse> =>
+    ipcRenderer.invoke('editor:switch-current-markdown-git-branch', request),
   onExternalMarkdownFileChanged: (
     handler: (event: ExternalMarkdownFileChangedEvent) => void,
   ): (() => void) => {

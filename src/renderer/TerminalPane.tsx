@@ -3,7 +3,14 @@
 // embedded in larger layouts while staying focused on one file context.
 //
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 
 import { useLatestRef } from './use-latest-ref';
 import { FitAddon } from '@xterm/addon-fit';
@@ -34,6 +41,10 @@ type TerminalPaneProps = {
 type TerminalPromptPreset = {
   label: string;
   promptText: string;
+};
+
+export type TerminalPaneHandle = {
+  sendPromptToActiveSession: (promptText: string) => Promise<boolean>;
 };
 
 const terminalPromptPresets: TerminalPromptPreset[] = [
@@ -80,468 +91,491 @@ const waitForNextAnimationFrame = () =>
     });
   });
 
-export const TerminalPane = ({
-  targetFilePath,
-  targetWorkingDirectory,
-  contextSourceLabel = null,
-  title = 'Terminal',
-  showPrototypeNotice = false,
-  showMetadataPanel = true,
-}: TerminalPaneProps) => {
-  const [session, setSession] = useState<TerminalSessionState | null>(null);
-  const [workingDirectoryInput, setWorkingDirectoryInput] = useState('');
-  const [statusText, setStatusText] = useState('Waiting for file context...');
-  const [launchErrorText, setLaunchErrorText] = useState<string | null>(null);
-  const [isStartingSession, setIsStartingSession] = useState(false);
-
-  const terminalHostElementRef = useRef<HTMLDivElement | null>(null);
-  const sessionRef = useRef<TerminalSessionState | null>(null);
-  const xtermRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  // useLatestRef keeps these mirrors current on every render so async flows
-  // and event handlers always see the latest value without effect churn.
-  const isStartingSessionRef = useLatestRef(isStartingSession);
-  const workingDirectoryInputRef = useLatestRef(workingDirectoryInput);
-  const lastActivatedTargetContextKeyRef = useRef<string | null>(null);
-  const activeTargetFilePathRef = useLatestRef(targetFilePath);
-  const activeTargetWorkingDirectoryRef = useLatestRef(targetWorkingDirectory);
-
-  // This helper keeps all fit callers (startup, resize, and session sync) on
-  // one geometry path so PTY sizing matches the same xterm measurement logic.
-  const fitTerminalAndReadGeometry = useCallback(() => {
-    const terminal = xtermRef.current;
-    const fitAddon = fitAddonRef.current;
-    if (!terminal || !fitAddon) {
-      return null;
-    }
-
-    fitAddon.fit();
-    const columns = terminal.cols;
-    const rows = terminal.rows;
-    if (columns <= 0 || rows <= 0) {
-      return null;
-    }
-
-    return {
-      cols: columns,
-      rows,
-    };
-  }, []);
-
-  // Resizes are forwarded immediately so terminal UIs redraw at the renderer's
-  // current size instead of waiting for user input to trigger a screen refresh.
-  const refitTerminalAndSyncActivePtySize = useCallback(() => {
-    const activeSessionId = sessionRef.current?.sessionId;
-    const fittedGeometry = fitTerminalAndReadGeometry();
-    if (!activeSessionId || !fittedGeometry) {
-      return;
-    }
-
-    void getTerminalApi().resizeSession({
-      sessionId: activeSessionId,
-      cols: fittedGeometry.cols,
-      rows: fittedGeometry.rows,
-    });
-  }, [fitTerminalAndReadGeometry]);
-
-  // Claude Code paints a full-screen interface as soon as the PTY starts, so
-  // startup waits through a couple of animation frames to avoid spawning with
-  // stale geometry from the initial xterm mount/layout tick.
-  const measureStableTerminalGeometryBeforeSessionStart =
-    useCallback(async () => {
-      let latestGeometry = fitTerminalAndReadGeometry();
-      await waitForNextAnimationFrame();
-      latestGeometry = fitTerminalAndReadGeometry() ?? latestGeometry;
-      await waitForNextAnimationFrame();
-      latestGeometry = fitTerminalAndReadGeometry() ?? latestGeometry;
-      return latestGeometry;
-    }, [fitTerminalAndReadGeometry]);
-
-  // sessionRef is kept as a manual ref because restartForTargetContext writes
-  // it imperatively (before the React render cycle) to prevent delayed exit
-  // events from the old process from overwriting the next session's state.
-  useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
-
-  // The xterm instance is imperative and owns terminal rendering/input, while
-  // React owns the surrounding layout and file-context lifecycle behavior.
-  useEffect(() => {
-    const hostElement = terminalHostElementRef.current;
-    if (!hostElement) {
-      return;
-    }
-
-    const terminal = new Terminal({
-      convertEol: false,
-      cursorBlink: true,
-      fontFamily: '"SF Mono", "Menlo", "Consolas", monospace',
-      fontSize: 13,
-      lineHeight: 1.25,
-      theme: {
-        background: '#151515',
-        foreground: '#e6e3da',
-      },
-      scrollback: 5000,
-    });
-    const fitAddon = new FitAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.open(hostElement);
-    xtermRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-    fitTerminalAndReadGeometry();
-    terminal.focus();
-
-    const xtermInputDisposable = terminal.onData((data) => {
-      const activeSessionId = sessionRef.current?.sessionId;
-      if (!activeSessionId) {
-        return;
-      }
-
-      void getTerminalApi().sendInput(activeSessionId, data);
-    });
-
-    const resizeObserver = new ResizeObserver(() => {
-      refitTerminalAndSyncActivePtySize();
-    });
-    resizeObserver.observe(hostElement);
-
-    let isDisposed = false;
-    // xterm's first fit can be early relative to CSS/grid measurement, so run
-    // a couple of follow-up fits that mimic the later user-resize recovery path.
-    const runDeferredInitialRefits = async () => {
-      await waitForNextAnimationFrame();
-      if (isDisposed) {
-        return;
-      }
-      refitTerminalAndSyncActivePtySize();
-
-      await waitForNextAnimationFrame();
-      if (isDisposed) {
-        return;
-      }
-      refitTerminalAndSyncActivePtySize();
-    };
-    void runDeferredInitialRefits();
-
-    return () => {
-      isDisposed = true;
-      resizeObserver.disconnect();
-      xtermInputDisposable.dispose();
-      terminal.dispose();
-      xtermRef.current = null;
-      fitAddonRef.current = null;
-    };
-  }, [fitTerminalAndReadGeometry, refitTerminalAndSyncActivePtySize]);
-
-  // Streamed process events are global to the window, so the pane filters by
-  // active session id and ignores traffic for prior or sibling terminal panes.
-  useEffect(() => {
-    const removeProcessDataListener = getTerminalApi().onProcessData(
-      (event) => {
-        if (event.sessionId !== sessionRef.current?.sessionId) {
-          return;
-        }
-
-        xtermRef.current?.write(event.chunk);
-      },
-    );
-
-    const removeProcessExitListener = getTerminalApi().onProcessExit(
-      (event: TerminalProcessExitEvent) => {
-        if (event.sessionId !== sessionRef.current?.sessionId) {
-          return;
-        }
-
-        setSession(null);
-        setStatusText(
-          event.signal !== null
-            ? `Terminal exited (signal ${event.signal})`
-            : `Terminal exited (code ${event.exitCode ?? 'unknown'})`,
-        );
-        xtermRef.current?.writeln('');
-        xtermRef.current?.writeln(
-          event.signal !== null
-            ? `[process exited: signal ${event.signal}]`
-            : `[process exited: code ${event.exitCode ?? 'unknown'}]`,
-        );
-      },
-    );
-
-    return () => {
-      removeProcessDataListener();
-      removeProcessExitListener();
-    };
-  }, []);
-
-  // Releasing the active PTY on unmount prevents background CLI processes from
-  // being orphaned when this pane is removed or the app switches routes/views.
-  useEffect(() => {
-    return () => {
-      const activeSessionId = sessionRef.current?.sessionId;
-      if (!activeSessionId) {
-        return;
-      }
-
-      void getTerminalApi().killSession(activeSessionId);
-    };
-  }, []);
-
-  // The working-directory editor follows the active file context by default so
-  // users get sensible CLI startup behavior without manual path entry first.
-  useEffect(() => {
-    if (!targetWorkingDirectory) {
-      return;
-    }
-
-    setWorkingDirectoryInput(targetWorkingDirectory);
-    if (!targetFilePath) {
-      setStatusText('Waiting for file context...');
-      return;
-    }
-
-    setStatusText('Ready to start terminal');
-  }, [targetWorkingDirectory, targetFilePath]);
-
-  // The start response drives status UI and the active session id used to route
-  // streamed PTY output into this pane's xterm instance.
-  const handleStartSessionResponse = useCallback(
-    (startResponse: StartTerminalSessionResponse) => {
-      if (!startResponse.ok) {
-        setStatusText('Failed to start terminal');
-        setLaunchErrorText(startResponse.errorMessage);
-        xtermRef.current?.writeln('');
-        xtermRef.current?.writeln(
-          `[launch failed] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
-        );
-        xtermRef.current?.writeln(startResponse.errorMessage);
-        xtermRef.current?.writeln('');
-        return;
-      }
-
-      const nextSessionState: TerminalSessionState = {
-        sessionId: startResponse.sessionId,
-        pid: startResponse.pid,
-        command: startResponse.command,
-        args: startResponse.args,
-      };
-      // Claude can emit control sequences immediately after spawn; setting the
-      // ref synchronously prevents startup chunks from being dropped while
-      // React is still committing the matching state update.
-      sessionRef.current = nextSessionState;
-      setSession(nextSessionState);
-      setStatusText(`Running (pid ${startResponse.pid})`);
-      const fittedGeometry = fitTerminalAndReadGeometry();
-      void getTerminalApi().resizeSession({
-        sessionId: startResponse.sessionId,
-        cols: fittedGeometry?.cols ?? 120,
-        rows: fittedGeometry?.rows ?? 40,
-      });
-    },
-    [fitTerminalAndReadGeometry],
-  );
-
-  // This helper centralizes session start behavior so file-change auto-restart
-  // and manual restart actions follow the same PTY lifecycle and status logic.
-  const startSessionForTargetContext = useCallback(
-    async (requestedWorkingDirectory?: string) => {
-      const currentTargetFilePath = activeTargetFilePathRef.current;
-      const currentTargetWorkingDirectory =
-        activeTargetWorkingDirectoryRef.current;
-      if (!currentTargetFilePath || !currentTargetWorkingDirectory) {
-        return;
-      }
-
-      if (isStartingSessionRef.current || sessionRef.current) {
-        return;
-      }
-
-      setIsStartingSession(true);
-      setLaunchErrorText(null);
-      setStatusText('Starting terminal...');
-
-      const normalizedRequestedWorkingDirectory =
-        requestedWorkingDirectory?.trim() ??
-        workingDirectoryInputRef.current.trim();
-      try {
-        const initialTerminalGeometry =
-          await measureStableTerminalGeometryBeforeSessionStart();
-        const startResponse = await getTerminalApi().startSession({
-          cwd:
-            normalizedRequestedWorkingDirectory ||
-            currentTargetWorkingDirectory,
-          targetFilePath: currentTargetFilePath,
-          initialCols: initialTerminalGeometry?.cols,
-          initialRows: initialTerminalGeometry?.rows,
-        });
-        handleStartSessionResponse(startResponse);
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Unknown terminal start error';
-        setStatusText('Failed to start terminal');
-        setLaunchErrorText(errorMessage);
-        xtermRef.current?.writeln('');
-        xtermRef.current?.writeln(`[launch failed] IPC request rejected`);
-        xtermRef.current?.writeln(errorMessage);
-        xtermRef.current?.writeln('');
-      } finally {
-        setIsStartingSession(false);
-      }
-    },
-    [
-      handleStartSessionResponse,
-      measureStableTerminalGeometryBeforeSessionStart,
-    ],
-  );
-
-  // File switches should produce a clean CLI session in the new file's folder,
-  // so this effect tears down any active session and starts a fresh one per file.
-  useEffect(() => {
-    const nextTargetContextKey = buildTargetContextKey(
+export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
+  (
+    {
       targetFilePath,
       targetWorkingDirectory,
-    );
-    if (!nextTargetContextKey) {
-      return;
-    }
-
-    if (lastActivatedTargetContextKeyRef.current === nextTargetContextKey) {
-      return;
-    }
-
-    lastActivatedTargetContextKeyRef.current = nextTargetContextKey;
-    let isCancelled = false;
-
-    const restartForTargetContext = async () => {
-      const previousSession = sessionRef.current;
-      if (previousSession) {
-        // Clear the local active-session ref first so delayed exit events from
-        // the old process cannot overwrite state for the next started session.
-        sessionRef.current = null;
-        setSession(null);
-        setStatusText('Switching terminal context...');
-        await getTerminalApi().killSession(previousSession.sessionId);
-      }
-
-      if (isCancelled) {
-        return;
-      }
-
-      xtermRef.current?.clear();
-
-      await startSessionForTargetContext(targetWorkingDirectory ?? undefined);
-    };
-
-    void restartForTargetContext();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [targetFilePath, targetWorkingDirectory, startSessionForTargetContext]);
-
-  // Preset buttons automate common Claude-in-terminal requests by writing a
-  // full prompt plus Enter into the already-running PTY session.
-  const sendPresetPromptToActiveSession = useCallback(
-    async (promptText: string) => {
-      const activeSessionId = sessionRef.current?.sessionId;
-      if (!activeSessionId) {
-        return;
-      }
-
-      await getTerminalApi().sendInput(activeSessionId, promptText);
-      await new Promise<void>((resolve) => {
-        window.setTimeout(resolve, 0);
-      });
-      await getTerminalApi().sendInput(activeSessionId, '\r');
-      xtermRef.current?.focus();
+      contextSourceLabel = null,
+      title = 'Terminal',
+      showPrototypeNotice = false,
+      showMetadataPanel = true,
     },
-    [],
-  );
+    ref,
+  ) => {
+    const [session, setSession] = useState<TerminalSessionState | null>(null);
+    const [workingDirectoryInput, setWorkingDirectoryInput] = useState('');
+    const [statusText, setStatusText] = useState('Waiting for file context...');
+    const [launchErrorText, setLaunchErrorText] = useState<string | null>(null);
+    const [isStartingSession, setIsStartingSession] = useState(false);
 
-  return (
-    <section className="pane terminal-pane">
-      <div className="pane-title">{title}</div>
-      {showPrototypeNotice ? (
-        <div className="terminal-warning-banner">
-          Phase 1 terminal prototype: PTY-backed CLI process in a chosen working
-          directory, rendered with xterm.js.
+    const terminalHostElementRef = useRef<HTMLDivElement | null>(null);
+    const sessionRef = useRef<TerminalSessionState | null>(null);
+    const xtermRef = useRef<Terminal | null>(null);
+    const fitAddonRef = useRef<FitAddon | null>(null);
+    // useLatestRef keeps these mirrors current on every render so async flows
+    // and event handlers always see the latest value without effect churn.
+    const isStartingSessionRef = useLatestRef(isStartingSession);
+    const workingDirectoryInputRef = useLatestRef(workingDirectoryInput);
+    const lastActivatedTargetContextKeyRef = useRef<string | null>(null);
+    const activeTargetFilePathRef = useLatestRef(targetFilePath);
+    const activeTargetWorkingDirectoryRef = useLatestRef(
+      targetWorkingDirectory,
+    );
+
+    // This helper keeps all fit callers (startup, resize, and session sync) on
+    // one geometry path so PTY sizing matches the same xterm measurement logic.
+    const fitTerminalAndReadGeometry = useCallback(() => {
+      const terminal = xtermRef.current;
+      const fitAddon = fitAddonRef.current;
+      if (!terminal || !fitAddon) {
+        return null;
+      }
+
+      fitAddon.fit();
+      const columns = terminal.cols;
+      const rows = terminal.rows;
+      if (columns <= 0 || rows <= 0) {
+        return null;
+      }
+
+      return {
+        cols: columns,
+        rows,
+      };
+    }, []);
+
+    // Resizes are forwarded immediately so terminal UIs redraw at the renderer's
+    // current size instead of waiting for user input to trigger a screen refresh.
+    const refitTerminalAndSyncActivePtySize = useCallback(() => {
+      const activeSessionId = sessionRef.current?.sessionId;
+      const fittedGeometry = fitTerminalAndReadGeometry();
+      if (!activeSessionId || !fittedGeometry) {
+        return;
+      }
+
+      void getTerminalApi().resizeSession({
+        sessionId: activeSessionId,
+        cols: fittedGeometry.cols,
+        rows: fittedGeometry.rows,
+      });
+    }, [fitTerminalAndReadGeometry]);
+
+    // Claude Code paints a full-screen interface as soon as the PTY starts, so
+    // startup waits through a couple of animation frames to avoid spawning with
+    // stale geometry from the initial xterm mount/layout tick.
+    const measureStableTerminalGeometryBeforeSessionStart =
+      useCallback(async () => {
+        let latestGeometry = fitTerminalAndReadGeometry();
+        await waitForNextAnimationFrame();
+        latestGeometry = fitTerminalAndReadGeometry() ?? latestGeometry;
+        await waitForNextAnimationFrame();
+        latestGeometry = fitTerminalAndReadGeometry() ?? latestGeometry;
+        return latestGeometry;
+      }, [fitTerminalAndReadGeometry]);
+
+    // sessionRef is kept as a manual ref because restartForTargetContext writes
+    // it imperatively (before the React render cycle) to prevent delayed exit
+    // events from the old process from overwriting the next session's state.
+    useEffect(() => {
+      sessionRef.current = session;
+    }, [session]);
+
+    // The xterm instance is imperative and owns terminal rendering/input, while
+    // React owns the surrounding layout and file-context lifecycle behavior.
+    useEffect(() => {
+      const hostElement = terminalHostElementRef.current;
+      if (!hostElement) {
+        return;
+      }
+
+      const terminal = new Terminal({
+        convertEol: false,
+        cursorBlink: true,
+        fontFamily: '"SF Mono", "Menlo", "Consolas", monospace',
+        fontSize: 13,
+        lineHeight: 1.25,
+        theme: {
+          background: '#151515',
+          foreground: '#e6e3da',
+        },
+        scrollback: 5000,
+      });
+      const fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
+      terminal.open(hostElement);
+      xtermRef.current = terminal;
+      fitAddonRef.current = fitAddon;
+      fitTerminalAndReadGeometry();
+      terminal.focus();
+
+      const xtermInputDisposable = terminal.onData((data) => {
+        const activeSessionId = sessionRef.current?.sessionId;
+        if (!activeSessionId) {
+          return;
+        }
+
+        void getTerminalApi().sendInput(activeSessionId, data);
+      });
+
+      const resizeObserver = new ResizeObserver(() => {
+        refitTerminalAndSyncActivePtySize();
+      });
+      resizeObserver.observe(hostElement);
+
+      let isDisposed = false;
+      // xterm's first fit can be early relative to CSS/grid measurement, so run
+      // a couple of follow-up fits that mimic the later user-resize recovery path.
+      const runDeferredInitialRefits = async () => {
+        await waitForNextAnimationFrame();
+        if (isDisposed) {
+          return;
+        }
+        refitTerminalAndSyncActivePtySize();
+
+        await waitForNextAnimationFrame();
+        if (isDisposed) {
+          return;
+        }
+        refitTerminalAndSyncActivePtySize();
+      };
+      void runDeferredInitialRefits();
+
+      return () => {
+        isDisposed = true;
+        resizeObserver.disconnect();
+        xtermInputDisposable.dispose();
+        terminal.dispose();
+        xtermRef.current = null;
+        fitAddonRef.current = null;
+      };
+    }, [fitTerminalAndReadGeometry, refitTerminalAndSyncActivePtySize]);
+
+    // Streamed process events are global to the window, so the pane filters by
+    // active session id and ignores traffic for prior or sibling terminal panes.
+    useEffect(() => {
+      const removeProcessDataListener = getTerminalApi().onProcessData(
+        (event) => {
+          if (event.sessionId !== sessionRef.current?.sessionId) {
+            return;
+          }
+
+          xtermRef.current?.write(event.chunk);
+        },
+      );
+
+      const removeProcessExitListener = getTerminalApi().onProcessExit(
+        (event: TerminalProcessExitEvent) => {
+          if (event.sessionId !== sessionRef.current?.sessionId) {
+            return;
+          }
+
+          setSession(null);
+          setStatusText(
+            event.signal !== null
+              ? `Terminal exited (signal ${event.signal})`
+              : `Terminal exited (code ${event.exitCode ?? 'unknown'})`,
+          );
+          xtermRef.current?.writeln('');
+          xtermRef.current?.writeln(
+            event.signal !== null
+              ? `[process exited: signal ${event.signal}]`
+              : `[process exited: code ${event.exitCode ?? 'unknown'}]`,
+          );
+        },
+      );
+
+      return () => {
+        removeProcessDataListener();
+        removeProcessExitListener();
+      };
+    }, []);
+
+    // Releasing the active PTY on unmount prevents background CLI processes from
+    // being orphaned when this pane is removed or the app switches routes/views.
+    useEffect(() => {
+      return () => {
+        const activeSessionId = sessionRef.current?.sessionId;
+        if (!activeSessionId) {
+          return;
+        }
+
+        void getTerminalApi().killSession(activeSessionId);
+      };
+    }, []);
+
+    // The working-directory editor follows the active file context by default so
+    // users get sensible CLI startup behavior without manual path entry first.
+    useEffect(() => {
+      if (!targetWorkingDirectory) {
+        return;
+      }
+
+      setWorkingDirectoryInput(targetWorkingDirectory);
+      if (!targetFilePath) {
+        setStatusText('Waiting for file context...');
+        return;
+      }
+
+      setStatusText('Ready to start terminal');
+    }, [targetWorkingDirectory, targetFilePath]);
+
+    // The start response drives status UI and the active session id used to route
+    // streamed PTY output into this pane's xterm instance.
+    const handleStartSessionResponse = useCallback(
+      (startResponse: StartTerminalSessionResponse) => {
+        if (!startResponse.ok) {
+          setStatusText('Failed to start terminal');
+          setLaunchErrorText(startResponse.errorMessage);
+          xtermRef.current?.writeln('');
+          xtermRef.current?.writeln(
+            `[launch failed] ${startResponse.command} ${startResponse.args.join(' ')}`.trim(),
+          );
+          xtermRef.current?.writeln(startResponse.errorMessage);
+          xtermRef.current?.writeln('');
+          return;
+        }
+
+        const nextSessionState: TerminalSessionState = {
+          sessionId: startResponse.sessionId,
+          pid: startResponse.pid,
+          command: startResponse.command,
+          args: startResponse.args,
+        };
+        // Claude can emit control sequences immediately after spawn; setting the
+        // ref synchronously prevents startup chunks from being dropped while
+        // React is still committing the matching state update.
+        sessionRef.current = nextSessionState;
+        setSession(nextSessionState);
+        setStatusText(`Running (pid ${startResponse.pid})`);
+        const fittedGeometry = fitTerminalAndReadGeometry();
+        void getTerminalApi().resizeSession({
+          sessionId: startResponse.sessionId,
+          cols: fittedGeometry?.cols ?? 120,
+          rows: fittedGeometry?.rows ?? 40,
+        });
+      },
+      [fitTerminalAndReadGeometry],
+    );
+
+    // This helper centralizes session start behavior so file-change auto-restart
+    // and manual restart actions follow the same PTY lifecycle and status logic.
+    const startSessionForTargetContext = useCallback(
+      async (requestedWorkingDirectory?: string) => {
+        const currentTargetFilePath = activeTargetFilePathRef.current;
+        const currentTargetWorkingDirectory =
+          activeTargetWorkingDirectoryRef.current;
+        if (!currentTargetFilePath || !currentTargetWorkingDirectory) {
+          return;
+        }
+
+        if (isStartingSessionRef.current || sessionRef.current) {
+          return;
+        }
+
+        setIsStartingSession(true);
+        setLaunchErrorText(null);
+        setStatusText('Starting terminal...');
+
+        const normalizedRequestedWorkingDirectory =
+          requestedWorkingDirectory?.trim() ??
+          workingDirectoryInputRef.current.trim();
+        try {
+          const initialTerminalGeometry =
+            await measureStableTerminalGeometryBeforeSessionStart();
+          const startResponse = await getTerminalApi().startSession({
+            cwd:
+              normalizedRequestedWorkingDirectory ||
+              currentTargetWorkingDirectory,
+            targetFilePath: currentTargetFilePath,
+            initialCols: initialTerminalGeometry?.cols,
+            initialRows: initialTerminalGeometry?.rows,
+          });
+          handleStartSessionResponse(startResponse);
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error
+              ? error.message
+              : 'Unknown terminal start error';
+          setStatusText('Failed to start terminal');
+          setLaunchErrorText(errorMessage);
+          xtermRef.current?.writeln('');
+          xtermRef.current?.writeln(`[launch failed] IPC request rejected`);
+          xtermRef.current?.writeln(errorMessage);
+          xtermRef.current?.writeln('');
+        } finally {
+          setIsStartingSession(false);
+        }
+      },
+      [
+        handleStartSessionResponse,
+        measureStableTerminalGeometryBeforeSessionStart,
+      ],
+    );
+
+    // File switches should produce a clean CLI session in the new file's folder,
+    // so this effect tears down any active session and starts a fresh one per file.
+    useEffect(() => {
+      const nextTargetContextKey = buildTargetContextKey(
+        targetFilePath,
+        targetWorkingDirectory,
+      );
+      if (!nextTargetContextKey) {
+        return;
+      }
+
+      if (lastActivatedTargetContextKeyRef.current === nextTargetContextKey) {
+        return;
+      }
+
+      lastActivatedTargetContextKeyRef.current = nextTargetContextKey;
+      let isCancelled = false;
+
+      const restartForTargetContext = async () => {
+        const previousSession = sessionRef.current;
+        if (previousSession) {
+          // Clear the local active-session ref first so delayed exit events from
+          // the old process cannot overwrite state for the next started session.
+          sessionRef.current = null;
+          setSession(null);
+          setStatusText('Switching terminal context...');
+          await getTerminalApi().killSession(previousSession.sessionId);
+        }
+
+        if (isCancelled) {
+          return;
+        }
+
+        xtermRef.current?.clear();
+
+        await startSessionForTargetContext(targetWorkingDirectory ?? undefined);
+      };
+
+      void restartForTargetContext();
+
+      return () => {
+        isCancelled = true;
+      };
+    }, [targetFilePath, targetWorkingDirectory, startSessionForTargetContext]);
+
+    // Preset buttons automate common Claude-in-terminal requests by writing a
+    // full prompt plus Enter into the already-running PTY session.
+    const sendPresetPromptToActiveSession = useCallback(
+      async (promptText: string) => {
+        const activeSessionId = sessionRef.current?.sessionId;
+        if (!activeSessionId) {
+          return false;
+        }
+
+        await getTerminalApi().sendInput(activeSessionId, promptText);
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+        await getTerminalApi().sendInput(activeSessionId, '\r');
+        xtermRef.current?.focus();
+        return true;
+      },
+      [],
+    );
+
+    // The top-level app toolbar needs a narrow imperative hook to trigger
+    // Claude prompts from outside this pane without exposing session internals.
+    useImperativeHandle(
+      ref,
+      () => ({
+        sendPromptToActiveSession: sendPresetPromptToActiveSession,
+      }),
+      [sendPresetPromptToActiveSession],
+    );
+
+    return (
+      <section className="pane terminal-pane">
+        <div className="pane-title">{title}</div>
+        {showPrototypeNotice ? (
+          <div className="terminal-warning-banner">
+            Phase 1 terminal prototype: PTY-backed CLI process in a chosen
+            working directory, rendered with xterm.js.
+          </div>
+        ) : null}
+        {showMetadataPanel ? (
+          <div className="terminal-metadata-grid terminal-metadata-grid--embedded">
+            <div className="terminal-cwd-editor-cell">
+              <label className="terminal-metadata-label" htmlFor="terminal-cwd">
+                start cwd
+              </label>
+              <input
+                id="terminal-cwd"
+                className="terminal-input terminal-cwd-input"
+                type="text"
+                value={workingDirectoryInput}
+                onChange={(event) => {
+                  setWorkingDirectoryInput(event.target.value);
+                }}
+                disabled={!!session || isStartingSession}
+                placeholder={targetWorkingDirectory ?? '/path/to/folder'}
+              />
+            </div>
+            <div>
+              <span className="terminal-metadata-label">cwd</span>
+              <span className="terminal-metadata-value">
+                {targetWorkingDirectory ?? '...'}
+              </span>
+            </div>
+            <div>
+              <span className="terminal-metadata-label">target file</span>
+              <span className="terminal-metadata-value">
+                {targetFilePath
+                  ? contextSourceLabel
+                    ? `${targetFilePath} (${contextSourceLabel})`
+                    : targetFilePath
+                  : '...'}
+              </span>
+            </div>
+            <div>
+              <span className="terminal-metadata-label">status</span>
+              <span className="terminal-metadata-value">{statusText}</span>
+            </div>
+            <div>
+              <span className="terminal-metadata-label">process</span>
+              <span className="terminal-metadata-value">
+                {session
+                  ? `${session.command} ${session.args.join(' ')} (pid ${session.pid})`
+                  : 'process (not running)'}
+              </span>
+            </div>
+            <div>
+              <span className="terminal-metadata-label">launch error</span>
+              <span className="terminal-metadata-value">
+                {launchErrorText ?? 'none'}
+              </span>
+            </div>
+          </div>
+        ) : null}
+        <div className="terminal-output terminal-output--pane">
+          <div className="terminal-xterm-host" ref={terminalHostElementRef} />
         </div>
-      ) : null}
-      {showMetadataPanel ? (
-        <div className="terminal-metadata-grid terminal-metadata-grid--embedded">
-          <div className="terminal-cwd-editor-cell">
-            <label className="terminal-metadata-label" htmlFor="terminal-cwd">
-              start cwd
-            </label>
-            <input
-              id="terminal-cwd"
-              className="terminal-input terminal-cwd-input"
-              type="text"
-              value={workingDirectoryInput}
-              onChange={(event) => {
-                setWorkingDirectoryInput(event.target.value);
+        <div
+          className="terminal-preset-bar"
+          aria-label="Terminal prompt presets"
+        >
+          {terminalPromptPresets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              className="terminal-preset-button"
+              disabled={!session}
+              title={preset.promptText}
+              onClick={() => {
+                void sendPresetPromptToActiveSession(preset.promptText);
               }}
-              disabled={!!session || isStartingSession}
-              placeholder={targetWorkingDirectory ?? '/path/to/folder'}
-            />
-          </div>
-          <div>
-            <span className="terminal-metadata-label">cwd</span>
-            <span className="terminal-metadata-value">
-              {targetWorkingDirectory ?? '...'}
-            </span>
-          </div>
-          <div>
-            <span className="terminal-metadata-label">target file</span>
-            <span className="terminal-metadata-value">
-              {targetFilePath
-                ? contextSourceLabel
-                  ? `${targetFilePath} (${contextSourceLabel})`
-                  : targetFilePath
-                : '...'}
-            </span>
-          </div>
-          <div>
-            <span className="terminal-metadata-label">status</span>
-            <span className="terminal-metadata-value">{statusText}</span>
-          </div>
-          <div>
-            <span className="terminal-metadata-label">process</span>
-            <span className="terminal-metadata-value">
-              {session
-                ? `${session.command} ${session.args.join(' ')} (pid ${session.pid})`
-                : 'process (not running)'}
-            </span>
-          </div>
-          <div>
-            <span className="terminal-metadata-label">launch error</span>
-            <span className="terminal-metadata-value">
-              {launchErrorText ?? 'none'}
-            </span>
-          </div>
+            >
+              {preset.label}
+            </button>
+          ))}
         </div>
-      ) : null}
-      <div className="terminal-output terminal-output--pane">
-        <div className="terminal-xterm-host" ref={terminalHostElementRef} />
-      </div>
-      <div className="terminal-preset-bar" aria-label="Terminal prompt presets">
-        {terminalPromptPresets.map((preset) => (
-          <button
-            key={preset.label}
-            type="button"
-            className="terminal-preset-button"
-            disabled={!session}
-            title={preset.promptText}
-            onClick={() => {
-              void sendPresetPromptToActiveSession(preset.promptText);
-            }}
-          >
-            {preset.label}
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-};
+      </section>
+    );
+  },
+);
+
+TerminalPane.displayName = 'TerminalPane';

@@ -3,7 +3,15 @@
 // renderer entry stays focused on app composition instead of editor internals.
 //
 import { syntaxTree } from '@codemirror/language';
-import { Prec, type Extension, type Range } from '@codemirror/state';
+import {
+  EditorSelection,
+  Prec,
+  type Extension,
+  type Range,
+  type ChangeSpec,
+  type EditorState,
+  type SelectionRange,
+} from '@codemirror/state';
 import {
   Decoration,
   EditorView,
@@ -493,5 +501,178 @@ export const inlineCommentEditGuardExtension = (): Extension =>
       { key: 'Shift-Enter', run: inlineCommentEdgeAwareEnter },
       { key: 'Backspace', run: markerAwareBackspace },
       { key: 'Delete', run: markerAwareDelete },
+    ]),
+  );
+
+const markdownStrongFormattingMarker = '**';
+const markdownEmphasisFormattingMarker = '*';
+
+// Markdown formatting shortcuts should keep selection direction stable after
+// wrapping/unwrapping so keyboard workflows feel predictable for users who
+// select from either direction.
+const createSelectionRangePreservingSelectionDirection = (
+  originalSelectionRange: SelectionRange,
+  nextFrom: number,
+  nextTo: number,
+): SelectionRange =>
+  originalSelectionRange.anchor <= originalSelectionRange.head
+    ? EditorSelection.range(nextFrom, nextTo)
+    : EditorSelection.range(nextTo, nextFrom);
+
+// Formatting toggles should remove existing markers when the selection is
+// already wrapped so repeated shortcut presses behave like a true toggle.
+const selectionIsWrappedWithMarkdownMarker = (
+  editorState: EditorState,
+  selectionFrom: number,
+  selectionTo: number,
+  markdownMarker: string,
+): boolean => {
+  if (selectionFrom < markdownMarker.length) {
+    return false;
+  }
+  if (selectionTo + markdownMarker.length > editorState.doc.length) {
+    return false;
+  }
+
+  const leadingMarker = editorState.sliceDoc(
+    selectionFrom - markdownMarker.length,
+    selectionFrom,
+  );
+  const trailingMarker = editorState.sliceDoc(
+    selectionTo,
+    selectionTo + markdownMarker.length,
+  );
+
+  return leadingMarker === markdownMarker && trailingMarker === markdownMarker;
+};
+
+// A single selection-range transformer centralizes wrap/unwrap semantics so
+// bold and italic shortcuts share the same offset math and cursor behavior.
+const buildMarkdownFormattingToggleForSelectionRange = (
+  editorState: EditorState,
+  selectionRange: SelectionRange,
+  markdownMarker: string,
+): {
+  changes: ChangeSpec | readonly ChangeSpec[];
+  range: SelectionRange;
+} => {
+  const selectionFrom = Math.min(selectionRange.from, selectionRange.to);
+  const selectionTo = Math.max(selectionRange.from, selectionRange.to);
+
+  if (selectionFrom === selectionTo) {
+    return {
+      changes: {
+        from: selectionFrom,
+        insert: `${markdownMarker}${markdownMarker}`,
+      },
+      range: EditorSelection.cursor(selectionFrom + markdownMarker.length),
+    };
+  }
+
+  const isWrappedWithFormattingMarker = selectionIsWrappedWithMarkdownMarker(
+    editorState,
+    selectionFrom,
+    selectionTo,
+    markdownMarker,
+  );
+
+  if (isWrappedWithFormattingMarker) {
+    return {
+      changes: [
+        {
+          from: selectionTo,
+          to: selectionTo + markdownMarker.length,
+          insert: '',
+        },
+        {
+          from: selectionFrom - markdownMarker.length,
+          to: selectionFrom,
+          insert: '',
+        },
+      ],
+      range: createSelectionRangePreservingSelectionDirection(
+        selectionRange,
+        selectionFrom - markdownMarker.length,
+        selectionTo - markdownMarker.length,
+      ),
+    };
+  }
+
+  return {
+    changes: [
+      {
+        from: selectionTo,
+        insert: markdownMarker,
+      },
+      {
+        from: selectionFrom,
+        insert: markdownMarker,
+      },
+    ],
+    range: createSelectionRangePreservingSelectionDirection(
+      selectionRange,
+      selectionFrom + markdownMarker.length,
+      selectionTo + markdownMarker.length,
+    ),
+  };
+};
+
+// Exposing the state update builder lets unit tests verify markdown shortcut
+// transformations without needing a DOM-backed EditorView instance.
+export const buildMarkdownFormattingToggleSelectionUpdate = (
+  editorState: EditorState,
+  markdownMarker: string,
+) =>
+  editorState.changeByRange((selectionRange) =>
+    buildMarkdownFormattingToggleForSelectionRange(
+      editorState,
+      selectionRange,
+      markdownMarker,
+    ),
+  );
+
+// Formatting shortcuts are editor-native commands so they can participate in
+// CodeMirror's multi-selection mapping and history transaction semantics.
+const runMarkdownFormattingToggleShortcut = (
+  view: EditorView,
+  markdownMarker: string,
+): boolean => {
+  const selectionMappedFormattingUpdate =
+    buildMarkdownFormattingToggleSelectionUpdate(view.state, markdownMarker);
+
+  view.dispatch(
+    view.state.update(selectionMappedFormattingUpdate, {
+      scrollIntoView: true,
+      userEvent: 'input.type',
+    }),
+  );
+  return true;
+};
+
+// Bold formatting should be reachable from the conventional Mod-b shortcut in
+// markdown editing flows.
+const toggleMarkdownStrongFormattingShortcut = (view: EditorView): boolean =>
+  runMarkdownFormattingToggleShortcut(view, markdownStrongFormattingMarker);
+
+// Italic formatting should use Mod-i and intentionally override CodeMirror's
+// default selectParentSyntax behavior for prose-editor ergonomics.
+const toggleMarkdownEmphasisFormattingShortcut = (view: EditorView): boolean =>
+  runMarkdownFormattingToggleShortcut(view, markdownEmphasisFormattingMarker);
+
+// A high-precedence keymap ensures Mod-i and Mod-b run prose formatting
+// commands before CodeMirror's bundled default key bindings.
+export const markdownFormattingShortcutExtension = (): Extension =>
+  Prec.high(
+    keymap.of([
+      {
+        key: 'Mod-b',
+        run: toggleMarkdownStrongFormattingShortcut,
+        preventDefault: true,
+      },
+      {
+        key: 'Mod-i',
+        run: toggleMarkdownEmphasisFormattingShortcut,
+        preventDefault: true,
+      },
     ]),
   );

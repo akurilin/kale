@@ -48,6 +48,7 @@ import {
   inlineCommentDecorationExtension,
   inlineCommentEditGuardExtension,
   livePreviewMarkersExtension,
+  markdownFormattingShortcutExtension,
   quoteLineDecorationExtension,
 } from './codemirror-extensions';
 import {
@@ -529,6 +530,7 @@ const MarkdownEditorPaneImpl = (
         inlineCommentDecorationExtension(),
         inlineCommentAtomicRangesExtension(),
         inlineCommentEditGuardExtension(),
+        markdownFormattingShortcutExtension(),
         livePreviewMarkersExtension(),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {

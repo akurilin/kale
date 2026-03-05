@@ -4,11 +4,15 @@
 //
 
 import type {
+  CommitCurrentMarkdownFileResponse,
+  GetCurrentMarkdownGitBranchStateResponse,
   ExternalMarkdownFileChangedEvent,
   LoadMarkdownResponse,
   OpenMarkdownFileResponse,
   RestoreMarkdownFromGitResponse,
   SaveMarkdownResponse,
+  SwitchCurrentMarkdownGitBranchRequest,
+  SwitchCurrentMarkdownGitBranchResponse,
 } from '../shared-types';
 
 type MarkdownApi = {
@@ -16,6 +20,11 @@ type MarkdownApi = {
   openMarkdownFile: () => Promise<OpenMarkdownFileResponse>;
   saveMarkdown: (content: string) => Promise<SaveMarkdownResponse>;
   restoreCurrentMarkdownFromGit: () => Promise<RestoreMarkdownFromGitResponse>;
+  commitCurrentMarkdownFile: () => Promise<CommitCurrentMarkdownFileResponse>;
+  getCurrentMarkdownGitBranchState: () => Promise<GetCurrentMarkdownGitBranchStateResponse>;
+  switchCurrentMarkdownGitBranch: (
+    request: SwitchCurrentMarkdownGitBranchRequest,
+  ) => Promise<SwitchCurrentMarkdownGitBranchResponse>;
   onExternalMarkdownFileChanged: (
     handler: (event: ExternalMarkdownFileChangedEvent) => void,
   ) => () => void;
