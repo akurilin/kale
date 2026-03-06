@@ -536,6 +536,38 @@ const buildHeadingLineDecorations = (view: EditorView): Range<Decoration>[] => {
     },
   });
 
+  // When an inline comment wraps a full heading line, the start marker
+  // (<!-- @comment:... -->) lands before the `###` prefix, which stops the
+  // markdown parser from recognizing the heading. This fallback detects
+  // heading syntax hidden behind comment markers so styling is preserved.
+  for (let lineNum = 1; lineNum <= state.doc.lines; lineNum++) {
+    const line = state.doc.line(lineNum);
+    if (decoratedLineStarts.has(line.from)) {
+      continue;
+    }
+
+    // Quick guard: only process lines starting with an HTML comment marker,
+    // since those are the only ones where a comment could obscure heading
+    // syntax at the line start.
+    if (!line.text.startsWith('<!--')) {
+      continue;
+    }
+
+    // Strip all HTML comment markers and check whether the remaining text
+    // begins with an ATX heading prefix (one to six `#` followed by a space).
+    const textWithoutHtmlComments = line.text.replace(/<!--[\s\S]*?-->/g, '');
+    const headingPrefixMatch = textWithoutHtmlComments.match(/^(#{1,6})\s/);
+    if (headingPrefixMatch) {
+      const headingLevel = headingPrefixMatch[1].length;
+      decoratedLineStarts.add(line.from);
+      decorations.push(
+        Decoration.line({
+          class: `cm-live-heading-line cm-live-heading-line--${headingLevel}`,
+        }).range(line.from),
+      );
+    }
+  }
+
   return decorations;
 };
 
