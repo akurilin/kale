@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type IpcMain } from 'electron';
+import { app, BrowserWindow, screen, type IpcMain } from 'electron';
 import path from 'node:path';
 
 import type {
@@ -67,6 +67,20 @@ const convertCssPixelDeltaToWindowPixelDelta = (
   const safeZoomFactor =
     Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
   return cssPixelDelta * safeZoomFactor;
+};
+
+// Electron packager does not apply dock/taskbar icon metadata on Linux, so
+// BrowserWindow needs an explicit PNG icon path for window-switcher rendering.
+const resolveLinuxRuntimeWindowIconPath = () => {
+  if (process.platform !== 'linux') {
+    return undefined;
+  }
+
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'icon.png');
+  }
+
+  return path.resolve(__dirname, '../../assets/icons/icon.png');
 };
 
 // This handler lets renderer layout toggles adjust the native window width
@@ -140,6 +154,7 @@ export const createMainWindow = () => {
     width: safeWindowWidth,
     height: safeWindowHeight,
     show: !isHeadless,
+    icon: resolveLinuxRuntimeWindowIconPath(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },

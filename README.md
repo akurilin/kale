@@ -23,6 +23,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 
 ## Workspace Layout
 
+- Application icons are sourced from `assets/icon-large.jpeg` and generated into platform-specific artifacts under `assets/icons/` (`icon.icns`, `icon.ico`, `icon.png`), which are consumed by Electron Forge makers and Linux runtime window icon wiring.
 - The top bar includes a terminal pane toggle button (top-right) with Cursor-style active/inactive states:
   - active/lit = terminal pane expanded
   - dim = terminal pane collapsed
@@ -71,6 +72,8 @@ This repo includes a local pre-commit hook at `.githooks/pre-commit` that format
 **Notes:**
 - The script runs Electron directly (`./node_modules/.bin/electron .vite/build/main.js`) rather than through `electron-forge start`, which requires a TTY to stay alive.
 - `ws` and `node-pty` are Vite externals, so the Electron binary must run from the project root where `node_modules` is available.
+- Packaged builds keep production `node_modules` in `app.asar` so externalized main-process dependencies (`ws`, `node-pty`) resolve correctly at runtime, and unpack `spawn-helper`/`*.node` into `app.asar.unpacked` because `node-pty` must execute/load them from real filesystem paths on macOS.
+- On macOS, Kale app startup augments GUI PATH with common executable directories (`/opt/homebrew/bin`, `/usr/local/bin`, plus sbin variants) so Finder-launched sessions can resolve `claude`.
 - The CDP port defaults to 9222 and can be overridden with the `KALE_CDP_PORT` env var in the script.
 - DevDependency: `playwright` must be installed (`npm install playwright --save-dev`).
 

@@ -14,9 +14,54 @@ import type {
 
 const execFileAsync = promisify(execFile);
 const KALE_PROMPT_ACTIVE_FILE_PATH_TOKEN = '@@KALE:ACTIVE_FILE_PATH@@';
+const COMMON_DARWIN_CLI_BIN_DIRECTORIES = [
+  '/opt/homebrew/bin',
+  '/opt/homebrew/sbin',
+  '/usr/local/bin',
+  '/usr/local/sbin',
+];
 
 type TerminalSessionServiceDependencies = {
   ensureCurrentMarkdownFilePath: () => Promise<string>;
+};
+
+// Finder-launched macOS apps inherit a limited PATH, so we append common
+// Homebrew/system locations and dedupe entries to keep CLI lookup reliable.
+const buildEnvironmentPathWithAdditionalEntries = (
+  existingPathValue: string | undefined,
+  additionalPathEntries: string[],
+) => {
+  const existingPathEntries = (existingPathValue ?? '')
+    .split(path.delimiter)
+    .filter((pathEntry) => pathEntry.trim().length > 0);
+  const seenPathEntries = new Set(existingPathEntries);
+
+  for (const additionalPathEntry of additionalPathEntries) {
+    if (!additionalPathEntry || seenPathEntries.has(additionalPathEntry)) {
+      continue;
+    }
+
+    existingPathEntries.push(additionalPathEntry);
+    seenPathEntries.add(additionalPathEntry);
+  }
+
+  return existingPathEntries.join(path.delimiter);
+};
+
+// Terminal child processes and startup dependency checks should share one
+// normalized environment so `claude` resolution behaves the same everywhere.
+const buildTerminalRuntimeEnvironmentVariables = () => {
+  if (process.platform !== 'darwin') {
+    return { ...process.env };
+  }
+
+  return {
+    ...process.env,
+    PATH: buildEnvironmentPathWithAdditionalEntries(
+      process.env.PATH,
+      COMMON_DARWIN_CLI_BIN_DIRECTORIES,
+    ),
+  };
 };
 
 // Terminal service is created once by main and owns PTY process state so only
@@ -26,6 +71,8 @@ export const createTerminalSessionService = (
 ) => {
   let bundledClaudeSystemPromptMarkdownText: string | null = null;
   const terminalSessionsById = new Map<string, nodePty.IPty>();
+  const terminalRuntimeEnvironmentVariables =
+    buildTerminalRuntimeEnvironmentVariables();
 
   // Prompt assets are resolved from the packaged app root so dev and packaged
   // builds use the same logical path and startup fails consistently if missing.
@@ -83,6 +130,7 @@ export const createTerminalSessionService = (
     try {
       await execFileAsync('claude', ['--version'], {
         windowsHide: true,
+        env: terminalRuntimeEnvironmentVariables,
       });
     } catch (error) {
       const commandError = error as NodeJS.ErrnoException & { stderr?: string };
@@ -93,7 +141,7 @@ export const createTerminalSessionService = (
         'Unknown Claude CLI startup check error';
 
       throw new Error(
-        `Claude CLI is required but was not found or could not be executed via PATH. Install Claude Code and ensure the 'claude' command is available. Details: ${failureDetail}`,
+        `Claude CLI is required but was not found or could not be executed via PATH. Install Claude Code and ensure the 'claude' command is available. If Kale was launched from Finder on macOS, ensure Claude is installed in a standard executable directory (for example /opt/homebrew/bin). Details: ${failureDetail}`,
       );
     }
   };
@@ -152,7 +200,7 @@ export const createTerminalSessionService = (
         // environment through so the spawned CLI starts with familiar PATH/tooling.
         // Before shipping a broader terminal surface, build a sanitized env because
         // this inherits Electron/dev-process vars and any sensitive shell vars.
-        env: process.env,
+        env: terminalRuntimeEnvironmentVariables,
         name: 'xterm-color',
         cols: initialPtyGeometry.cols,
         rows: initialPtyGeometry.rows,
@@ -206,9 +254,21 @@ export const createTerminalSessionService = (
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown terminal start error';
+      const errorCode =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as NodeJS.ErrnoException).code)
+          : null;
+      const errorMessageWithCode = errorCode
+        ? `${errorMessage} (code: ${errorCode})`
+        : errorMessage;
+      console.error('Failed to spawn terminal session process:', {
+        command,
+        cwd: request.cwd,
+        errorMessage: errorMessageWithCode,
+      });
       return {
         ok: false,
-        errorMessage,
+        errorMessage: errorMessageWithCode,
         command,
         args,
       };

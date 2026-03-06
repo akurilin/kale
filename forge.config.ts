@@ -2,6 +2,7 @@
 // This is the Electron Forge build/package configuration that defines
 // makers, Vite entry points, and fuse hardening for packaged app output.
 //
+import path from 'node:path';
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
@@ -11,11 +12,43 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+const PACKAGED_APPLICATION_ICON_BASE_PATH = path.resolve(
+  __dirname,
+  'assets/icons/icon',
+);
+const WINDOWS_INSTALLER_SETUP_ICON_PATH = path.resolve(
+  __dirname,
+  'assets/icons/icon.ico',
+);
+const LINUX_PACKAGE_ICON_PATH = path.resolve(
+  __dirname,
+  'assets/icons/icon.png',
+);
+const LINUX_RUNTIME_WINDOW_ICON_RESOURCE_PATH = path.resolve(
+  __dirname,
+  'assets/icons/icon.png',
+);
+
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    // node-pty's macOS implementation executes a helper binary and loads
+    // native `.node` bindings at runtime, both of which must live outside
+    // `app.asar` to remain executable/loadable in packaged apps.
+    asar: {
+      unpack: '**/{*.node,spawn-helper}',
+    },
+    // Use per-platform icon formats during package generation:
+    // - macOS: `icon.icns`
+    // - Windows: `icon.ico`
+    icon: PACKAGED_APPLICATION_ICON_BASE_PATH,
+    // Linux runtime window icons are provided via BrowserWindow `icon`.
+    // Include the PNG in the packaged resources directory for that lookup.
+    extraResource: [LINUX_RUNTIME_WINDOW_ICON_RESOURCE_PATH],
     // The Vite plugin normally packages only the generated `/.vite` output.
-    // Kale also needs runtime prompt assets inside app.asar for terminal startup.
+    // Kale additionally requires:
+    // - `/prompts` for terminal startup prompt templates
+    // - `/node_modules` because main-process externals (`node-pty`, `ws`)
+    //   are resolved at runtime from packaged dependencies
     ignore: (file: string) => {
       if (!file) {
         return false;
@@ -24,15 +57,33 @@ const config: ForgeConfig = {
       // Electron Packager passes project-relative paths prefixed with `/`.
       const isViteBuildOutput = file.startsWith('/.vite');
       const isRuntimePromptAsset = file.startsWith('/prompts');
-      return !isViteBuildOutput && !isRuntimePromptAsset;
+      // Main-process bundles intentionally externalize native/runtime modules
+      // (for example `node-pty` and `ws`), so packaged apps must retain
+      // production node_modules for those runtime `require()` calls.
+      const isRuntimeNodeModuleDependency = file.startsWith('/node_modules');
+      return (
+        !isViteBuildOutput &&
+        !isRuntimePromptAsset &&
+        !isRuntimeNodeModuleDependency
+      );
     },
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({
+      setupIcon: WINDOWS_INSTALLER_SETUP_ICON_PATH,
+    }),
     new MakerZIP({}, ['darwin']),
-    new MakerRpm({}),
-    new MakerDeb({}),
+    new MakerRpm({
+      options: {
+        icon: LINUX_PACKAGE_ICON_PATH,
+      },
+    }),
+    new MakerDeb({
+      options: {
+        icon: LINUX_PACKAGE_ICON_PATH,
+      },
+    }),
   ],
   plugins: [
     new VitePlugin({

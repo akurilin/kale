@@ -3,7 +3,7 @@
 // extracted markdown, terminal, IDE, and window modules.
 //
 import path from 'node:path';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import started from 'electron-squirrel-startup';
 
 // Running the Electron binary directly (e.g. for CDP/Playwright automation)
@@ -63,6 +63,19 @@ const syncIdeWorkspaceFoldersToCurrentMarkdownFileContext = async () => {
   }
 };
 
+// Startup dependency failures currently happen before a BrowserWindow exists,
+// so this native dialog prevents "app opens then closes" silent exits.
+const showFatalStartupErrorDialogIfVisible = (errorMessage: string) => {
+  if (process.env.KALE_HEADLESS === '1') {
+    return;
+  }
+
+  dialog.showErrorBox(
+    'Kale failed to start',
+    `${errorMessage}\n\nThe app will now close.`,
+  );
+};
+
 // App startup validates terminal/runtime prerequisites before opening a window
 // so missing Claude dependencies fail early with a visible fatal error.
 // E2E tests skip terminal validation because the Claude CLI may not be
@@ -75,6 +88,7 @@ const startApplication = async () => {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown startup prompt error';
       console.error(`Fatal startup error: ${errorMessage}`);
+      showFatalStartupErrorDialogIfVisible(errorMessage);
       app.exit(1);
       return;
     }
