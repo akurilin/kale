@@ -36,6 +36,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - The terminal pane stays mounted while collapsed, so the underlying PTY session remains alive and is restored instantly when expanded.
 - Toggling collapse/expand automatically resizes the native window width by the terminal-pane area, avoiding large blank editor space after collapsing.
 - Terminal collapse/expand window-width math is zoom-aware (`Cmd/Ctrl +` / `Cmd/Ctrl -` / `Cmd/Ctrl 0`), so the left document/comments pane width stays stable even at non-default browser zoom levels.
+- The terminal pane remaps `Shift+Enter` to a modified Enter escape sequence (`CSI 13;2u`) so Claude receives newline intent instead of a plain submit Enter.
 - The markdown editor supports prose-friendly formatting shortcuts:
   - `Cmd/Ctrl+B` toggles `**bold**` wrapping around the current selection.
   - `Cmd/Ctrl+I` toggles `*italic*` wrapping around the current selection (overrides CodeMirror's default parent-syntax selection binding).

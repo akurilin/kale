@@ -69,6 +69,17 @@ const terminalPromptPresets: TerminalPromptPreset[] = [
   },
 ];
 
+const claudeShiftEnterEscapeSequence = '\u001b[13;2u';
+
+// Claude's multiline composer expects a distinct modified-Enter sequence, so
+// this helper centralizes the exact key shape we remap from xterm defaults.
+const isShiftEnterWithoutOtherModifiers = (keyboardEvent: KeyboardEvent) =>
+  keyboardEvent.key === 'Enter' &&
+  keyboardEvent.shiftKey &&
+  !keyboardEvent.altKey &&
+  !keyboardEvent.ctrlKey &&
+  !keyboardEvent.metaKey;
+
 // This helper derives a stable file-context key so the pane can ignore content
 // reloads for the same file while still restarting when the user switches files.
 const buildTargetContextKey = (
@@ -208,6 +219,28 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       fitAddonRef.current = fitAddon;
       fitTerminalAndReadGeometry();
       terminal.focus();
+
+      // xterm maps Shift+Enter to plain CR, but Claude expects modified Enter
+      // (CSI u) to insert a newline without submitting the prompt.
+      terminal.attachCustomKeyEventHandler((keyboardEvent: KeyboardEvent) => {
+        if (
+          keyboardEvent.type !== 'keydown' ||
+          !isShiftEnterWithoutOtherModifiers(keyboardEvent)
+        ) {
+          return true;
+        }
+
+        const activeSessionId = sessionRef.current?.sessionId;
+        if (!activeSessionId) {
+          return false;
+        }
+
+        void getTerminalApi().sendInput(
+          activeSessionId,
+          claudeShiftEnterEscapeSequence,
+        );
+        return false;
+      });
 
       const xtermInputDisposable = terminal.onData((data) => {
         const activeSessionId = sessionRef.current?.sessionId;
