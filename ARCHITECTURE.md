@@ -9,7 +9,7 @@ Kale is a desktop markdown writing tool built on Electron + React + CodeMirror.
 It combines:
 
 - A prose-first markdown editor with inline comments persisted directly in markdown.
-- Git-aware file actions (`Restore Git`, branch switching, single-file commit save).
+- Git-aware file actions (`Reset`, branch switching, single-file commit save).
 - A PTY-backed Claude Code terminal pane.
 - A local IDE MCP WebSocket server so Claude Code can query live editor selection/context.
 
@@ -71,7 +71,7 @@ Owns active-file state, settings persistence, file watcher lifecycle, and git fi
 
 #### Git Operations for Active File
 
-- **Restore Git**: restores active file from `HEAD` (`git restore`, fallback to `git checkout HEAD -- <file>`).
+- **Reset**: restores active file from `HEAD` (`git restore`, fallback to `git checkout HEAD -- <file>`).
 - **Branch state**: reports current branch, detached-head short SHA, branch list, and whether active file is modified.
 - **Switch branch**:
   - validates target branch name
@@ -131,6 +131,7 @@ Implements MCP-over-WebSocket for Claude Code IDE integration.
 ### Markdown IPC
 
 - `editor:load-markdown`
+- `editor:create-markdown-file`
 - `editor:open-markdown-file`
 - `editor:save-markdown`
 - `editor:restore-current-markdown-from-git`
@@ -162,7 +163,7 @@ Owns document lifecycle and top-level UI orchestration:
 
 - Bootstraps active markdown file.
 - Schedules autosave through save controller.
-- Handles open/restore/branch-switch/commit actions.
+- Handles new/open/restore/branch-switch/commit actions.
 - Handles terminal-pane collapse/expand and native width resize requests.
 - Pushes selection updates to IDE integration.
 - Maintains live editor word count state for the document header badge.
