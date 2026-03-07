@@ -1,5 +1,16 @@
-- !IMPORTANT: do not commit unless explitictly told to by the user
+# Kale
+
+- !IMPORTANT: do not commit unless explicitly told to by the user
 - It is currently year 2026, assume that when searching for documentation
+
+## Commands
+
+- Start dev: `npm start`
+- Run unit tests: `npm test`
+- Run E2E tests: `npm run test:e2e`
+- Lint: `npm run lint`
+- Format: `npm run format`
+- Typecheck: `npx tsc --noEmit`
 
 ## Coding style
 
@@ -23,7 +34,7 @@
 # QA / Testing / Manually exercising the app
 
 - The app can only be driven via CDP (Playwright as a Node Library). Use this approach when you
-  need o programmatically interact with the running Electron app — clicking, typing, reading content, etc.
+  need to programmatically interact with the running Electron app — clicking, typing, reading content, etc.
   Screenshots are handled by another script. You must manually write node js code and execute it in order to
   drive the app since MCP will not work.
 - Never use Playwright MCP to test or drive the app — it runs its own isolated browser and cannot
