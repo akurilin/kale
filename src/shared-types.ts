@@ -23,6 +23,10 @@ export type OpenMarkdownFileResponse =
   | { canceled: true }
   | ({ canceled: false } & LoadMarkdownResponse);
 
+export type CreateMarkdownFileResponse =
+  | { canceled: true }
+  | ({ canceled: false } & LoadMarkdownResponse);
+
 export type RestoreMarkdownFromGitResponse =
   | ({ ok: true } & LoadMarkdownResponse)
   | { ok: false; errorMessage: string };

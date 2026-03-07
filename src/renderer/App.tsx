@@ -191,6 +191,7 @@ export const App = () => {
     INITIAL_SAVE_STATUS_TEXT,
   );
   const [isOpeningFile, setIsOpeningFile] = useState(false);
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [isRestoringFromGit, setIsRestoringFromGit] = useState(false);
   const [gitBranchState, setGitBranchState] =
     useState<CurrentMarkdownGitBranchState | null>(null);
@@ -662,26 +663,39 @@ export const App = () => {
     };
   }, []);
 
+  // File dialogs should return the top bar to a stable idle label when users
+  // cancel, so this helper keeps the fallback text consistent across actions.
+  const getIdleSaveStatusTextAfterFileDialog = () => {
+    return documentCommentsPaneRef.current ? 'Saved' : 'Ready';
+  };
+
+  // Document switches should preserve the current draft first, so Open and New
+  // both flush the debounced save queue through one shared helper.
+  const flushCurrentEditorContentBeforeFileSwitch = async () => {
+    const currentContent = documentCommentsPaneRef.current?.getCurrentContent();
+    if (currentContent === null || currentContent === undefined) {
+      return;
+    }
+
+    await saveController.flushPendingSave(() => currentContent);
+  };
+
   // opening another file should behave like switching documents in an editor
   // and not allow overlapping native dialogs or skipped debounce flushes.
   const openMarkdownFile = async () => {
-    if (isOpeningFile) {
+    if (isOpeningFile || isCreatingFile) {
       return;
     }
 
     setIsOpeningFile(true);
     try {
-      const currentContent =
-        documentCommentsPaneRef.current?.getCurrentContent();
-      if (currentContent !== null && currentContent !== undefined) {
-        // Save first so "Open..." behaves like a document switch, not discard.
-        await saveController.flushPendingSave(() => currentContent);
-      }
+      // Save first so "Open..." behaves like a document switch, not discard.
+      await flushCurrentEditorContentBeforeFileSwitch();
 
       setSaveStatusText('Opening...');
       const response = await getMarkdownApi().openMarkdownFile();
       if (response.canceled) {
-        setSaveStatusText(documentCommentsPaneRef.current ? 'Saved' : 'Ready');
+        setSaveStatusText(getIdleSaveStatusTextAfterFileDialog());
         return;
       }
 
@@ -691,6 +705,37 @@ export const App = () => {
       console.error(error);
     } finally {
       setIsOpeningFile(false);
+    }
+  };
+
+  // New document creation should mirror Open's switch behavior while using a
+  // native save panel to choose destination folder and file name in one step.
+  const createMarkdownFile = async () => {
+    if (isCreatingFile || isOpeningFile) {
+      return;
+    }
+
+    setIsCreatingFile(true);
+    try {
+      // Save first so "New..." also behaves like a document switch.
+      await flushCurrentEditorContentBeforeFileSwitch();
+
+      setSaveStatusText('Creating...');
+      const response = await getMarkdownApi().createMarkdownFile();
+      if (response.canceled) {
+        setSaveStatusText(getIdleSaveStatusTextAfterFileDialog());
+        return;
+      }
+
+      applyLoadedDocument(response);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown file create error';
+      setSaveStatusText('Create failed');
+      window.alert(`Could not create a new markdown file.\n\n${errorMessage}`);
+      console.error(error);
+    } finally {
+      setIsCreatingFile(false);
     }
   };
 
@@ -906,9 +951,19 @@ export const App = () => {
           onClick={() => {
             void openMarkdownFile();
           }}
-          disabled={isOpeningFile || isSwitchingGitBranch}
+          disabled={isOpeningFile || isCreatingFile || isSwitchingGitBranch}
         >
           Open...
+        </button>
+        <button
+          className="topbar-button"
+          type="button"
+          onClick={() => {
+            void createMarkdownFile();
+          }}
+          disabled={isCreatingFile || isOpeningFile || isSwitchingGitBranch}
+        >
+          New...
         </button>
         <button
           className="topbar-button"
@@ -920,7 +975,7 @@ export const App = () => {
             !loadedDocument || isRestoringFromGit || isSwitchingGitBranch
           }
         >
-          {isRestoringFromGit ? 'Restoring...' : 'Restore Git'}
+          {isRestoringFromGit ? 'Resetting...' : 'Reset'}
         </button>
         <label className="topbar-select-wrapper">
           <span className="topbar-select-label">Branch</span>

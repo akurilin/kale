@@ -7,6 +7,7 @@ import { watch as watchWithChokidar, type FSWatcher } from 'chokidar';
 
 import type {
   CommitCurrentMarkdownFileResponse,
+  CreateMarkdownFileResponse,
   CurrentMarkdownGitBranchState,
   ExternalMarkdownFileChangedEvent,
   GetCurrentMarkdownGitBranchStateResponse,
@@ -28,6 +29,8 @@ const DEFAULT_USER_FILE_NAME = 'simple.md';
 const SETTINGS_FILE_NAME = 'settings.json';
 const FORCED_STARTUP_MARKDOWN_FILE_PATH_ENV_VAR =
   'KALE_STARTUP_MARKDOWN_FILE_PATH';
+const MARKDOWN_FILE_EXTENSION = '.md';
+const DEFAULT_NEW_MARKDOWN_FILE_NAME = `untitled${MARKDOWN_FILE_EXTENSION}`;
 const execFileAsync = promisify(execFile);
 
 type AppSettings = {
@@ -320,6 +323,54 @@ export const createMarkdownFileService = () => {
     return { content, filePath };
   };
 
+  // Open and New both need to switch the active document through the exact
+  // same path so watcher state, settings persistence, and returned content stay
+  // aligned with what the editor renders.
+  const activateMarkdownFileAtPath = async (
+    filePath: string,
+  ): Promise<LoadMarkdownResponse> => {
+    const content = await fs.readFile(filePath, 'utf8');
+    await setCurrentMarkdownFilePath(filePath);
+    await ensureWatchingActiveMarkdownFile(filePath);
+    return { content, filePath };
+  };
+
+  // The New flow should always produce a markdown document, so this normalizes
+  // user-entered save-panel paths to a canonical ".md" extension.
+  const normalizeMarkdownFileCreationPath = (selectedFilePath: string) => {
+    const resolvedFilePath = path.resolve(selectedFilePath);
+    const parsedFilePath = path.parse(resolvedFilePath);
+    const hasMarkdownExtension =
+      parsedFilePath.ext.toLowerCase() === MARKDOWN_FILE_EXTENSION;
+    if (hasMarkdownExtension) {
+      return resolvedFilePath;
+    }
+
+    return path.join(
+      parsedFilePath.dir,
+      `${parsedFilePath.name}${MARKDOWN_FILE_EXTENSION}`,
+    );
+  };
+
+  // "New..." must never silently overwrite existing content, so creation uses
+  // exclusive write semantics and surfaces a clear user-facing conflict error.
+  const createEmptyMarkdownFileAtPath = async (filePath: string) => {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    try {
+      const newFileHandle = await fs.open(filePath, 'wx');
+      await newFileHandle.close();
+    } catch (error) {
+      const fileSystemError = error as NodeJS.ErrnoException;
+      if (fileSystemError.code === 'EEXIST') {
+        throw new Error(
+          `Could not create markdown file because it already exists:\n${filePath}`,
+        );
+      }
+
+      throw error;
+    }
+  };
+
   // Git command errors vary by version/platform, so this helper keeps stderr
   // extraction in one place for capability fallbacks and user-facing messages.
   const getGitCommandErrorStderr = (error: unknown) => {
@@ -349,14 +400,21 @@ export const createMarkdownFileService = () => {
   };
 
   // Local branch switching and status checks all target the same file path, so
-  // this helper centralizes repository-relative conversion for consistency.
-  const resolveRepositoryRelativeFilePath = (
+  // this helper canonicalizes symlinked aliases (like /tmp -> /private/tmp)
+  // before converting to a repository-relative path for git.
+  const resolveRepositoryRelativeFilePath = async (
     repositoryRoot: string,
     filePath: string,
-  ) =>
-    normalizeRepositoryRelativePathForGit(
-      path.relative(repositoryRoot, filePath),
+  ) => {
+    const [canonicalRepositoryRoot, canonicalFilePath] = await Promise.all([
+      fs.realpath(repositoryRoot).catch(() => path.resolve(repositoryRoot)),
+      fs.realpath(filePath).catch(() => path.resolve(filePath)),
+    ]);
+
+    return normalizeRepositoryRelativePathForGit(
+      path.relative(canonicalRepositoryRoot, canonicalFilePath),
     );
+  };
 
   // Save-to-git should operate on one active file only, so this helper scopes
   // status checks to a single repository-relative path.
@@ -394,7 +452,7 @@ export const createMarkdownFileService = () => {
     filePath: string,
   ): Promise<CurrentMarkdownGitBranchState> => {
     const repositoryRoot = await resolveGitRepositoryRoot(filePath);
-    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+    const repositoryRelativeFilePath = await resolveRepositoryRelativeFilePath(
       repositoryRoot,
       filePath,
     );
@@ -583,7 +641,7 @@ export const createMarkdownFileService = () => {
   // resolves repository coordinates once and delegates to the shared helper.
   const restoreFileFromGitHead = async (filePath: string) => {
     const repositoryRoot = await resolveGitRepositoryRoot(filePath);
-    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+    const repositoryRelativeFilePath = await resolveRepositoryRelativeFilePath(
       repositoryRoot,
       filePath,
     );
@@ -599,7 +657,7 @@ export const createMarkdownFileService = () => {
     filePath: string,
   ) => {
     const repositoryRoot = await resolveGitRepositoryRoot(filePath);
-    const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
+    const repositoryRelativeFilePath = await resolveRepositoryRelativeFilePath(
       repositoryRoot,
       filePath,
     );
@@ -741,10 +799,8 @@ export const createMarkdownFileService = () => {
 
           const filePath = await ensureCurrentMarkdownFilePath();
           const repositoryRoot = await resolveGitRepositoryRoot(filePath);
-          const repositoryRelativeFilePath = resolveRepositoryRelativeFilePath(
-            repositoryRoot,
-            filePath,
-          );
+          const repositoryRelativeFilePath =
+            await resolveRepositoryRelativeFilePath(repositoryRoot, filePath);
 
           await ensureBranchContainsCurrentFileOrThrow(
             repositoryRoot,
@@ -783,6 +839,39 @@ export const createMarkdownFileService = () => {
     );
 
     ipcMain.handle(
+      'editor:create-markdown-file',
+      async (): Promise<CreateMarkdownFileResponse> => {
+        const browserWindow = BrowserWindow.getFocusedWindow();
+        const currentFilePath = await ensureCurrentMarkdownFilePath();
+        const createDialogOptions: Electron.SaveDialogOptions = {
+          title: 'New Markdown File',
+          buttonLabel: 'Create',
+          defaultPath: path.join(
+            path.dirname(currentFilePath),
+            DEFAULT_NEW_MARKDOWN_FILE_NAME,
+          ),
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+          properties: ['createDirectory'],
+        };
+        const { canceled, filePath } = browserWindow
+          ? await dialog.showSaveDialog(browserWindow, createDialogOptions)
+          : await dialog.showSaveDialog(createDialogOptions);
+
+        if (canceled || !filePath) {
+          return { canceled: true };
+        }
+
+        const normalizedMarkdownFilePath =
+          normalizeMarkdownFileCreationPath(filePath);
+        await createEmptyMarkdownFileAtPath(normalizedMarkdownFilePath);
+        const loadedDocument = await activateMarkdownFileAtPath(
+          normalizedMarkdownFilePath,
+        );
+        return { canceled: false, ...loadedDocument };
+      },
+    );
+
+    ipcMain.handle(
       'editor:open-markdown-file',
       async (): Promise<OpenMarkdownFileResponse> => {
         const browserWindow = BrowserWindow.getFocusedWindow();
@@ -805,11 +894,8 @@ export const createMarkdownFileService = () => {
           return { canceled: true };
         }
 
-        const filePath = filePaths[0];
-        const content = await fs.readFile(filePath, 'utf8');
-        await setCurrentMarkdownFilePath(filePath);
-        await ensureWatchingActiveMarkdownFile(filePath);
-        return { canceled: false, content, filePath };
+        const loadedDocument = await activateMarkdownFileAtPath(filePaths[0]);
+        return { canceled: false, ...loadedDocument };
       },
     );
   };
