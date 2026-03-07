@@ -189,7 +189,7 @@ const DocumentCommentsPaneImpl = (
     for (const comment of inlineComments) {
       const anchorPosition = editorHandle.getAnchorPositionForDocumentRange(
         comment.contentFrom,
-        comment.contentTo,
+        comment.contentFrom,
       );
       if (!anchorPosition) {
         hiddenCommentIds.add(comment.id);
