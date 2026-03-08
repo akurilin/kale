@@ -32,7 +32,7 @@ import { countWordsInMarkdownContent } from './word-count';
 
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
-const INITIAL_SAVE_STATUS_TEXT = 'Ready';
+const INITIAL_SAVE_STATUS_TEXT = '';
 const SAVE_SUCCESS_STATUS_TEXT = 'Saved';
 const SAVE_SUCCESS_STATUS_VISIBLE_DURATION_MS = 3000;
 const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
@@ -169,6 +169,10 @@ const buildGitBranchLabel = (
 const formatWordCountLabel = (wordCount: number): string =>
   `${wordCount.toLocaleString()} ${wordCount === 1 ? 'word' : 'words'}`;
 
+type ApplyLoadedDocumentOptions = {
+  saveStatusTextAfterLoad?: string;
+};
+
 // React owns shell composition and lifecycle wiring here because those flows
 // benefit from explicit state transitions more than imperative DOM queries.
 export const App = () => {
@@ -294,12 +298,19 @@ export const App = () => {
   // dispatch (via onDocumentContentReplacedFromDisk) so that any save timers
   // created by user keystrokes during the async reload gap are correctly
   // cleared at the moment the editor content is actually replaced, not before.
+  // Status text is caller-controlled so startup can stay neutral instead of
+  // showing a misleading "Saved" pulse before any write happened.
   const applyLoadedDocument = useCallback(
-    (nextLoadedDocument: LoadMarkdownResponse) => {
+    (
+      nextLoadedDocument: LoadMarkdownResponse,
+      {
+        saveStatusTextAfterLoad = INITIAL_SAVE_STATUS_TEXT,
+      }: ApplyLoadedDocumentOptions = {},
+    ) => {
       setLoadedDocument(nextLoadedDocument);
       setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
       setEditorContentForWordCount(nextLoadedDocument.content);
-      setSaveStatusText('Saved');
+      setSaveStatusText(saveStatusTextAfterLoad);
     },
     [],
   );
@@ -522,19 +533,20 @@ export const App = () => {
     saveController,
   ]);
 
-  // startup is async because the main process decides which file path/content
-  // to restore and the renderer shell should reflect that loading state.
+  // Startup is async because main decides which file path/content to restore.
+  // Status intentionally stays blank here until there's actionable feedback.
   useEffect(() => {
     let isDisposed = false;
 
     const bootstrap = async () => {
-      setSaveStatusText('Loading...');
       const initialDocument = await getMarkdownApi().loadMarkdown();
       if (isDisposed) {
         return;
       }
 
-      applyLoadedDocument(initialDocument);
+      applyLoadedDocument(initialDocument, {
+        saveStatusTextAfterLoad: INITIAL_SAVE_STATUS_TEXT,
+      });
     };
 
     void bootstrap();
@@ -697,7 +709,7 @@ export const App = () => {
   // File dialogs should return the top bar to a stable idle label when users
   // cancel, so this helper keeps the fallback text consistent across actions.
   const getIdleSaveStatusTextAfterFileDialog = () => {
-    return documentCommentsPaneRef.current ? 'Saved' : 'Ready';
+    return INITIAL_SAVE_STATUS_TEXT;
   };
 
   // Document switches should preserve the current draft first, so Open and New
