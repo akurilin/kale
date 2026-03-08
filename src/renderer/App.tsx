@@ -33,6 +33,8 @@ import { countWordsInMarkdownContent } from './word-count';
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
 const INITIAL_SAVE_STATUS_TEXT = 'Ready';
+const SAVE_SUCCESS_STATUS_TEXT = 'Saved';
+const SAVE_SUCCESS_STATUS_VISIBLE_DURATION_MS = 3000;
 const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
 const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
 const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
@@ -220,6 +222,20 @@ export const App = () => {
   const saveControllerRef = useRef<ReturnType<
     typeof createSaveController
   > | null>(null);
+  const clearSaveSuccessStatusTimeoutRef = useRef<ReturnType<
+    typeof window.setTimeout
+  > | null>(null);
+
+  // Save success should read as a transient confirmation, so this helper keeps
+  // timeout cleanup centralized whenever status transitions or effects unmount.
+  const clearPendingSaveSuccessStatusTimeout = useCallback(() => {
+    if (clearSaveSuccessStatusTimeoutRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(clearSaveSuccessStatusTimeoutRef.current);
+    clearSaveSuccessStatusTimeoutRef.current = null;
+  }, []);
 
   if (!saveControllerRef.current) {
     saveControllerRef.current = createSaveController({
@@ -245,6 +261,33 @@ export const App = () => {
   const activeDocumentWordCountLabel = formatWordCountLabel(
     activeDocumentWordCount,
   );
+  const isSaveCurrentFileToGitActionDisabled =
+    !loadedDocument ||
+    isSavingCurrentFileToGit ||
+    isSwitchingGitBranch ||
+    isRestoringFromGit;
+
+  // "Saved" should pulse briefly and then clear so the next successful save
+  // provides a fresh visual acknowledgment instead of persistent idle text.
+  useEffect(() => {
+    clearPendingSaveSuccessStatusTimeout();
+    if (saveStatusText !== SAVE_SUCCESS_STATUS_TEXT) {
+      return;
+    }
+
+    clearSaveSuccessStatusTimeoutRef.current = window.setTimeout(() => {
+      clearSaveSuccessStatusTimeoutRef.current = null;
+      setSaveStatusText((currentSaveStatusText) =>
+        currentSaveStatusText === SAVE_SUCCESS_STATUS_TEXT
+          ? ''
+          : currentSaveStatusText,
+      );
+    }, SAVE_SUCCESS_STATUS_VISIBLE_DURATION_MS);
+
+    return () => {
+      clearPendingSaveSuccessStatusTimeout();
+    };
+  }, [clearPendingSaveSuccessStatusTimeout, saveStatusText]);
 
   // Loading a file updates both editor content and top-bar metadata. Save
   // state synchronization is intentionally deferred to after the editor
@@ -443,7 +486,7 @@ export const App = () => {
   // to disk first, then stages/commits only the active file with a stock
   // message in that file's own git repository.
   const saveCurrentFileToGitWithStockMessage = useCallback(async () => {
-    if (!loadedDocument || isSavingCurrentFileToGit) {
+    if (isSaveCurrentFileToGitActionDisabled) {
       return;
     }
 
@@ -474,9 +517,8 @@ export const App = () => {
       setIsSavingCurrentFileToGit(false);
     }
   }, [
-    isSavingCurrentFileToGit,
+    isSaveCurrentFileToGitActionDisabled,
     loadGitBranchStateForCurrentDocument,
-    loadedDocument,
     saveController,
   ]);
 
@@ -905,6 +947,41 @@ export const App = () => {
     };
   }, [pendingGitBranchSwitchTarget]);
 
+  // Desktop save expectations favor a window-level Mod+S action, so this
+  // shortcut mirrors the top-bar Save button regardless of focused sub-pane.
+  useEffect(() => {
+    const handleWindowKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      const isSaveShortcutKey = event.key.toLowerCase() === 's';
+      if (
+        !isSaveShortcutKey ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        event.shiftKey
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      if (isSaveCurrentFileToGitActionDisabled) {
+        return;
+      }
+
+      void saveCurrentFileToGitWithStockMessage();
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown);
+    };
+  }, [
+    isSaveCurrentFileToGitActionDisabled,
+    saveCurrentFileToGitWithStockMessage,
+  ]);
+
   // The branch dropdown is controlled by the canonical current branch value so
   // cancel/error flows always snap the selector back to the real active branch.
   const handleGitBranchSelectorChanged = (
@@ -998,12 +1075,7 @@ export const App = () => {
           onClick={() => {
             void saveCurrentFileToGitWithStockMessage();
           }}
-          disabled={
-            !loadedDocument ||
-            isSavingCurrentFileToGit ||
-            isSwitchingGitBranch ||
-            isRestoringFromGit
-          }
+          disabled={isSaveCurrentFileToGitActionDisabled}
           title="Save this file by committing it with a stock git message"
         >
           {isSavingCurrentFileToGit ? 'Saving...' : 'Save'}
