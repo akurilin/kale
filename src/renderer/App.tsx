@@ -28,6 +28,7 @@ import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
 import { TerminalPane } from './TerminalPane';
 import { getWindowApi } from './window-api';
+import { countWordsInMarkdownContent } from './word-count';
 
 // app-level status text starts neutral until the first async document load
 // completes and the shell can report a concrete save state.
@@ -159,18 +160,6 @@ const buildGitBranchLabel = (
   }
 
   return 'HEAD (detached)';
-};
-
-// Progress feedback should reflect what users perceive while drafting, so word
-// counting treats each non-whitespace token in the current markdown as a word.
-const countWordsInMarkdownContent = (
-  markdownContent: string | null,
-): number => {
-  if (!markdownContent) {
-    return 0;
-  }
-
-  return markdownContent.match(/\S+/gu)?.length ?? 0;
 };
 
 // The title-row badge stays concise and readable by handling singular/plural
