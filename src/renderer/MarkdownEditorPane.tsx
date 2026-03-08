@@ -43,6 +43,7 @@ import {
 } from '@codemirror/view';
 
 import {
+  frontmatterLineDecorationExtension,
   headingLineDecorationExtension,
   inlineCommentAtomicRangesExtension,
   inlineCommentDecorationExtension,
@@ -525,6 +526,7 @@ const MarkdownEditorPaneImpl = (
       extensions: [
         proseEditorSetupWithoutGutters,
         markdown(),
+        frontmatterLineDecorationExtension(),
         headingLineDecorationExtension(),
         quoteLineDecorationExtension(),
         inlineCommentDecorationExtension(),

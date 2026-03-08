@@ -464,6 +464,10 @@ body {
   text-underline-offset: 0.12em;
 }
 
+.editor .cm-line.cm-frontmatter-line {
+  color: #9a9690;
+}
+
 .editor .cm-line {
   padding-left: 12px;
 }

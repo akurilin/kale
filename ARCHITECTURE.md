@@ -164,6 +164,8 @@ Owns document lifecycle and top-level UI orchestration:
 - Bootstraps active markdown file.
 - Schedules autosave through save controller.
 - Handles new/open/restore/branch-switch/commit actions.
+- Maps `Cmd+S`/`Ctrl+S` at window scope to the same save-commit action as the top-bar **Save** button.
+- Treats `Saved` status as transient UI feedback (auto-clears after a short delay) so repeated saves remain visually noticeable.
 - Handles terminal-pane collapse/expand and native width resize requests.
 - Pushes selection updates to IDE integration.
 - Maintains live editor word count state for the document header badge.

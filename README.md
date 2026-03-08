@@ -15,8 +15,6 @@ Kale integrates with Claude Code through its IDE MCP server (activated with `/id
 
 Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into the tool I wished existed.
 
-Top-bar document actions support both opening existing files and creating new markdown files (`.md`) via a native `New...` save dialog, then immediately switching the editor to the selected file.
-
 ![Kale — document editor with inline comments and integrated Claude Code terminal](assets/readme-screenshot.jpg)
 
 ## Technology

@@ -1004,6 +1004,62 @@ export const buildMarkdownFormattingToggleSelectionUpdate = (
     ),
   );
 
+// ---------------------------------------------------------------------------
+// Frontmatter line decoration
+//
+// TOML (+++) and YAML (---) frontmatter at the start of a document is metadata,
+// not prose. Greying it out visually separates it from article content so the
+// writer's eye naturally skips to the first real paragraph.
+// ---------------------------------------------------------------------------
+
+/** Matches YAML (---) or TOML (+++) frontmatter at the very start of the file. */
+const FRONTMATTER_PATTERN = /^(---|\+\+\+)\r?\n[\s\S]*?\r?\n\1(?:\r?\n|$)/;
+
+// Frontmatter detection operates on raw document text rather than the syntax
+// tree because the standard CodeMirror markdown parser does not recognise TOML
+// `+++` delimiters and may not emit a dedicated node for YAML `---` blocks.
+const buildFrontmatterLineDecorations = (
+  view: EditorView,
+): Range<Decoration>[] => {
+  const decorations: Range<Decoration>[] = [];
+  const { state } = view;
+  const docText = state.doc.toString();
+  const frontmatterMatch = FRONTMATTER_PATTERN.exec(docText);
+
+  if (!frontmatterMatch) {
+    return decorations;
+  }
+
+  const frontmatterEndOffset = frontmatterMatch[0].length;
+  const firstLine = state.doc.lineAt(0);
+  const lastFrontmatterLine = state.doc.lineAt(
+    // The match may include a trailing newline; step back to land on the
+    // closing delimiter line rather than the first content line after it.
+    Math.max(0, frontmatterEndOffset - 1),
+  );
+
+  for (
+    let lineNumber = firstLine.number;
+    lineNumber <= lastFrontmatterLine.number;
+    lineNumber++
+  ) {
+    const line = state.doc.line(lineNumber);
+    decorations.push(
+      Decoration.line({ class: 'cm-frontmatter-line' }).range(line.from),
+    );
+  }
+
+  return decorations;
+};
+
+// Frontmatter styling is applied as line decorations so the greyed-out
+// appearance covers delimiter lines and all key-value content between them.
+export const frontmatterLineDecorationExtension = (): Extension =>
+  createDecorationViewPlugin(
+    (update) => update.docChanged || update.viewportChanged,
+    buildFrontmatterLineDecorations,
+  );
+
 // Formatting shortcuts are editor-native commands so they can participate in
 // CodeMirror's multi-selection mapping and history transaction semantics.
 const runMarkdownFormattingToggleShortcut = (
