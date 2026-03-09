@@ -1,5 +1,5 @@
-# Runs the same checks as the local pre-commit hook plus unit and E2E tests
-# on every push and pull request across all branches.
+# Runs static validation, secret scanning, and tests on every push and
+# pull request across all branches.
 name: CI
 
 on:
@@ -7,8 +7,8 @@ on:
   pull_request:
 
 jobs:
-  lint:
-    name: Lint
+  static-checks:
+    name: Static Checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,31 +17,9 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run lint
-
-  format:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run format:check
-
-  typecheck:
-    name: Typecheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npx tsc --noEmit
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - run: npm run validate:static
 
   unit-tests:
     name: Unit Tests
@@ -54,13 +32,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-
-  shellcheck:
-    name: Shellcheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: shellcheck scripts/*.sh .githooks/*
 
   gitleaks:
     name: Gitleaks

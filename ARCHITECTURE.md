@@ -259,7 +259,7 @@ Top-level layout and responsibilities:
 - `src/ide-server/`: MCP WebSocket server + lock-file + RPC handlers.
 - `src/renderer/`: React app shell, CodeMirror integration, terminal pane, API wrappers.
 - `tests/e2e/`: Playwright Electron scenarios + shared harness.
-- `scripts/`: CDP launcher and screenshot utilities.
+- `scripts/`: instance-scoped CDP QA session launcher and screenshot utilities.
 - `prompts/`: Claude system prompt template.
 - `data/`: bundled sample markdown source.
 - `docs/`: product/protocol/planning docs.
@@ -284,7 +284,8 @@ Top-level layout and responsibilities:
 - `KALE_HEADLESS=1`: hide BrowserWindow and suppress DevTools.
 - `KALE_OPEN_DEVTOOLS=1`: open docked DevTools.
 - `KALE_WINDOW_WIDTH`, `KALE_WINDOW_HEIGHT`: startup size overrides.
-- `KALE_CDP_PORT`: CDP port override in `scripts/start-with-cdp.sh`.
+- `KALE_CDP_PORT`: CDP port override in `scripts/start-with-cdp.sh` (optional).
+- `KALE_QA_INSTANCE_ID`: instance label propagated by `scripts/start-with-cdp.sh` for QA runs.
 
 ## Current Tradeoffs / Known Constraints
 

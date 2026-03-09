@@ -12,6 +12,17 @@ fi
 echo "pre-commit: formatting/linting staged files with lint-staged..."
 npx lint-staged
 
+# Why: shell scripts can affect automation and release workflows, so run the
+# full shellcheck suite on every commit rather than only staged *.sh files.
+if ! command -v shellcheck >/dev/null 2>&1; then
+  echo "pre-commit: shellcheck is not installed; cannot validate shell scripts." >&2
+  echo "Install shellcheck to continue (for example: brew install shellcheck)." >&2
+  exit 1
+fi
+
+echo "pre-commit: validating shell scripts with shellcheck..."
+npm run shellcheck
+
 # Why: Block accidental secret commits before they enter history by scanning
 # only the staged diff, which keeps the hook fast enough for normal development.
 if ! command -v gitleaks >/dev/null 2>&1; then

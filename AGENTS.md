@@ -10,7 +10,9 @@
 - Run E2E tests: `npm run test:e2e`
 - Lint: `npm run lint`
 - Format: `npm run format`
-- Typecheck: `npx tsc --noEmit`
+- Typecheck: `npm run typecheck`
+- Shellcheck: `npm run shellcheck`
+- Static validation pass: `npm run validate:static`
 
 ## Coding style
 
@@ -41,7 +43,7 @@
   connect to the Electron process. See "Driving the App via CDP" below for the correct approach.
 - For quick visual verification, use `scripts/capture_npm_start_window.sh` to screenshot an
   already-running `kale` window. Kill the app process after you're done verifying.
-- After finishing a batch of changes, run `npm run format` and `npm run lint` before wrapping up
+- After finishing a batch of changes, run `npm run validate:static` before wrapping up
 
 ### Why not Playwright MCP?
 
@@ -52,25 +54,38 @@ You must use Playwright as a **Node.js library** via `node -e` (Bash tool), not 
 ### Step 1: Launch the app with CDP
 
 ```bash
-scripts/start-with-cdp.sh
+scripts/start-with-cdp.sh --instance <instance-id> --json
 ```
 
-This builds the app, launches Electron with `--remote-debugging-port=9222`, and waits until CDP
-is ready. Use `--skip-build` to reuse a previous build.
+`--instance` is mandatory. The script fails if it is omitted.
+Each instance gets isolated runtime state under `/tmp/kale-qa/<instance-id>/`
+(`user-data`, `session.md`, logs, and `session.json` metadata).
 
-**Agent default:** Prefer a fresh build (`scripts/start-with-cdp.sh` without `--skip-build`) for
+The script runs in the foreground, streams Electron logs to stdout, and emits one
+machine-readable readiness line:
+
+```text
+KALE_QA_READY {...json...}
+```
+
+It also writes the same metadata to:
+
+```text
+/tmp/kale-qa/<instance-id>/session.json
+```
+
+Use `--skip-build` only when intentionally reusing a build.
+
+**Agent default:** Prefer a fresh build (`scripts/start-with-cdp.sh --instance <id>`) for
 CDP automation runs. Only use `--skip-build` when reusing a build you just created and validated
 in the same session. A stale `.vite/build` can point at a Vite dev server URL (for example
 `http://localhost:5173`) and cause the Electron window to fail to load.
 
-**No manual cleanup needed:** The script automatically kills any existing Electron/CDP instance
-on the same port before launching, so you never need to `pkill` beforehand.
-
 **Codex/agent execution quirk:** In managed shell execution environments (including Codex),
 background processes may be terminated when the launching command session exits. Do not run
-`scripts/start-with-cdp.sh` as a one-shot command and then let that shell session end before
-connecting Playwright. Launch it in a persistent PTY session and keep that session alive until
-the CDP-driven interaction is complete (for example, by tailing `/tmp/kale-cdp.log`).
+`scripts/start-with-cdp.sh --instance <id>` as a one-shot command and then let that shell session
+end before connecting Playwright. Launch it in a persistent PTY session and keep that session
+alive until the CDP-driven interaction is complete.
 
 After launching, wait **5 seconds** for the UI to fully render before connecting with Playwright
 (this machine is fast enough that 5 s is plenty).
@@ -78,8 +93,12 @@ After launching, wait **5 seconds** for the UI to fully render before connecting
 ### Step 2: Connect and get the app page
 
 ```js
+const fs = require('node:fs');
 const { chromium } = require('playwright');
-const browser = await chromium.connectOverCDP('http://localhost:9222');
+const sessionState = JSON.parse(
+  fs.readFileSync('/tmp/kale-qa/<instance-id>/session.json', 'utf8'),
+);
+const browser = await chromium.connectOverCDP(sessionState.cdpUrl);
 const pages = browser.contexts()[0].pages();
 const page = pages.find(p => !p.url().startsWith('devtools://'));
 ```
@@ -134,23 +153,25 @@ sleep 6 && tail -5 /path/to/file.md
 
 ### Step 5: Clean up
 
-Always close the browser connection and kill the Electron process when done:
+Close the browser connection, then end the terminal session running
+`scripts/start-with-cdp.sh --instance <id>` (for example with Ctrl+C).
+Do not use global `pkill` cleanup.
 
 ```js
 await browser.close();
-```
-
-```bash
-pkill -f 'Electron .vite'
 ```
 
 ### Complete example (single `node -e` invocation)
 
 ```bash
 node -e "
+const fs = require('node:fs');
 const { chromium } = require('playwright');
 (async () => {
-  const browser = await chromium.connectOverCDP('http://localhost:9222');
+  const sessionState = JSON.parse(
+    fs.readFileSync('/tmp/kale-qa/<instance-id>/session.json', 'utf8')
+  );
+  const browser = await chromium.connectOverCDP(sessionState.cdpUrl);
   const pages = browser.contexts()[0].pages();
   const page = pages.find(p => !p.url().startsWith('devtools://'));
 
