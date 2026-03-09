@@ -35,7 +35,7 @@ Kale has three process layers:
    - markdown file service
    - terminal session service
    - IDE integration service
-4. IPC handlers are registered for markdown/terminal/IDE/window APIs.
+4. IPC handlers are registered for markdown/terminal/IDE/spellcheck/window APIs.
 5. On `ready`:
    - Terminal runtime validation runs unless `KALE_SKIP_TERMINAL_VALIDATION=1`.
    - Main window is created.
@@ -95,6 +95,13 @@ Owns PTY spawn/IO/resize/kill and Claude startup prerequisites.
 - Spawns PTY with renderer-provided initial rows/cols for correct first-frame full-screen CLI rendering.
 - Streams `terminal:process-data` and `terminal:process-exit` events to renderer.
 
+### Spellcheck Service (`src/main/spellcheck-service.ts`)
+
+Registers the `spellcheck:add-to-dictionary` IPC handler, which calls
+`session.defaultSession.addWordToSpellCheckerDictionary`. This is the only
+spellcheck operation requiring main-process authority — all other checking
+runs in the preload via `webFrame.isWordMisspelled` / `getWordSuggestions`.
+
 ### IDE Integration Service (`src/main/ide-integration-service.ts`)
 
 Coordinates renderer selection events with the IDE MCP server.
@@ -150,6 +157,10 @@ Implements MCP-over-WebSocket for Claude Code IDE integration.
   - `terminal:process-data`
   - `terminal:process-exit`
 
+### Spellcheck IPC
+
+- `spellcheck:add-to-dictionary`
+
 ### IDE + Window IPC
 
 - `ide:selection-changed` (renderer -> main push)
@@ -188,6 +199,14 @@ Owns one long-lived `EditorView` instance and exposes an imperative handle.
   - create from selection
   - update marker payload in place
   - delete marker pair in place
+
+### Spellcheck Extension (`src/renderer/spellcheck-extension.ts`)
+
+Self-contained CM6 linter that spell-checks prose using the Electron/macOS
+system dictionary. Walks the Markdown syntax tree to skip frontmatter, code
+blocks, inline code, URLs, and HTML. Caches per-word results so only newly
+typed words cross the contextBridge on subsequent runs. Includes a custom
+red wavy underline theme and "Add to dictionary" lint actions.
 
 ### CodeMirror Extensions (`src/renderer/codemirror-extensions.ts`)
 
