@@ -37,12 +37,11 @@
 
 - The app can only be driven via CDP (Playwright as a Node Library). Use this approach when you
   need to programmatically interact with the running Electron app — clicking, typing, reading content, etc.
-  Screenshots are handled by another script. You must manually write node js code and execute it in order to
-  drive the app since MCP will not work.
+  You must manually write node js code and execute it in order to drive the app since MCP will not work.
 - Never use Playwright MCP to test or drive the app — it runs its own isolated browser and cannot
   connect to the Electron process. See "Driving the App via CDP" below for the correct approach.
-- For quick visual verification, use `scripts/capture_npm_start_window.sh` to screenshot an
-  already-running `kale` window.
+- For visual verification, use Playwright's `page.screenshot()` after connecting over CDP.
+  This works in headless mode (the default) — no visible window is needed.
   If you launched via `scripts/start-with-cdp.sh --instance <id>`, stop by ending that session
   terminal (for example with Ctrl+C), not with global `pkill`.
 - After finishing a batch of changes, run `npm run validate:static` before wrapping up
@@ -62,6 +61,9 @@ scripts/start-with-cdp.sh --instance <instance-id> --json
 `--instance` is mandatory. The script fails if it is omitted.
 Each instance gets isolated runtime state under `/tmp/kale-qa/<instance-id>/`
 (`user-data`, `session.md`, logs, and `session.json` metadata).
+
+The script runs **headless by default** (no visible window). Pass `--no-headless` to
+show the Electron window for manual debugging.
 
 `--json` suppresses extra human helper lines.
 The machine-readable `KALE_QA_READY {...}` marker line is emitted regardless.

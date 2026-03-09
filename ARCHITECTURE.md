@@ -278,7 +278,7 @@ Top-level layout and responsibilities:
 - `src/ide-server/`: MCP WebSocket server + lock-file + RPC handlers.
 - `src/renderer/`: React app shell, CodeMirror integration, terminal pane, API wrappers.
 - `tests/e2e/`: Playwright Electron scenarios + shared harness.
-- `scripts/`: instance-scoped CDP QA session launcher and screenshot utilities.
+- `scripts/`: instance-scoped CDP QA session launcher (headless by default).
 - `prompts/`: Claude system prompt template.
 - `data/`: bundled sample markdown source.
 - `docs/`: product/protocol/planning docs.

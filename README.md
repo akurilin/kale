@@ -33,10 +33,10 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - Start in development and explicitly open docked DevTools: `KALE_OPEN_DEVTOOLS=1 npm start`
 - Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start` (requested dimensions are clamped to the active display work area)
 - Start in development with a forced startup markdown file path (overrides persisted last-opened-file for that app session): `KALE_STARTUP_MARKDOWN_FILE_PATH=/tmp/kale-repro.md npm start`
-- Start an instance-scoped CDP QA session (required instance ID, runs in foreground until terminal exits): `scripts/start-with-cdp.sh --instance my-qa-run`
+- Start an instance-scoped CDP QA session (required instance ID, headless by default, runs in foreground until terminal exits): `scripts/start-with-cdp.sh --instance my-qa-run`
 - Start an instance-scoped CDP QA session with machine-readable-only startup output (`KALE_QA_READY` marker still always emitted): `scripts/start-with-cdp.sh --instance my-qa-run --json`
+- Start a CDP QA session with a visible window (for manual debugging): `scripts/start-with-cdp.sh --instance my-qa-run --no-headless`
 - Reuse an existing build during QA iteration: `scripts/start-with-cdp.sh --instance my-qa-run --skip-build`
-- Capture a screenshot of an already-running `kale` Electron window into `/tmp` as a JPG: `scripts/capture_npm_start_window.sh` (optional args: capture delay seconds, output path). The script prints the generated file path.
 - Run unit tests: `npm test`
 - Run unit tests in watch mode: `npm run test:watch`
 - Run E2E test (builds the app first): `npm run test:e2e`

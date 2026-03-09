@@ -3,7 +3,7 @@
 # Launch Kale with CDP enabled for an instance-scoped QA session.
 #
 # Usage:
-#   scripts/start-with-cdp.sh --instance <id> [--skip-build] [--json]
+#   scripts/start-with-cdp.sh --instance <id> [--skip-build] [--json] [--no-headless]
 #
 # Why this script is strict about instance IDs:
 # parallel QA runs must never share userData directories, logs, startup files,
@@ -17,6 +17,7 @@ BUILD_DIR="$PROJECT_ROOT/.vite/build"
 
 SKIP_BUILD=false
 JSON_OUTPUT=false
+HEADLESS=true
 INSTANCE_ID=""
 
 # Why: a single usage helper keeps all required flags documented in one place
@@ -24,12 +25,13 @@ INSTANCE_ID=""
 print_usage() {
   cat >&2 <<'EOF'
 Usage:
-  scripts/start-with-cdp.sh --instance <id> [--skip-build] [--json]
+  scripts/start-with-cdp.sh --instance <id> [--skip-build] [--json] [--no-headless]
 
 Options:
   --instance <id>  Required. ASCII letters/digits plus . _ -
   --skip-build     Reuse existing .vite/build output
   --json           Suppress human helper lines; still emits KALE_QA_READY marker
+  --no-headless    Show the Electron window (default is headless / hidden)
 EOF
 }
 
@@ -85,6 +87,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --json)
       JSON_OUTPUT=true
+      shift
+      ;;
+    --no-headless)
+      HEADLESS=false
       shift
       ;;
     -h|--help)
@@ -196,6 +202,7 @@ echo "Launching instance '$INSTANCE_ID' on CDP port $CDP_PORT..."
   KALE_QA_INSTANCE_ID="$INSTANCE_ID" \
   KALE_USER_DATA_DIR="$USER_DATA_DIR" \
   KALE_STARTUP_MARKDOWN_FILE_PATH="$STARTUP_MARKDOWN_FILE_PATH" \
+  KALE_HEADLESS="$( [[ "$HEADLESS" = true ]] && echo 1 || echo 0 )" \
   ./node_modules/.bin/electron .vite/build/main.js --remote-debugging-port="$CDP_PORT"
 ) > >(tee "$LOG_FILE") 2>&1 &
 ELECTRON_PID=$!
