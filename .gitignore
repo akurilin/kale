@@ -94,3 +94,6 @@ out/
 
 # Playwright MCP
 .playwright-mcp/
+
+# Claude Code
+.claude/
