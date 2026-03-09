@@ -160,6 +160,20 @@ export const createMainWindow = () => {
     },
   });
 
+  // Prevent the renderer from navigating away from the app. Without this guard
+  // a rogue link click or programmatic navigation could load an arbitrary URL
+  // inside a window that still has full preload bridge access.
+  mainWindow.webContents.on('will-navigate', (event) => {
+    event.preventDefault();
+  });
+
+  // Deny all attempts to open new browser windows (e.g. target="_blank" links).
+  // This prevents untrusted content from spawning windows with inherited
+  // Electron privileges.
+  mainWindow.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
+
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
