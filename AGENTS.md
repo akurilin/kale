@@ -42,7 +42,9 @@
 - Never use Playwright MCP to test or drive the app — it runs its own isolated browser and cannot
   connect to the Electron process. See "Driving the App via CDP" below for the correct approach.
 - For quick visual verification, use `scripts/capture_npm_start_window.sh` to screenshot an
-  already-running `kale` window. Kill the app process after you're done verifying.
+  already-running `kale` window.
+  If you launched via `scripts/start-with-cdp.sh --instance <id>`, stop by ending that session
+  terminal (for example with Ctrl+C), not with global `pkill`.
 - After finishing a batch of changes, run `npm run validate:static` before wrapping up
 
 ### Why not Playwright MCP?
@@ -60,6 +62,9 @@ scripts/start-with-cdp.sh --instance <instance-id> --json
 `--instance` is mandatory. The script fails if it is omitted.
 Each instance gets isolated runtime state under `/tmp/kale-qa/<instance-id>/`
 (`user-data`, `session.md`, logs, and `session.json` metadata).
+
+`--json` suppresses extra human helper lines.
+The machine-readable `KALE_QA_READY {...}` marker line is emitted regardless.
 
 The script runs in the foreground, streams Electron logs to stdout, and emits one
 machine-readable readiness line:

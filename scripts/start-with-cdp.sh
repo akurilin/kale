@@ -29,7 +29,7 @@ Usage:
 Options:
   --instance <id>  Required. ASCII letters/digits plus . _ -
   --skip-build     Reuse existing .vite/build output
-  --json           Emit readiness via KALE_QA_READY JSON marker line
+  --json           Suppress human helper lines; still emits KALE_QA_READY marker
 EOF
 }
 
