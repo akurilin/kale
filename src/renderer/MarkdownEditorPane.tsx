@@ -51,6 +51,7 @@ import {
   livePreviewMarkersExtension,
   markdownFormattingShortcutExtension,
   quoteLineDecorationExtension,
+  setActiveInlineCommentIdForEditorView,
 } from './codemirror-extensions';
 import { spellcheckExtension } from './spellcheck-extension';
 import {
@@ -208,6 +209,7 @@ type MarkdownEditorPaneProps = {
   onInlineCommentCreationAnchorChanged?: (
     anchorPosition: { top: number; left: number } | null,
   ) => void;
+  onInlineCommentRangeInteraction?: (commentId: string | null) => void;
 };
 
 export type MarkdownEditorPaneHandle = {
@@ -226,6 +228,7 @@ export type MarkdownEditorPaneHandle = {
     nextCommentText: string,
   ) => boolean;
   deleteInlineCommentById: (commentId: string) => boolean;
+  setActiveInlineCommentById: (commentId: string | null) => void;
 };
 
 // forwardRef lets the app shell ask for current editor content during blur,
@@ -240,6 +243,7 @@ const MarkdownEditorPaneImpl = (
     onSelectionDetailsChanged,
     onInlineCommentAnchorGeometryChanged,
     onInlineCommentCreationAnchorChanged,
+    onInlineCommentRangeInteraction,
   }: MarkdownEditorPaneProps,
   ref: ForwardedRef<MarkdownEditorPaneHandle>,
 ) => {
@@ -261,6 +265,27 @@ const MarkdownEditorPaneImpl = (
   const onInlineCommentCreationAnchorChangedRef = useLatestRef(
     onInlineCommentCreationAnchorChanged,
   );
+  const onInlineCommentRangeInteractionRef = useLatestRef(
+    onInlineCommentRangeInteraction,
+  );
+
+  /**
+   * Why: editor click interactions should activate comment cards when users
+   * click highlighted prose, so pointer positions map to comment ranges here.
+   */
+  const findInlineCommentIdContainingDocumentPosition = (
+    markdownContent: string,
+    documentPosition: number,
+  ): string | null => {
+    const parsedComments = parseInlineCommentsFromMarkdown(markdownContent);
+    const inlineCommentAtPosition = parsedComments.find((comment) => {
+      return (
+        documentPosition >= comment.contentFrom &&
+        documentPosition <= comment.contentTo
+      );
+    });
+    return inlineCommentAtPosition?.id ?? null;
+  };
 
   /**
    * Why: floating comment cards and the selection action both need the same
@@ -510,6 +535,14 @@ const MarkdownEditorPaneImpl = (
 
         return true;
       },
+      setActiveInlineCommentById: (commentId: string | null) => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return;
+        }
+
+        setActiveInlineCommentIdForEditorView(editorView, commentId);
+      },
     }),
     [],
   );
@@ -537,6 +570,32 @@ const MarkdownEditorPaneImpl = (
         livePreviewMarkersExtension(),
         spellcheckExtension(),
         EditorView.lineWrapping,
+        EditorView.domEventHandlers({
+          mousedown: (mouseEvent, view) => {
+            const inlineCommentRangeInteractionCallback =
+              onInlineCommentRangeInteractionRef.current;
+            if (!inlineCommentRangeInteractionCallback) {
+              return false;
+            }
+
+            const clickedPosition = view.posAtCoords({
+              x: mouseEvent.clientX,
+              y: mouseEvent.clientY,
+            });
+            if (clickedPosition === null) {
+              inlineCommentRangeInteractionCallback(null);
+              return false;
+            }
+
+            const clickedInlineCommentId =
+              findInlineCommentIdContainingDocumentPosition(
+                view.state.doc.toString(),
+                clickedPosition,
+              );
+            inlineCommentRangeInteractionCallback(clickedInlineCommentId);
+            return false;
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.selectionSet) {
             onSelectionHasTextChangedRef.current?.(

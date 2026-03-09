@@ -14,6 +14,9 @@ const {
   runInlineCommentDeleteScrollStabilityScenario,
 } = require('./scenarios/inline-comment-delete-scroll-stability.scenario');
 const {
+  runInlineCommentActiveFocusSyncScenario,
+} = require('./scenarios/inline-comment-active-focus-sync.scenario');
+const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
 
@@ -26,6 +29,7 @@ const runAllE2ETests = async () => {
   await runInlineCommentBoundaryWhitespaceScenario();
   await runInlineCommentTypingScrollStabilityScenario();
   await runInlineCommentDeleteScrollStabilityScenario();
+  await runInlineCommentActiveFocusSyncScenario();
   await runTerminalPaneCollapseExpandScenario();
   console.log('\nAll E2E tests passed!');
 };

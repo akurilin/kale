@@ -188,6 +188,12 @@ Owns document lifecycle and top-level UI orchestration:
 - Parses inline comments from markdown as source of truth.
 - Positions comment cards by anchor geometry with overlap-avoidance packing.
 - Owns comment create/update/delete interactions via editor imperative API.
+- Owns one active-comment ID (`0..1`) synchronized across editor highlight and sidebar card focus.
+- Routes bidirectional activation:
+  - clicking highlighted text focuses the corresponding comment card
+  - focusing/clicking a comment card activates the referenced editor highlight
+- Clears active comment state on any pointer interaction outside the current active comment card/range.
+- Handles comment-edit completion shortcut (`Cmd/Ctrl+Enter`) to defocus active comment state.
 
 ### CodeMirror Editor (`src/renderer/MarkdownEditorPane.tsx`)
 
@@ -214,6 +220,8 @@ red wavy underline theme and "Add to dictionary" lint actions.
 - Inactive-line link live-preview concealment for inline links, Hugo shortcode link destinations, and autolinks.
 - Heading + quote line decorations.
 - Inline comment marker hiding/highlight decorations.
+- Active inline comment decoration state via a dedicated CodeMirror state field/effect.
+- Active comment range emphasis for the selected inline comment only.
 - Atomic marker ranges + guarded Backspace/Delete behavior.
 - Boundary-aware whitespace insertion at comment edges (`Space`, `Tab`, `Enter`).
 - Markdown formatting shortcuts:
@@ -293,6 +301,7 @@ Top-level layout and responsibilities:
   - boundary whitespace around inline comment anchors
   - comment typing scroll stability
   - comment deletion scroll stability
+  - comment active-focus synchronization + Cmd/Ctrl+Enter defocus behavior
   - terminal pane collapse/expand + window width behavior
 
 ## Important Environment Variables

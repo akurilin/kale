@@ -31,6 +31,8 @@ const INLINE_COMMENT_SELECTION_BUTTON_HEIGHT = 34;
 const INLINE_COMMENT_SELECTION_BUTTON_MARGIN = 8;
 const FLOATING_COMMENT_CARD_GAP = 10;
 const DEFAULT_FLOATING_COMMENT_CARD_HEIGHT = 64;
+const INLINE_COMMENT_CARD_ID_ATTRIBUTE = 'data-inline-comment-card-id';
+const INLINE_COMMENT_RANGE_ID_ATTRIBUTE = 'data-inline-comment-range-id';
 
 type DocumentCommentsPaneProps = {
   loadedDocumentContent: string | null;
@@ -101,6 +103,9 @@ const DocumentCommentsPaneImpl = (
   const [inlineComments, setInlineComments] = useState<InlineComment[]>([]);
   const [inlineCommentSelectionAnchor, setInlineCommentSelectionAnchor] =
     useState<{ top: number; left: number } | null>(null);
+  const [activeInlineCommentId, setActiveInlineCommentId] = useState<
+    string | null
+  >(null);
   const [autoFocusInlineCommentId, setAutoFocusInlineCommentId] = useState<
     string | null
   >(null);
@@ -140,6 +145,7 @@ const DocumentCommentsPaneImpl = (
     if (loadedDocumentContent === null) {
       setInlineComments([]);
       setInlineCommentSelectionAnchor(null);
+      setActiveInlineCommentId(null);
       setAutoFocusInlineCommentId(null);
       setInlineCommentTopOffsetsById({});
       setHiddenInlineCommentIds(new Set());
@@ -148,6 +154,101 @@ const DocumentCommentsPaneImpl = (
 
     setInlineComments(parseInlineCommentsFromMarkdown(loadedDocumentContent));
   }, [loadedDocumentContent, loadedDocumentRevision]);
+
+  /**
+   * Why: editor decorations and sidebar selection should never target stale
+   * IDs, so active state clears automatically when a comment no longer exists.
+   */
+  useEffect(() => {
+    if (activeInlineCommentId === null) {
+      return;
+    }
+
+    const activeCommentStillExists = inlineComments.some(
+      (inlineComment) => inlineComment.id === activeInlineCommentId,
+    );
+    if (!activeCommentStillExists) {
+      setActiveInlineCommentId(null);
+    }
+  }, [activeInlineCommentId, inlineComments]);
+
+  /**
+   * Why: range highlight styling lives inside CodeMirror while activation
+   * orchestration lives in React, so this sync keeps both layers consistent.
+   */
+  useEffect(() => {
+    markdownEditorPaneRef.current?.setActiveInlineCommentById(
+      activeInlineCommentId,
+    );
+  }, [activeInlineCommentId]);
+
+  /**
+   * Why: active comment context should clear immediately when users click
+   * anywhere outside the current card/highlight, so this capture listener
+   * enforces one active comment only while interaction stays in that context.
+   */
+  useEffect(() => {
+    if (activeInlineCommentId === null) {
+      return;
+    }
+
+    const handleWindowPointerDownCapture = (pointerEvent: PointerEvent) => {
+      const pointerTarget = pointerEvent.target;
+      if (!(pointerTarget instanceof Node)) {
+        setActiveInlineCommentId(null);
+        setAutoFocusInlineCommentId(null);
+        return;
+      }
+
+      const pointerTargetElement =
+        pointerTarget instanceof Element
+          ? pointerTarget
+          : pointerTarget.parentElement;
+      if (!pointerTargetElement) {
+        setActiveInlineCommentId(null);
+        setAutoFocusInlineCommentId(null);
+        return;
+      }
+
+      const targetCommentCardElement = pointerTargetElement.closest(
+        `[${INLINE_COMMENT_CARD_ID_ATTRIBUTE}]`,
+      );
+      if (
+        targetCommentCardElement?.getAttribute(
+          INLINE_COMMENT_CARD_ID_ATTRIBUTE,
+        ) === activeInlineCommentId
+      ) {
+        return;
+      }
+
+      const targetCommentRangeElement = pointerTargetElement.closest(
+        `[${INLINE_COMMENT_RANGE_ID_ATTRIBUTE}]`,
+      );
+      if (
+        targetCommentRangeElement?.getAttribute(
+          INLINE_COMMENT_RANGE_ID_ATTRIBUTE,
+        ) === activeInlineCommentId
+      ) {
+        return;
+      }
+
+      setActiveInlineCommentId(null);
+      setAutoFocusInlineCommentId(null);
+    };
+
+    window.addEventListener(
+      'pointerdown',
+      handleWindowPointerDownCapture,
+      true,
+    );
+    return () => {
+      window.removeEventListener(
+        'pointerdown',
+        handleWindowPointerDownCapture,
+        true,
+      );
+    };
+  }, [activeInlineCommentId]);
 
   /**
    * Why: floating comment packing depends on the layout container height, so a
@@ -234,6 +335,7 @@ const DocumentCommentsPaneImpl = (
     }
 
     if (createResult.createdCommentId) {
+      setActiveInlineCommentId(createResult.createdCommentId);
       setAutoFocusInlineCommentId(createResult.createdCommentId);
     }
   };
@@ -270,7 +372,67 @@ const DocumentCommentsPaneImpl = (
       window.alert(
         'Could not delete comment. The comment markers may be malformed.',
       );
+      return;
     }
+
+    setActiveInlineCommentId((currentActiveInlineCommentId) => {
+      return currentActiveInlineCommentId === commentId
+        ? null
+        : currentActiveInlineCommentId;
+    });
+  };
+
+  /**
+   * Why: comment cards and highlighted text both represent the same comment
+   * entity, so interaction from either surface must drive one active-comment ID.
+   */
+  const activateInlineComment = (
+    commentId: string | null,
+    {
+      shouldMoveFocusToCommentInput,
+    }: { shouldMoveFocusToCommentInput: boolean },
+  ) => {
+    setActiveInlineCommentId(commentId);
+    if (!shouldMoveFocusToCommentInput || commentId === null) {
+      return;
+    }
+
+    setAutoFocusInlineCommentId(commentId);
+  };
+
+  /**
+   * Why: clicking or tab-focusing inside a card should visually elevate that
+   * comment and its referenced text range without forcing extra editor focus.
+   */
+  const handleCommentCardActivated = (commentId: string) => {
+    activateInlineComment(commentId, {
+      shouldMoveFocusToCommentInput: false,
+    });
+  };
+
+  /**
+   * Why: keyboard completion shortcuts should close the current comment editing
+   * session, returning the UI to a neutral no-active-comment state.
+   */
+  const handleCommentEditingCompleted = (commentId: string) => {
+    setActiveInlineCommentId((currentActiveInlineCommentId) => {
+      return currentActiveInlineCommentId === commentId
+        ? null
+        : currentActiveInlineCommentId;
+    });
+    setAutoFocusInlineCommentId((currentCommentId) => {
+      return currentCommentId === commentId ? null : currentCommentId;
+    });
+  };
+
+  /**
+   * Why: clicking highlighted editor text should activate the corresponding
+   * sidebar card and move keyboard focus into its textarea for editing.
+   */
+  const handleInlineCommentRangeInteraction = (commentId: string | null) => {
+    activateInlineComment(commentId, {
+      shouldMoveFocusToCommentInput: commentId !== null,
+    });
   };
 
   /**
@@ -348,6 +510,7 @@ const DocumentCommentsPaneImpl = (
           handleInlineCommentAnchorGeometryChanged
         }
         onInlineCommentCreationAnchorChanged={setInlineCommentSelectionAnchor}
+        onInlineCommentRangeInteraction={handleInlineCommentRangeInteraction}
       />
       {loadedDocumentContent !== null && inlineCommentSelectionAnchor ? (
         <button
@@ -380,6 +543,9 @@ const DocumentCommentsPaneImpl = (
         hiddenCommentIds={hiddenInlineCommentIds}
         onChangeCommentText={updateInlineCommentText}
         onDeleteComment={deleteInlineComment}
+        activeCommentId={activeInlineCommentId}
+        onActivateComment={handleCommentCardActivated}
+        onCompleteCommentEditing={handleCommentEditingCompleted}
         autoFocusCommentId={autoFocusInlineCommentId}
         onAutoFocusCommentHandled={handleAutoFocusCommentHandled}
         onCommentCardHeightChanged={handleInlineCommentCardHeightChanged}

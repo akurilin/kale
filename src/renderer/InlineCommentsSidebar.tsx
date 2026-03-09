@@ -12,6 +12,9 @@ type InlineCommentsSidebarProps = {
   hiddenCommentIds: ReadonlySet<string>;
   onChangeCommentText: (commentId: string, nextCommentText: string) => void;
   onDeleteComment: (commentId: string) => void;
+  activeCommentId: string | null;
+  onActivateComment: (commentId: string) => void;
+  onCompleteCommentEditing: (commentId: string) => void;
   autoFocusCommentId: string | null;
   onAutoFocusCommentHandled: (commentId: string) => void;
   onCommentCardHeightChanged: (commentId: string, nextHeight: number) => void;
@@ -25,6 +28,9 @@ export const InlineCommentsSidebar = ({
   hiddenCommentIds,
   onChangeCommentText,
   onDeleteComment,
+  activeCommentId,
+  onActivateComment,
+  onCompleteCommentEditing,
   autoFocusCommentId,
   onAutoFocusCommentHandled,
   onCommentCardHeightChanged,
@@ -62,6 +68,9 @@ export const InlineCommentsSidebar = ({
                   comment={comment}
                   onChangeCommentText={onChangeCommentText}
                   onDeleteComment={onDeleteComment}
+                  isActive={activeCommentId === comment.id}
+                  onActivateComment={onActivateComment}
+                  onCompleteCommentEditing={onCompleteCommentEditing}
                   shouldAutoFocusInput={autoFocusCommentId === comment.id}
                   onAutoFocusHandled={onAutoFocusCommentHandled}
                   onCardHeightChanged={onCommentCardHeightChanged}

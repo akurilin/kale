@@ -26,6 +26,7 @@ This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app wi
 - Bold: `Cmd/Ctrl+B`
 - Italic: `Cmd/Ctrl+I`
 - Heading levels: `Cmd/Ctrl+Option/Alt+1..6`
+- Complete inline comment editing and defocus active comment: `Cmd/Ctrl+Enter`
 
 ## Run Commands
 

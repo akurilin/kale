@@ -7,11 +7,14 @@ import type { SyntaxNode } from '@lezer/common';
 import {
   EditorSelection,
   Prec,
+  StateEffect,
+  StateField,
   type Extension,
   type Range,
   type ChangeSpec,
   type EditorState,
   type SelectionRange,
+  type Transaction,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -624,10 +627,78 @@ export const quoteLineDecorationExtension = (): Extension =>
 
 // Marker ranges are replaced so users interact with highlighted prose while
 // the raw comment syntax remains persisted in the document source.
+const inlineCommentRangeCssClassName = 'cm-inline-comment-range';
+const activeInlineCommentRangeCssClassName = 'cm-inline-comment-range--active';
+
+/**
+ * Why: active inline comment focus can change without document mutations, so a
+ * dedicated effect carries activation state transitions into CodeMirror.
+ */
+const setActiveInlineCommentIdEffect = StateEffect.define<string | null>();
+
+/**
+ * Why: inline comment highlighting needs one canonical active-comment source of
+ * truth inside editor state so decorations and imperative React bridges agree.
+ */
+const activeInlineCommentIdField = StateField.define<string | null>({
+  create: () => null,
+  update: (currentActiveInlineCommentId, transaction) => {
+    let nextActiveInlineCommentId = currentActiveInlineCommentId;
+
+    for (const effect of transaction.effects) {
+      if (effect.is(setActiveInlineCommentIdEffect)) {
+        nextActiveInlineCommentId = effect.value;
+      }
+    }
+
+    if (!transaction.docChanged || nextActiveInlineCommentId === null) {
+      return nextActiveInlineCommentId;
+    }
+
+    const activeCommentStillExists = parseInlineCommentsFromMarkdown(
+      transaction.newDoc.toString(),
+    ).some((comment) => comment.id === nextActiveInlineCommentId);
+    return activeCommentStillExists ? nextActiveInlineCommentId : null;
+  },
+});
+
+/**
+ * Why: decoration rebuild predicates only need to know whether the active-id
+ * effect exists in a transaction, so this helper keeps that check readable.
+ */
+const transactionIncludesActiveInlineCommentIdEffect = (
+  transaction: Transaction,
+): boolean => {
+  return transaction.effects.some((effect) =>
+    effect.is(setActiveInlineCommentIdEffect),
+  );
+};
+
+/**
+ * Why: React owns active-comment orchestration, but CodeMirror owns rendering;
+ * this helper is the narrow bridge that syncs active IDs into editor state.
+ */
+export const setActiveInlineCommentIdForEditorView = (
+  view: EditorView,
+  activeInlineCommentId: string | null,
+): void => {
+  const currentActiveInlineCommentId = view.state.field(
+    activeInlineCommentIdField,
+  );
+  if (currentActiveInlineCommentId === activeInlineCommentId) {
+    return;
+  }
+
+  view.dispatch({
+    effects: setActiveInlineCommentIdEffect.of(activeInlineCommentId),
+  });
+};
+
 const buildInlineCommentDecorations = (
   view: EditorView,
 ): Range<Decoration>[] => {
   const decorations: Range<Decoration>[] = [];
+  const activeInlineCommentId = view.state.field(activeInlineCommentIdField);
   const parsedComments = parseInlineCommentsFromMarkdown(
     view.state.doc.toString(),
   );
@@ -644,11 +715,17 @@ const buildInlineCommentDecorations = (
     );
 
     if (comment.contentFrom < comment.contentTo) {
+      const inlineCommentRangeClassName =
+        comment.id === activeInlineCommentId
+          ? `${inlineCommentRangeCssClassName} ${activeInlineCommentRangeCssClassName}`
+          : inlineCommentRangeCssClassName;
       decorations.push(
-        Decoration.mark({ class: 'cm-inline-comment-range' }).range(
-          comment.contentFrom,
-          comment.contentTo,
-        ),
+        Decoration.mark({
+          class: inlineCommentRangeClassName,
+          attributes: {
+            'data-inline-comment-range-id': comment.id,
+          },
+        }).range(comment.contentFrom, comment.contentTo),
       );
     }
   }
@@ -658,11 +735,17 @@ const buildInlineCommentDecorations = (
 
 // Inline comments are stored as markdown HTML comment markers, so this plugin
 // hides the marker syntax and highlights the anchored text range for editing.
-export const inlineCommentDecorationExtension = (): Extension =>
+export const inlineCommentDecorationExtension = (): Extension => [
+  activeInlineCommentIdField,
   createDecorationViewPlugin(
-    (update) => update.docChanged || update.viewportChanged,
+    (update) =>
+      update.docChanged ||
+      update.viewportChanged ||
+      update.geometryChanged ||
+      update.transactions.some(transactionIncludesActiveInlineCommentIdEffect),
     buildInlineCommentDecorations,
-  );
+  ),
+];
 
 // ---------------------------------------------------------------------------
 // Inline comment marker cursor/deletion protection and edge typing policy
