@@ -9,7 +9,7 @@ Kale is a desktop markdown writing tool built on Electron + React + CodeMirror.
 It combines:
 
 - A prose-first markdown editor with inline comments persisted directly in markdown.
-- Git-aware file actions (`Reset`, branch switching, single-file commit save).
+- Git-aware file actions (`Reset`, single-file commit save).
 - A PTY-backed Claude Code terminal pane.
 - A local IDE MCP WebSocket server so Claude Code can query live editor selection/context.
 
@@ -163,7 +163,7 @@ Owns document lifecycle and top-level UI orchestration:
 
 - Bootstraps active markdown file.
 - Schedules autosave through save controller.
-- Handles new/open/restore/branch-switch/commit actions.
+- Handles new/open/restore/commit actions.
 - Maps `Cmd+S`/`Ctrl+S` at window scope to the same save-commit action as the top-bar **Save** button.
 - Treats `Saved` status as transient UI feedback (auto-clears after a short delay) so repeated saves remain visually noticeable.
 - Handles terminal-pane collapse/expand and native width resize requests.

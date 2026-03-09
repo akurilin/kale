@@ -8,13 +8,11 @@ import {
   useEffect,
   useRef,
   useState,
-  type ChangeEvent,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
 
 import type {
-  CurrentMarkdownGitBranchState,
   IdeSelectionChangedEvent,
   LoadMarkdownResponse,
 } from '../shared-types';
@@ -40,7 +38,6 @@ const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
 const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
 const DEFAULT_TERMINAL_PANE_COLLAPSED = false;
 const DEFAULT_TERMINAL_PANE_AREA_WIDTH_PIXELS = 420;
-const GIT_BRANCH_UNAVAILABLE_OPTION_VALUE = '__git-branch-unavailable__';
 
 // The renderer needs a folder path for terminal startup, so this helper keeps
 // path parsing local and avoids coupling the pane to full document responses.
@@ -147,23 +144,6 @@ const TerminalPaneToggleIcon = ({
   </svg>
 );
 
-// Branches can be in detached HEAD state, so the UI labels that explicitly to
-// avoid implying the user is currently on a named branch.
-const buildGitBranchLabel = (
-  branchName: string,
-  detachedHeadCommitShortSha: string | null,
-) => {
-  if (branchName !== 'HEAD') {
-    return branchName;
-  }
-
-  if (detachedHeadCommitShortSha) {
-    return `HEAD (${detachedHeadCommitShortSha}, detached)`;
-  }
-
-  return 'HEAD (detached)';
-};
-
 // The title-row badge stays concise and readable by handling singular/plural
 // label formatting in one place.
 const formatWordCountLabel = (wordCount: number): string =>
@@ -188,15 +168,6 @@ export const App = () => {
   const [isOpeningFile, setIsOpeningFile] = useState(false);
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [isRestoringFromGit, setIsRestoringFromGit] = useState(false);
-  const [gitBranchState, setGitBranchState] =
-    useState<CurrentMarkdownGitBranchState | null>(null);
-  const [gitBranchLoadErrorText, setGitBranchLoadErrorText] = useState<
-    string | null
-  >(null);
-  const [isLoadingGitBranchState, setIsLoadingGitBranchState] = useState(false);
-  const [isSwitchingGitBranch, setIsSwitchingGitBranch] = useState(false);
-  const [pendingGitBranchSwitchTarget, setPendingGitBranchSwitchTarget] =
-    useState<string | null>(null);
   const [isSavingCurrentFileToGit, setIsSavingCurrentFileToGit] =
     useState(false);
   const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
@@ -226,9 +197,7 @@ export const App = () => {
   const saveControllerRef = useRef<ReturnType<
     typeof createSaveController
   > | null>(null);
-  const clearSaveSuccessStatusTimeoutRef = useRef<ReturnType<
-    typeof window.setTimeout
-  > | null>(null);
+  const clearSaveSuccessStatusTimeoutRef = useRef<number | null>(null);
 
   // Save success should read as a transient confirmation, so this helper keeps
   // timeout cleanup centralized whenever status transitions or effects unmount.
@@ -266,10 +235,7 @@ export const App = () => {
     activeDocumentWordCount,
   );
   const isSaveCurrentFileToGitActionDisabled =
-    !loadedDocument ||
-    isSavingCurrentFileToGit ||
-    isSwitchingGitBranch ||
-    isRestoringFromGit;
+    !loadedDocument || isSavingCurrentFileToGit || isRestoringFromGit;
 
   // "Saved" should pulse briefly and then clear so the next successful save
   // provides a fresh visual acknowledgment instead of persistent idle text.
@@ -346,153 +312,6 @@ export const App = () => {
     [saveController],
   );
 
-  // Git-branch safety checks should include in-memory unsaved edits because
-  // those edits are not visible to git status but can still be lost on switch.
-  const getWhetherCurrentEditorHasUnsavedEdits = useCallback(() => {
-    const currentEditorContent =
-      documentCommentsPaneRef.current?.getCurrentContent();
-    if (currentEditorContent == null) {
-      return false;
-    }
-
-    return currentEditorContent !== saveController.getLastSavedContent();
-  }, [saveController]);
-
-  // Top-bar branch controls need current branch metadata for the active file;
-  // this helper keeps fetch/typing/error handling consistent across callers.
-  const loadGitBranchStateForCurrentDocument = useCallback(
-    async (
-      showAlertOnError: boolean,
-    ): Promise<CurrentMarkdownGitBranchState | null> => {
-      if (!loadedDocument) {
-        setGitBranchState(null);
-        setGitBranchLoadErrorText(null);
-        return null;
-      }
-
-      setIsLoadingGitBranchState(true);
-      try {
-        const response =
-          await getMarkdownApi().getCurrentMarkdownGitBranchState();
-        if (!response.ok) {
-          setGitBranchState(null);
-          setGitBranchLoadErrorText(response.errorMessage);
-          if (showAlertOnError) {
-            window.alert(
-              `Could not read Git branch information.\n\n${response.errorMessage}`,
-            );
-          }
-          return null;
-        }
-
-        setGitBranchState(response.gitBranchState);
-        setGitBranchLoadErrorText(null);
-        return response.gitBranchState;
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error
-            ? error.message
-            : 'Unknown Git branch state error';
-        setGitBranchState(null);
-        setGitBranchLoadErrorText(errorMessage);
-        if (showAlertOnError) {
-          window.alert(
-            `Could not read Git branch information.\n\n${errorMessage}`,
-          );
-        }
-        return null;
-      } finally {
-        setIsLoadingGitBranchState(false);
-      }
-    },
-    [loadedDocument],
-  );
-
-  // Branch switching is a destructive boundary for local edits, so this helper
-  // centralizes save suppression, git IPC, and post-switch editor reloading.
-  const switchCurrentFileToGitBranch = useCallback(
-    async (targetBranchName: string, discardCurrentFileChanges: boolean) => {
-      if (!loadedDocument || isSwitchingGitBranch) {
-        return false;
-      }
-
-      isSuppressingLifecycleSaveRef.current = true;
-      isSuppressingExternalMarkdownReloadRef.current = true;
-      saveController.clearPendingSaveTimer();
-      setIsSwitchingGitBranch(true);
-      setSaveStatusText(`Switching to ${targetBranchName}...`);
-
-      try {
-        const response = await getMarkdownApi().switchCurrentMarkdownGitBranch({
-          branchName: targetBranchName,
-          discardCurrentFileChanges,
-        });
-        if (!response.ok) {
-          setSaveStatusText('Branch switch failed');
-          window.alert(
-            `Could not switch branches.\n\n${response.errorMessage}`,
-          );
-          return false;
-        }
-
-        applyLoadedDocument({
-          filePath: response.filePath,
-          content: response.content,
-        });
-        setGitBranchState(response.gitBranchState);
-        setGitBranchLoadErrorText(null);
-        return true;
-      } catch (error) {
-        setSaveStatusText('Branch switch failed');
-        console.error(error);
-        return false;
-      } finally {
-        isSuppressingLifecycleSaveRef.current = false;
-        isSuppressingExternalMarkdownReloadRef.current = false;
-        setIsSwitchingGitBranch(false);
-      }
-    },
-    [applyLoadedDocument, isSwitchingGitBranch, loadedDocument, saveController],
-  );
-
-  // Selecting a branch first checks for local edits and pauses for explicit
-  // confirmation before any operation that could discard user-authored content.
-  const requestGitBranchSwitch = useCallback(
-    async (targetBranchName: string) => {
-      if (!loadedDocument || isSwitchingGitBranch) {
-        return;
-      }
-
-      const latestGitBranchState =
-        await loadGitBranchStateForCurrentDocument(true);
-      if (!latestGitBranchState) {
-        return;
-      }
-
-      if (targetBranchName === latestGitBranchState.currentBranchName) {
-        return;
-      }
-
-      const currentEditorHasUnsavedEdits =
-        getWhetherCurrentEditorHasUnsavedEdits();
-      const currentFileHasGitModifications =
-        latestGitBranchState.isCurrentFileModified;
-      if (currentEditorHasUnsavedEdits || currentFileHasGitModifications) {
-        setPendingGitBranchSwitchTarget(targetBranchName);
-        return;
-      }
-
-      await switchCurrentFileToGitBranch(targetBranchName, false);
-    },
-    [
-      getWhetherCurrentEditorHasUnsavedEdits,
-      isSwitchingGitBranch,
-      loadGitBranchStateForCurrentDocument,
-      loadedDocument,
-      switchCurrentFileToGitBranch,
-    ],
-  );
-
   // Save should be fast and deterministic, so this flow flushes editor content
   // to disk first, then stages/commits only the active file with a stock
   // message in that file's own git repository.
@@ -520,18 +339,13 @@ export const App = () => {
       setSaveStatusText(
         response.didCreateCommit ? 'Committed' : 'No changes to commit',
       );
-      void loadGitBranchStateForCurrentDocument(false);
     } catch (error) {
       setSaveStatusText('Save failed');
       console.error(error);
     } finally {
       setIsSavingCurrentFileToGit(false);
     }
-  }, [
-    isSaveCurrentFileToGitActionDisabled,
-    loadGitBranchStateForCurrentDocument,
-    saveController,
-  ]);
+  }, [isSaveCurrentFileToGitActionDisabled, saveController]);
 
   // Startup is async because main decides which file path/content to restore.
   // Status intentionally stays blank here until there's actionable feedback.
@@ -555,18 +369,6 @@ export const App = () => {
       isDisposed = true;
     };
   }, [applyLoadedDocument]);
-
-  // Branch metadata follows the currently open file so the dropdown always
-  // reflects the active git context after open/restore/switch transitions.
-  useEffect(() => {
-    if (!loadedDocument) {
-      setGitBranchState(null);
-      setGitBranchLoadErrorText(null);
-      return;
-    }
-
-    void loadGitBranchStateForCurrentDocument(false);
-  }, [loadedDocument, loadGitBranchStateForCurrentDocument]);
 
   // File-change notifications arrive for every disk write — including the
   // app's own saves. Content comparison against the save controller's last
@@ -919,45 +721,6 @@ export const App = () => {
   const terminalPaneToggleLabel = isTerminalPaneCollapsed
     ? 'Expand terminal pane'
     : 'Collapse terminal pane';
-  const gitBranchSelectorValue =
-    gitBranchState?.currentBranchName ?? GIT_BRANCH_UNAVAILABLE_OPTION_VALUE;
-  const isGitBranchSelectorDisabled =
-    !loadedDocument ||
-    isLoadingGitBranchState ||
-    isRestoringFromGit ||
-    isSwitchingGitBranch ||
-    pendingGitBranchSwitchTarget !== null ||
-    !gitBranchState;
-  const gitBranchSelectorTitle = gitBranchLoadErrorText
-    ? `Git branch unavailable: ${gitBranchLoadErrorText}`
-    : 'Switch Git branch';
-
-  // Cancel stale confirmations when file context changes so branch-switch
-  // prompts never apply to a different document than the user selected from.
-  useEffect(() => {
-    setPendingGitBranchSwitchTarget(null);
-  }, [activeDocumentFilePath]);
-
-  // Escape-to-cancel keeps the confirmation modal aligned with desktop dialog
-  // expectations while still requiring explicit "Yes" to discard work.
-  useEffect(() => {
-    if (!pendingGitBranchSwitchTarget) {
-      return;
-    }
-
-    const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') {
-        return;
-      }
-
-      setPendingGitBranchSwitchTarget(null);
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown);
-    };
-  }, [pendingGitBranchSwitchTarget]);
 
   // Desktop save expectations favor a window-level Mod+S action, so this
   // shortcut mirrors the top-bar Save button regardless of focused sub-pane.
@@ -994,31 +757,6 @@ export const App = () => {
     saveCurrentFileToGitWithStockMessage,
   ]);
 
-  // The branch dropdown is controlled by the canonical current branch value so
-  // cancel/error flows always snap the selector back to the real active branch.
-  const handleGitBranchSelectorChanged = (
-    event: ChangeEvent<HTMLSelectElement>,
-  ) => {
-    const requestedBranchName = event.target.value;
-    if (requestedBranchName === GIT_BRANCH_UNAVAILABLE_OPTION_VALUE) {
-      return;
-    }
-
-    void requestGitBranchSwitch(requestedBranchName);
-  };
-
-  // Confirmation keeps branch-switch discard semantics explicit whenever the
-  // current file has local modifications that would otherwise be lost.
-  const confirmPendingGitBranchSwitch = async () => {
-    const targetBranchName = pendingGitBranchSwitchTarget;
-    if (!targetBranchName) {
-      return;
-    }
-
-    setPendingGitBranchSwitchTarget(null);
-    await switchCurrentFileToGitBranch(targetBranchName, true);
-  };
-
   return (
     <>
       <header className="topbar">
@@ -1029,7 +767,7 @@ export const App = () => {
           onClick={() => {
             void openMarkdownFile();
           }}
-          disabled={isOpeningFile || isCreatingFile || isSwitchingGitBranch}
+          disabled={isOpeningFile || isCreatingFile}
         >
           Open...
         </button>
@@ -1039,7 +777,7 @@ export const App = () => {
           onClick={() => {
             void createMarkdownFile();
           }}
-          disabled={isCreatingFile || isOpeningFile || isSwitchingGitBranch}
+          disabled={isCreatingFile || isOpeningFile}
         >
           New...
         </button>
@@ -1049,38 +787,10 @@ export const App = () => {
           onClick={() => {
             void restoreCurrentFileFromGit();
           }}
-          disabled={
-            !loadedDocument || isRestoringFromGit || isSwitchingGitBranch
-          }
+          disabled={!loadedDocument || isRestoringFromGit}
         >
           {isRestoringFromGit ? 'Resetting...' : 'Reset'}
         </button>
-        <label className="topbar-select-wrapper">
-          <span className="topbar-select-label">Branch</span>
-          <select
-            className="topbar-select"
-            value={gitBranchSelectorValue}
-            disabled={isGitBranchSelectorDisabled}
-            title={gitBranchSelectorTitle}
-            aria-label="Switch Git branch"
-            onChange={handleGitBranchSelectorChanged}
-          >
-            {gitBranchState ? (
-              gitBranchState.branchNames.map((branchName) => (
-                <option key={branchName} value={branchName}>
-                  {buildGitBranchLabel(
-                    branchName,
-                    gitBranchState.detachedHeadCommitShortSha,
-                  )}
-                </option>
-              ))
-            ) : (
-              <option value={GIT_BRANCH_UNAVAILABLE_OPTION_VALUE}>
-                {isLoadingGitBranchState ? 'Loading...' : 'No Git branch'}
-              </option>
-            )}
-          </select>
-        </label>
         <button
           className="topbar-button"
           type="button"
@@ -1170,48 +880,6 @@ export const App = () => {
           showMetadataPanel={false}
         />
       </main>
-      {pendingGitBranchSwitchTarget ? (
-        <div className="confirm-modal-backdrop" role="presentation">
-          <div
-            className="confirm-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="branch-switch-confirmation-title"
-          >
-            <h2
-              id="branch-switch-confirmation-title"
-              className="confirm-modal-title"
-            >
-              Switch branch and discard local file changes?
-            </h2>
-            <p className="confirm-modal-body">
-              The current file has local changes. Switching to{' '}
-              <strong>{pendingGitBranchSwitchTarget}</strong> will discard those
-              changes in this file.
-            </p>
-            <div className="confirm-modal-actions">
-              <button
-                className="topbar-button"
-                type="button"
-                onClick={() => {
-                  setPendingGitBranchSwitchTarget(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                className="topbar-button topbar-button--danger"
-                type="button"
-                onClick={() => {
-                  void confirmPendingGitBranchSwitch();
-                }}
-              >
-                Yes
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </>
   );
 };
