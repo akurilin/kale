@@ -166,7 +166,7 @@ fi
 
 # Why: session terminals are the lifecycle boundary in agentic QA, so cleanup
 # on signal/exit must terminate only this script's Electron child process.
-# shellcheck disable=SC2329 # Invoked via trap below, not by direct call.
+# shellcheck disable=SC2317,SC2329 # Invoked via trap below; ShellCheck 0.9 misclassifies trap-only functions as unreachable.
 cleanup() {
   local script_exit_code=$?
   trap - EXIT INT TERM HUP
