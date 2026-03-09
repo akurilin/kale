@@ -20,6 +20,7 @@ if (process.env.KALE_USER_DATA_DIR) {
 
 import { createIdeIntegrationService } from './main/ide-integration-service';
 import { createMarkdownFileService } from './main/markdown-file-service';
+import { registerSpellcheckIpcHandlers } from './main/spellcheck-service';
 import { createTerminalSessionService } from './main/terminal-session-service';
 import { createMainWindow, registerWindowIpcHandlers } from './main/window';
 
@@ -46,6 +47,7 @@ const removeCurrentMarkdownFilePathChangedListener =
 markdownFileService.registerIpcHandlers(ipcMain);
 terminalSessionService.registerIpcHandlers(ipcMain);
 ideIntegrationService.registerIpcHandlers(ipcMain);
+registerSpellcheckIpcHandlers(ipcMain);
 registerWindowIpcHandlers(ipcMain);
 
 // Claude Code checks IDE workspace folders against the terminal cwd, so this
