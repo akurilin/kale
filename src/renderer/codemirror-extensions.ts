@@ -879,6 +879,9 @@ export const inlineCommentEditGuardExtension = (): Extension =>
 
 const markdownStrongFormattingMarker = '**';
 const markdownEmphasisFormattingMarker = '*';
+const MIN_MARKDOWN_HEADING_LEVEL = 1;
+const MAX_MARKDOWN_HEADING_LEVEL = 6;
+const markdownAtxHeadingPrefixPattern = /^#{1,6}(?:\s+|$)/;
 
 // Markdown formatting shortcuts should keep selection direction stable after
 // wrapping/unwrapping so keyboard workflows feel predictable for users who
@@ -1004,6 +1007,90 @@ export const buildMarkdownFormattingToggleSelectionUpdate = (
     ),
   );
 
+// Heading level commands should stay within markdown's supported ATX heading
+// range so unexpected keymap wiring cannot emit invalid heading syntax.
+const clampMarkdownHeadingLevel = (headingLevel: number): number =>
+  Math.max(
+    MIN_MARKDOWN_HEADING_LEVEL,
+    Math.min(MAX_MARKDOWN_HEADING_LEVEL, Math.floor(headingLevel)),
+  );
+
+// Block-level heading shortcuts should operate on full selected lines, and a
+// selection ending exactly at the next line's start should not include it.
+const listUniqueSelectedLineNumbers = (editorState: EditorState): number[] => {
+  const selectedLineNumbers = new Set<number>();
+
+  for (const selectionRange of editorState.selection.ranges) {
+    const selectionFrom = Math.min(selectionRange.from, selectionRange.to);
+    const selectionTo = Math.max(selectionRange.from, selectionRange.to);
+    const selectionEndsAtStartOfLine =
+      !selectionRange.empty &&
+      selectionTo > selectionFrom &&
+      editorState.sliceDoc(selectionTo - 1, selectionTo) === '\n';
+    const inclusiveSelectionTo = selectionEndsAtStartOfLine
+      ? selectionTo - 1
+      : selectionTo;
+
+    const startLineNumber = editorState.doc.lineAt(selectionFrom).number;
+    const endLineNumber = editorState.doc.lineAt(inclusiveSelectionTo).number;
+    for (
+      let lineNumber = startLineNumber;
+      lineNumber <= endLineNumber;
+      lineNumber += 1
+    ) {
+      selectedLineNumbers.add(lineNumber);
+    }
+  }
+
+  return Array.from(selectedLineNumbers).sort(
+    (leftLineNumber, rightLineNumber) => leftLineNumber - rightLineNumber,
+  );
+};
+
+// Heading shortcuts should preserve indentation and replace any existing ATX
+// prefix so repeated level changes stay deterministic on the same line.
+const buildLineTextWithMarkdownHeadingLevel = (
+  lineText: string,
+  headingLevel: number,
+): string => {
+  const indentationPrefixLength = lineText.match(/^\s*/)?.[0].length ?? 0;
+  const indentationPrefix = lineText.slice(0, indentationPrefixLength);
+  const textWithoutIndentation = lineText.slice(indentationPrefixLength);
+  const textWithoutExistingHeadingPrefix = textWithoutIndentation.replace(
+    markdownAtxHeadingPrefixPattern,
+    '',
+  );
+  return `${indentationPrefix}${'#'.repeat(headingLevel)} ${textWithoutExistingHeadingPrefix}`;
+};
+
+// Exposing heading-change specs keeps keyboard behavior unit-testable without
+// constructing a DOM-backed EditorView for command execution.
+export const buildMarkdownHeadingShortcutChangesForState = (
+  editorState: EditorState,
+  headingLevel: number,
+): readonly ChangeSpec[] => {
+  const normalizedHeadingLevel = clampMarkdownHeadingLevel(headingLevel);
+  const selectedLineNumbers = listUniqueSelectedLineNumbers(editorState);
+  const headingShortcutChanges: ChangeSpec[] = [];
+
+  for (const lineNumber of selectedLineNumbers) {
+    const line = editorState.doc.line(lineNumber);
+    const lineTextWithTargetHeadingLevel =
+      buildLineTextWithMarkdownHeadingLevel(line.text, normalizedHeadingLevel);
+    if (lineTextWithTargetHeadingLevel === line.text) {
+      continue;
+    }
+
+    headingShortcutChanges.push({
+      from: line.from,
+      to: line.to,
+      insert: lineTextWithTargetHeadingLevel,
+    });
+  }
+
+  return headingShortcutChanges;
+};
+
 // ---------------------------------------------------------------------------
 // Frontmatter line decoration
 //
@@ -1088,8 +1175,32 @@ const toggleMarkdownStrongFormattingShortcut = (view: EditorView): boolean =>
 const toggleMarkdownEmphasisFormattingShortcut = (view: EditorView): boolean =>
   runMarkdownFormattingToggleShortcut(view, markdownEmphasisFormattingMarker);
 
-// A high-precedence keymap ensures Mod-i and Mod-b run prose formatting
-// commands before CodeMirror's bundled default key bindings.
+// Heading-level shortcuts mirror common writer tooling (Google Docs/Obsidian)
+// by rewriting whole selected lines to the requested markdown heading level.
+const runMarkdownHeadingShortcut = (
+  view: EditorView,
+  headingLevel: number,
+): boolean => {
+  const headingShortcutChanges = buildMarkdownHeadingShortcutChangesForState(
+    view.state,
+    headingLevel,
+  );
+  if (headingShortcutChanges.length === 0) {
+    return false;
+  }
+
+  view.dispatch(
+    view.state.update({
+      changes: headingShortcutChanges,
+      scrollIntoView: true,
+      userEvent: 'input.type',
+    }),
+  );
+  return true;
+};
+
+// A high-precedence keymap ensures prose shortcuts run before CodeMirror's
+// bundled defaults, including heading-level shortcuts on Mod-Alt-1..6.
 export const markdownFormattingShortcutExtension = (): Extension =>
   Prec.high(
     keymap.of([
@@ -1103,5 +1214,14 @@ export const markdownFormattingShortcutExtension = (): Extension =>
         run: toggleMarkdownEmphasisFormattingShortcut,
         preventDefault: true,
       },
+      ...Array.from({ length: MAX_MARKDOWN_HEADING_LEVEL }, (_, index) => {
+        const headingLevel = index + 1;
+        return {
+          key: `Mod-Alt-${headingLevel}`,
+          run: (view: EditorView) =>
+            runMarkdownHeadingShortcut(view, headingLevel),
+          preventDefault: true,
+        };
+      }),
     ]),
   );

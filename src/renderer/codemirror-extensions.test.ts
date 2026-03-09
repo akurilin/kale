@@ -3,6 +3,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildMarkdownHeadingShortcutChangesForState,
   buildLivePreviewDecorationInstructionsForState,
   buildMarkdownFormattingToggleSelectionUpdate,
 } from './codemirror-extensions';
@@ -19,6 +20,19 @@ const applyMarkdownFormattingToggleToState = (
   initialState.update(
     buildMarkdownFormattingToggleSelectionUpdate(initialState, markdownMarker),
   ).state;
+
+// Heading shortcut tests should assert final text after line-level rewrites, so
+// this helper applies the exported heading-change spec to an immutable state.
+const applyMarkdownHeadingShortcutToState = (
+  initialState: EditorState,
+  headingLevel: number,
+): EditorState =>
+  initialState.update({
+    changes: buildMarkdownHeadingShortcutChangesForState(
+      initialState,
+      headingLevel,
+    ),
+  }).state;
 
 // Selection assertions are easier to read when each test can ask for the
 // selected text directly from the final state.
@@ -185,6 +199,52 @@ describe('buildMarkdownFormattingToggleSelectionUpdate', () => {
     expect(nextState.selection.ranges[0].to).toBe(7);
     expect(nextState.selection.ranges[1].from).toBe(12);
     expect(nextState.selection.ranges[1].to).toBe(16);
+  });
+});
+
+describe('buildMarkdownHeadingShortcutChangesForState', () => {
+  it('converts the cursor line into the requested heading level', () => {
+    const initialState = EditorState.create({
+      doc: 'hello world',
+      selection: EditorSelection.cursor(4),
+    });
+
+    const nextState = applyMarkdownHeadingShortcutToState(initialState, 2);
+
+    expect(nextState.doc.toString()).toBe('## hello world');
+  });
+
+  it('replaces an existing heading level while preserving indentation', () => {
+    const initialState = EditorState.create({
+      doc: '  #### Nested title',
+      selection: EditorSelection.cursor(10),
+    });
+
+    const nextState = applyMarkdownHeadingShortcutToState(initialState, 3);
+
+    expect(nextState.doc.toString()).toBe('  ### Nested title');
+  });
+
+  it('applies heading conversion across all lines touched by selection', () => {
+    const initialState = EditorState.create({
+      doc: 'alpha\nbeta\ngamma',
+      selection: EditorSelection.range(1, 12),
+    });
+
+    const nextState = applyMarkdownHeadingShortcutToState(initialState, 4);
+
+    expect(nextState.doc.toString()).toBe('#### alpha\n#### beta\n#### gamma');
+  });
+
+  it('does not include the next line when selection ends at line start', () => {
+    const initialState = EditorState.create({
+      doc: 'first\nsecond\nthird',
+      selection: EditorSelection.range(0, 6),
+    });
+
+    const nextState = applyMarkdownHeadingShortcutToState(initialState, 1);
+
+    expect(nextState.doc.toString()).toBe('# first\nsecond\nthird');
   });
 });
 

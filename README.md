@@ -21,6 +21,12 @@ Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into t
 
 This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a React renderer shell.
 
+## Editor Shortcuts
+
+- Bold: `Cmd/Ctrl+B`
+- Italic: `Cmd/Ctrl+I`
+- Heading levels: `Cmd/Ctrl+Option/Alt+1..6`
+
 ## Run Commands
 
 - Start in development: `npm start`

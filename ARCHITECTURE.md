@@ -200,6 +200,7 @@ Owns one long-lived `EditorView` instance and exposes an imperative handle.
 - Markdown formatting shortcuts:
   - `Mod-b` toggle bold
   - `Mod-i` toggle italic
+  - `Mod-Alt-1..6` convert selected lines to heading levels `#`..`######`
 
 ### Save Controller (`src/renderer/save-controller.ts`)
 
