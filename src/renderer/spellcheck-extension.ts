@@ -24,6 +24,8 @@ import { getSpellcheckApi } from './spellcheck-api';
 const WORD_PATTERN =
   /[a-zA-Z\u00C0-\u024F]{2,}(?:['''][a-zA-Z\u00C0-\u024F]+)*/g;
 
+type TextRange = { from: number; to: number };
+
 // ---------------------------------------------------------------------------
 // Frontmatter detection
 // ---------------------------------------------------------------------------
@@ -31,6 +33,28 @@ const WORD_PATTERN =
 // YAML (---) or TOML (+++) frontmatter at the very start of the file.
 // Duplicated from codemirror-extensions.ts to keep this module self-contained.
 const FRONTMATTER_PATTERN = /^(---|\+\+\+)\r?\n[\s\S]*?\r?\n\1(?:\r?\n|$)/;
+
+// ---------------------------------------------------------------------------
+// HTML comment detection (regex-based fallback)
+// ---------------------------------------------------------------------------
+
+// Matches all HTML comments including Kale's inline @comment markers.
+// The Lezer Markdown syntax tree doesn't always classify inline HTML comments
+// as recognised node types (especially complex markers with JSON payloads),
+// so this regex provides a reliable fallback that mirrors the approach already
+// used by the word-count module.
+const HTML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+
+// Scans raw document text for HTML comment ranges. Exported for testing.
+export const collectHtmlCommentRanges = (text: string): TextRange[] => {
+  const ranges: TextRange[] = [];
+  HTML_COMMENT_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = HTML_COMMENT_PATTERN.exec(text)) !== null) {
+    ranges.push({ from: match.index, to: match.index + match[0].length });
+  }
+  return ranges;
+};
 
 // ---------------------------------------------------------------------------
 // Syntax-tree-based prose filtering
@@ -58,10 +82,10 @@ const SKIP_LEAF_NODE_NAMES = new Set([
   'HardBreak',
 ]);
 
-type TextRange = { from: number; to: number };
-
 // Build a sorted list of document ranges that should not be spell-checked.
-// Uses the Markdown syntax tree to identify code, URLs, and other non-prose.
+// Uses the Markdown syntax tree to identify code, URLs, and other non-prose,
+// supplemented by regex-based HTML comment detection for markers the parser
+// may not classify as HTML nodes (e.g. Kale's inline @comment markers).
 const collectNonProseRanges = (view: EditorView): TextRange[] => {
   const ranges: TextRange[] = [];
   const docText = view.state.doc.toString();
@@ -71,6 +95,10 @@ const collectNonProseRanges = (view: EditorView): TextRange[] => {
   if (frontmatterMatch) {
     ranges.push({ from: 0, to: frontmatterMatch[0].length });
   }
+
+  // Regex-based HTML comment detection catches inline @comment markers and
+  // any other HTML comments that the syntax tree might miss.
+  ranges.push(...collectHtmlCommentRanges(docText));
 
   syntaxTree(view.state).iterate({
     enter: (node) => {
@@ -84,6 +112,10 @@ const collectNonProseRanges = (view: EditorView): TextRange[] => {
       }
     },
   });
+
+  // Sort by start position so the linear overlap scan in the linter works
+  // correctly after merging syntax-tree and regex-based ranges.
+  ranges.sort((a, b) => a.from - b.from);
 
   return ranges;
 };
