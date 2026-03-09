@@ -52,6 +52,7 @@ import {
   markdownFormattingShortcutExtension,
   quoteLineDecorationExtension,
 } from './codemirror-extensions';
+import { spellcheckExtension } from './spellcheck-extension';
 import {
   createInlineCommentEndMarker,
   createInlineCommentId,
@@ -534,6 +535,7 @@ const MarkdownEditorPaneImpl = (
         inlineCommentEditGuardExtension(),
         markdownFormattingShortcutExtension(),
         livePreviewMarkersExtension(),
+        spellcheckExtension(),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.selectionSet) {

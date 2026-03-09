@@ -3,7 +3,7 @@
 // so UI code can request file operations without direct Electron/Node access.
 //
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 import type {
   AdjustWindowWidthRequest,
@@ -123,6 +123,17 @@ contextBridge.exposeInMainWorld('ideServerApi', {
   reportSelectionChanged: (event: IdeSelectionChangedEvent): void => {
     ipcRenderer.send('ide:selection-changed', event);
   },
+});
+
+// Spellcheck uses webFrame APIs (synchronous, no IPC round-trip) for the
+// hot path (word checking and suggestions). Only addToDictionary needs IPC
+// because session.addWordToSpellCheckerDictionary is a main-process API.
+contextBridge.exposeInMainWorld('spellcheckApi', {
+  checkWords: (words: string[]): string[] =>
+    words.filter((word) => webFrame.isWordMisspelled(word)),
+  getSuggestions: (word: string): string[] => webFrame.getWordSuggestions(word),
+  addToDictionary: (word: string): Promise<boolean> =>
+    ipcRenderer.invoke('spellcheck:add-to-dictionary', word),
 });
 
 // Window controls stay explicit in preload so renderer layout code can request
