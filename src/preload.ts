@@ -9,11 +9,14 @@ import type {
   AdjustWindowWidthRequest,
   AdjustWindowWidthResponse,
   CommitCurrentMarkdownFileResponse,
+  CurrentMarkdownFilePathChangedEvent,
   CreateMarkdownFileResponse,
   ExternalMarkdownFileChangedEvent,
+  GetCurrentFileRepositoryMarkdownTreeResponse,
   GetCurrentMarkdownGitBranchStateResponse,
   IdeSelectionChangedEvent,
   LoadMarkdownResponse,
+  OpenMarkdownFileAtPathResponse,
   OpenMarkdownFileResponse,
   ResizeTerminalSessionRequest,
   RestoreMarkdownFromGitResponse,
@@ -33,10 +36,17 @@ contextBridge.exposeInMainWorld('markdownApi', {
     ipcRenderer.invoke('editor:load-markdown'),
   openMarkdownFile: (): Promise<OpenMarkdownFileResponse> =>
     ipcRenderer.invoke('editor:open-markdown-file'),
+  openMarkdownFileAtPath: (
+    filePath: string,
+  ): Promise<OpenMarkdownFileAtPathResponse> =>
+    ipcRenderer.invoke('editor:open-markdown-file-at-path', filePath),
   createMarkdownFile: (): Promise<CreateMarkdownFileResponse> =>
     ipcRenderer.invoke('editor:create-markdown-file'),
   saveMarkdown: (content: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('editor:save-markdown', content),
+  getCurrentFileRepositoryMarkdownTree:
+    (): Promise<GetCurrentFileRepositoryMarkdownTreeResponse> =>
+      ipcRenderer.invoke('editor:get-current-file-repository-markdown-tree'),
   restoreCurrentMarkdownFromGit: (): Promise<RestoreMarkdownFromGitResponse> =>
     ipcRenderer.invoke('editor:restore-current-markdown-from-git'),
   commitCurrentMarkdownFile: (): Promise<CommitCurrentMarkdownFileResponse> =>
@@ -61,6 +71,23 @@ contextBridge.exposeInMainWorld('markdownApi', {
     return () => {
       ipcRenderer.removeListener(
         'editor:external-markdown-file-changed',
+        listener,
+      );
+    };
+  },
+  onCurrentMarkdownFilePathChanged: (
+    handler: (event: CurrentMarkdownFilePathChangedEvent) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: CurrentMarkdownFilePathChangedEvent,
+    ) => {
+      handler(payload);
+    };
+    ipcRenderer.on('editor:current-markdown-file-path-changed', listener);
+    return () => {
+      ipcRenderer.removeListener(
+        'editor:current-markdown-file-path-changed',
         listener,
       );
     };

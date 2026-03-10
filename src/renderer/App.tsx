@@ -24,6 +24,7 @@ import {
 import { getIdeServerApi } from './ide-server-api';
 import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
+import { RepositoryFileExplorerPane } from './RepositoryFileExplorerPane';
 import { TerminalPane } from './TerminalPane';
 import { getWindowApi } from './window-api';
 import { countWordsInMarkdownContent } from './word-count';
@@ -33,11 +34,15 @@ import { countWordsInMarkdownContent } from './word-count';
 const INITIAL_SAVE_STATUS_TEXT = '';
 const SAVE_SUCCESS_STATUS_TEXT = 'Saved';
 const SAVE_SUCCESS_STATUS_VISIBLE_DURATION_MS = 3000;
-const DEFAULT_EDITOR_PANE_WIDTH_RATIO = 3 / 5;
-const MIN_EDITOR_PANE_WIDTH_RATIO = 0.25;
-const MAX_EDITOR_PANE_WIDTH_RATIO = 0.8;
+const WORKSPACE_DIVIDER_WIDTH_PIXELS = 8;
+const DEFAULT_EXPLORER_PANE_WIDTH_PIXELS = 280;
+const MIN_EXPLORER_PANE_WIDTH_PIXELS = 220;
+const MAX_EXPLORER_PANE_WIDTH_PIXELS = 420;
 const DEFAULT_TERMINAL_PANE_COLLAPSED = false;
-const DEFAULT_TERMINAL_PANE_AREA_WIDTH_PIXELS = 420;
+const DEFAULT_TERMINAL_PANE_WIDTH_PIXELS = 420;
+const MIN_TERMINAL_PANE_WIDTH_PIXELS = 280;
+const MAX_TERMINAL_PANE_WIDTH_PIXELS = 720;
+const MIN_EDITOR_PANE_WIDTH_PIXELS = 360;
 
 // The renderer needs a folder path for terminal startup, so this helper keeps
 // path parsing local and avoids coupling the pane to full document responses.
@@ -59,58 +64,118 @@ const getParentDirectoryPathFromFilePath = (filePath: string | null) => {
   return normalizedFilePath.slice(0, lastSlashIndex);
 };
 
-// This helper constrains drag updates so both panes remain usable while still
-// allowing the user to strongly prefer one side over the other.
-const clampEditorPaneWidthRatio = (editorPaneWidthRatio: number) => {
+// Sidebar widths should stay within explicit pixel bounds so both side panes
+// remain ergonomic while the center editor retains a useful minimum size.
+const clampWorkspacePaneWidthPixels = (
+  requestedPaneWidthPixels: number,
+  minimumPaneWidthPixels: number,
+  maximumPaneWidthPixels: number,
+) => {
   return Math.min(
-    MAX_EDITOR_PANE_WIDTH_RATIO,
-    Math.max(MIN_EDITOR_PANE_WIDTH_RATIO, editorPaneWidthRatio),
+    maximumPaneWidthPixels,
+    Math.max(minimumPaneWidthPixels, requestedPaneWidthPixels),
   );
 };
 
-// The split grid is driven from one helper so expand/collapse can swap layouts
-// without duplicating track strings across JSX and resize code.
-const buildWorkspaceSplitColumnsValue = (
-  editorPaneWidthRatio: number,
-  isTerminalPaneCollapsed: boolean,
-) => {
-  if (isTerminalPaneCollapsed) {
-    return '1fr 0px 0fr';
-  }
+// The split grid is driven from one helper so expand/collapse can swap tracks
+// without duplicating column math across JSX, drag handlers, and resize logic.
+const buildWorkspaceSplitColumnsValue = ({
+  explorerPaneWidthPixels,
+  isExplorerPaneVisible,
+  isTerminalPaneVisible,
+  terminalPaneWidthPixels,
+}: {
+  explorerPaneWidthPixels: number;
+  isExplorerPaneVisible: boolean;
+  isTerminalPaneVisible: boolean;
+  terminalPaneWidthPixels: number;
+}) => {
+  const resolvedExplorerPaneWidthPixels = isExplorerPaneVisible
+    ? explorerPaneWidthPixels
+    : 0;
+  const resolvedExplorerDividerWidthPixels = isExplorerPaneVisible
+    ? WORKSPACE_DIVIDER_WIDTH_PIXELS
+    : 0;
+  const resolvedTerminalDividerWidthPixels = isTerminalPaneVisible
+    ? WORKSPACE_DIVIDER_WIDTH_PIXELS
+    : 0;
+  const resolvedTerminalPaneWidthPixels = isTerminalPaneVisible
+    ? terminalPaneWidthPixels
+    : 0;
 
-  return `${editorPaneWidthRatio}fr 8px ${1 - editorPaneWidthRatio}fr`;
+  return `${resolvedExplorerPaneWidthPixels}px ${resolvedExplorerDividerWidthPixels}px minmax(0, 1fr) ${resolvedTerminalDividerWidthPixels}px ${resolvedTerminalPaneWidthPixels}px`;
 };
 
-// The app resizes the native window by the exact hidden/revealed pane width so
-// collapsing the terminal does not leave a blank canvas gap in the editor area.
-const measureVisibleTerminalPaneAreaWidthPixels = (
+// Collapse/expand should resize the native window by the exact hidden/revealed
+// sidebar footprint so removing a sidebar never leaves blank workspace canvas.
+const measureVisiblePaneAreaWidthPixels = (
   workspaceElement: HTMLElement | null,
+  paneSelector: string,
+  dividerSelector: string,
 ) => {
   if (!workspaceElement) {
     return 0;
   }
 
-  const terminalPaneElement =
-    workspaceElement.querySelector<HTMLElement>('.terminal-pane');
-  const workspaceDividerElement =
-    workspaceElement.querySelector<HTMLElement>('.workspace-divider');
-  const terminalPaneWidth =
-    terminalPaneElement?.getBoundingClientRect().width ?? 0;
-  const workspaceDividerWidth =
-    workspaceDividerElement?.getBoundingClientRect().width ?? 0;
-  return Math.max(0, Math.round(terminalPaneWidth + workspaceDividerWidth));
+  const paneElement = workspaceElement.querySelector<HTMLElement>(paneSelector);
+  const dividerElement =
+    workspaceElement.querySelector<HTMLElement>(dividerSelector);
+  const paneWidth = paneElement?.getBoundingClientRect().width ?? 0;
+  const dividerWidth = dividerElement?.getBoundingClientRect().width ?? 0;
+  return Math.max(0, Math.round(paneWidth + dividerWidth));
 };
 
 // Keeping the toggle icon as a tiny component avoids repeating SVG markup in
 // the top bar and makes expanded/collapsed semantics explicit at the call site.
-const TerminalPaneToggleIcon = ({
-  isTerminalPaneCollapsed,
+const ExplorerPaneToggleIcon = ({
+  isExplorerPaneVisible,
 }: {
-  isTerminalPaneCollapsed: boolean;
+  isExplorerPaneVisible: boolean;
+}) => (
+  <svg
+    className={`topbar-explorer-toggle-icon ${
+      isExplorerPaneVisible ? 'topbar-explorer-toggle-icon--active' : ''
+    }`.trim()}
+    viewBox="0 0 20 20"
+    width="16"
+    height="16"
+    aria-hidden="true"
+  >
+    <rect
+      className="topbar-explorer-toggle-icon-outline"
+      x="1.5"
+      y="2.5"
+      width="17"
+      height="15"
+      rx="3"
+    />
+    <rect
+      className="topbar-explorer-toggle-icon-explorer-pane"
+      x="3"
+      y="4"
+      width="3.5"
+      height="12"
+      rx="1.2"
+    />
+    <rect
+      className="topbar-explorer-toggle-icon-main-pane"
+      x="7"
+      y="4"
+      width="10"
+      height="12"
+      rx="1.8"
+    />
+  </svg>
+);
+
+const TerminalPaneToggleIcon = ({
+  isTerminalPaneVisible,
+}: {
+  isTerminalPaneVisible: boolean;
 }) => (
   <svg
     className={`topbar-terminal-toggle-icon ${
-      isTerminalPaneCollapsed ? '' : 'topbar-terminal-toggle-icon--active'
+      isTerminalPaneVisible ? 'topbar-terminal-toggle-icon--active' : ''
     }`.trim()}
     viewBox="0 0 20 20"
     width="16"
@@ -170,9 +235,16 @@ export const App = () => {
   const [isRestoringFromGit, setIsRestoringFromGit] = useState(false);
   const [isSavingCurrentFileToGit, setIsSavingCurrentFileToGit] =
     useState(false);
-  const [editorPaneWidthRatio, setEditorPaneWidthRatio] = useState(
-    DEFAULT_EDITOR_PANE_WIDTH_RATIO,
+  const [explorerPaneWidthPixels, setExplorerPaneWidthPixels] = useState(
+    DEFAULT_EXPLORER_PANE_WIDTH_PIXELS,
   );
+  const [terminalPaneWidthPixels, setTerminalPaneWidthPixels] = useState(
+    DEFAULT_TERMINAL_PANE_WIDTH_PIXELS,
+  );
+  const [isExplorerPaneManuallyCollapsed, setIsExplorerPaneManuallyCollapsed] =
+    useState(false);
+  const [explorerRepositoryAvailability, setExplorerRepositoryAvailability] =
+    useState<boolean | null>(null);
   const [isTerminalPaneCollapsed, setIsTerminalPaneCollapsed] = useState(
     DEFAULT_TERMINAL_PANE_COLLAPSED,
   );
@@ -180,12 +252,15 @@ export const App = () => {
     null,
   );
   const workspaceElementRef = useRef<HTMLElement | null>(null);
+  const lastExpandedExplorerPaneAreaWidthPixelsRef = useRef<number>(
+    DEFAULT_EXPLORER_PANE_WIDTH_PIXELS + WORKSPACE_DIVIDER_WIDTH_PIXELS,
+  );
   const lastExpandedTerminalPaneAreaWidthPixelsRef = useRef<number>(
-    DEFAULT_TERMINAL_PANE_AREA_WIDTH_PIXELS,
+    DEFAULT_TERMINAL_PANE_WIDTH_PIXELS + WORKSPACE_DIVIDER_WIDTH_PIXELS,
   );
-  const activeWorkspaceDividerDragCleanupRef = useRef<(() => void) | null>(
-    null,
-  );
+  const activeExplorerDividerDragCleanupRef = useRef<(() => void) | null>(null);
+  const activeTerminalDividerDragCleanupRef = useRef<(() => void) | null>(null);
+  const previousExplorerRepositoryAvailableRef = useRef<boolean | null>(null);
   const isSuppressingLifecycleSaveRef = useRef(false);
   const isSuppressingExternalMarkdownReloadRef = useRef(false);
   // When a three-way merge produces content that differs from disk, this ref
@@ -228,6 +303,10 @@ export const App = () => {
   const activeDocumentWorkingDirectory = getParentDirectoryPathFromFilePath(
     activeDocumentFilePath,
   );
+  const isExplorerRepositoryAvailable = explorerRepositoryAvailability === true;
+  const isExplorerPaneVisible =
+    isExplorerRepositoryAvailable && !isExplorerPaneManuallyCollapsed;
+  const isTerminalPaneVisible = !isTerminalPaneCollapsed;
   const activeDocumentWordCount = countWordsInMarkdownContent(
     editorContentForWordCount ?? loadedDocument?.content ?? null,
   );
@@ -503,10 +582,80 @@ export const App = () => {
   // unmount cleanup must release any active drag handlers to avoid leaks.
   useEffect(() => {
     return () => {
-      activeWorkspaceDividerDragCleanupRef.current?.();
-      activeWorkspaceDividerDragCleanupRef.current = null;
+      activeExplorerDividerDragCleanupRef.current?.();
+      activeExplorerDividerDragCleanupRef.current = null;
+      activeTerminalDividerDragCleanupRef.current?.();
+      activeTerminalDividerDragCleanupRef.current = null;
     };
   }, []);
+
+  // Collapse/expand uses remembered sidebar footprints for native window size
+  // adjustments, so visible width changes keep those measurements fresh.
+  useEffect(() => {
+    if (!isExplorerPaneVisible) {
+      return;
+    }
+
+    lastExpandedExplorerPaneAreaWidthPixelsRef.current =
+      explorerPaneWidthPixels + WORKSPACE_DIVIDER_WIDTH_PIXELS;
+  }, [explorerPaneWidthPixels, isExplorerPaneVisible]);
+
+  useEffect(() => {
+    if (!isTerminalPaneVisible) {
+      return;
+    }
+
+    lastExpandedTerminalPaneAreaWidthPixelsRef.current =
+      terminalPaneWidthPixels + WORKSPACE_DIVIDER_WIDTH_PIXELS;
+  }, [isTerminalPaneVisible, terminalPaneWidthPixels]);
+
+  // Repository availability should hide and reveal the explorer without making
+  // the explorer component own native window geometry or sibling layout logic.
+  useEffect(() => {
+    if (explorerRepositoryAvailability === null) {
+      return;
+    }
+
+    const previousExplorerRepositoryAvailable =
+      previousExplorerRepositoryAvailableRef.current;
+    if (previousExplorerRepositoryAvailable === null) {
+      previousExplorerRepositoryAvailableRef.current =
+        isExplorerRepositoryAvailable;
+      return;
+    }
+
+    if (previousExplorerRepositoryAvailable === isExplorerRepositoryAvailable) {
+      return;
+    }
+
+    if (!isExplorerRepositoryAvailable) {
+      activeExplorerDividerDragCleanupRef.current?.();
+      if (!isExplorerPaneManuallyCollapsed) {
+        void getWindowApi()
+          .adjustWindowWidthBy({
+            deltaWidth: -lastExpandedExplorerPaneAreaWidthPixelsRef.current,
+          })
+          .catch((error: unknown) => {
+            console.error(error);
+          });
+      }
+    } else if (!isExplorerPaneManuallyCollapsed) {
+      void getWindowApi()
+        .adjustWindowWidthBy({
+          deltaWidth: lastExpandedExplorerPaneAreaWidthPixelsRef.current,
+        })
+        .catch((error: unknown) => {
+          console.error(error);
+        });
+    }
+
+    previousExplorerRepositoryAvailableRef.current =
+      isExplorerRepositoryAvailable;
+  }, [
+    explorerRepositoryAvailability,
+    isExplorerPaneManuallyCollapsed,
+    isExplorerRepositoryAvailable,
+  ]);
 
   // File dialogs should return the top bar to a stable idle label when users
   // cancel, so this helper keeps the fallback text consistent across actions.
@@ -552,6 +701,39 @@ export const App = () => {
       setIsOpeningFile(false);
     }
   };
+
+  // Explorer-initiated file opens should preserve the same save-before-switch
+  // lifecycle as the top-bar Open/New flows without coupling explorer logic to
+  // editor internals.
+  const openMarkdownFileAtPath = useCallback(
+    async (filePath: string) => {
+      if (isOpeningFile || isCreatingFile) {
+        return;
+      }
+
+      setIsOpeningFile(true);
+      try {
+        await flushCurrentEditorContentBeforeFileSwitch();
+
+        setSaveStatusText('Opening...');
+        const response =
+          await getMarkdownApi().openMarkdownFileAtPath(filePath);
+        if (!response.ok) {
+          setSaveStatusText('Open failed');
+          window.alert(`Could not open this file.\n\n${response.errorMessage}`);
+          return;
+        }
+
+        applyLoadedDocument(response);
+      } catch (error) {
+        setSaveStatusText('Open failed');
+        console.error(error);
+      } finally {
+        setIsOpeningFile(false);
+      }
+    },
+    [applyLoadedDocument, isCreatingFile, isOpeningFile],
+  );
 
   // New document creation should mirror Open's switch behavior while using a
   // native save panel to choose destination folder and file name in one step.
@@ -625,9 +807,15 @@ export const App = () => {
     }
   };
 
-  // The split ratio lives in React state so the default ratio is only a
-  // starting point and user drags can redefine the layout for the session.
-  const resizeWorkspacePanesFromClientX = (clientX: number) => {
+  // Sidebar drag sizing should only run in desktop split mode so responsive
+  // stacked layouts do not receive meaningless horizontal resize gestures.
+  const isCompactWorkspaceLayoutActive = () => {
+    return window.innerWidth <= 900;
+  };
+
+  // Left-sidebar drag math clamps against the visible right sidebar and a
+  // minimum editor width so the center document pane never becomes unusable.
+  const resizeExplorerPaneFromClientX = (clientX: number) => {
     const workspaceElement = workspaceElementRef.current;
     if (!workspaceElement) {
       return;
@@ -638,60 +826,188 @@ export const App = () => {
       return;
     }
 
-    const nextEditorPaneWidthRatio =
-      (clientX - workspaceBounds.left) / workspaceBounds.width;
-    setEditorPaneWidthRatio(
-      clampEditorPaneWidthRatio(nextEditorPaneWidthRatio),
+    const visibleTerminalAreaWidthPixels = isTerminalPaneVisible
+      ? terminalPaneWidthPixels + WORKSPACE_DIVIDER_WIDTH_PIXELS
+      : 0;
+    const maximumExplorerPaneWidthPixels = Math.min(
+      MAX_EXPLORER_PANE_WIDTH_PIXELS,
+      Math.max(
+        MIN_EXPLORER_PANE_WIDTH_PIXELS,
+        Math.floor(
+          workspaceBounds.width -
+            visibleTerminalAreaWidthPixels -
+            MIN_EDITOR_PANE_WIDTH_PIXELS -
+            WORKSPACE_DIVIDER_WIDTH_PIXELS,
+        ),
+      ),
+    );
+    const requestedExplorerPaneWidthPixels =
+      clientX - workspaceBounds.left - WORKSPACE_DIVIDER_WIDTH_PIXELS / 2;
+    setExplorerPaneWidthPixels(
+      clampWorkspacePaneWidthPixels(
+        requestedExplorerPaneWidthPixels,
+        MIN_EXPLORER_PANE_WIDTH_PIXELS,
+        maximumExplorerPaneWidthPixels,
+      ),
     );
   };
 
-  // Mouse drag listeners are attached to the window during the drag so resizing
-  // continues smoothly even when the pointer leaves the narrow splitter target.
-  const startWorkspaceDividerDrag = (
-    event: ReactMouseEvent<HTMLDivElement>,
-  ) => {
-    if (isTerminalPaneCollapsed) {
+  // Right-sidebar drag math mirrors the explorer logic while measuring width
+  // from the workspace's right edge for a natural terminal resize gesture.
+  const resizeTerminalPaneFromClientX = (clientX: number) => {
+    const workspaceElement = workspaceElementRef.current;
+    if (!workspaceElement) {
+      return;
+    }
+
+    const workspaceBounds = workspaceElement.getBoundingClientRect();
+    if (workspaceBounds.width <= 0) {
+      return;
+    }
+
+    const visibleExplorerAreaWidthPixels = isExplorerPaneVisible
+      ? explorerPaneWidthPixels + WORKSPACE_DIVIDER_WIDTH_PIXELS
+      : 0;
+    const maximumTerminalPaneWidthPixels = Math.min(
+      MAX_TERMINAL_PANE_WIDTH_PIXELS,
+      Math.max(
+        MIN_TERMINAL_PANE_WIDTH_PIXELS,
+        Math.floor(
+          workspaceBounds.width -
+            visibleExplorerAreaWidthPixels -
+            MIN_EDITOR_PANE_WIDTH_PIXELS -
+            WORKSPACE_DIVIDER_WIDTH_PIXELS,
+        ),
+      ),
+    );
+    const requestedTerminalPaneWidthPixels =
+      workspaceBounds.right - clientX - WORKSPACE_DIVIDER_WIDTH_PIXELS / 2;
+    setTerminalPaneWidthPixels(
+      clampWorkspacePaneWidthPixels(
+        requestedTerminalPaneWidthPixels,
+        MIN_TERMINAL_PANE_WIDTH_PIXELS,
+        maximumTerminalPaneWidthPixels,
+      ),
+    );
+  };
+
+  // Drag listeners live on the window so resizing stays smooth after the
+  // pointer leaves the narrow divider target.
+  const startExplorerDividerDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!isExplorerPaneVisible || isCompactWorkspaceLayoutActive()) {
       return;
     }
 
     event.preventDefault();
-    activeWorkspaceDividerDragCleanupRef.current?.();
+    activeExplorerDividerDragCleanupRef.current?.();
+    activeTerminalDividerDragCleanupRef.current?.();
 
     const handleWindowMouseMove = (mouseMoveEvent: MouseEvent) => {
-      resizeWorkspacePanesFromClientX(mouseMoveEvent.clientX);
+      resizeExplorerPaneFromClientX(mouseMoveEvent.clientX);
     };
 
-    const finishWorkspaceDividerDrag = () => {
+    const finishExplorerDividerDrag = () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
-      window.removeEventListener('mouseup', finishWorkspaceDividerDrag);
+      window.removeEventListener('mouseup', finishExplorerDividerDrag);
       document.body.classList.remove('is-resizing-panes');
       if (
-        activeWorkspaceDividerDragCleanupRef.current ===
-        finishWorkspaceDividerDrag
+        activeExplorerDividerDragCleanupRef.current ===
+        finishExplorerDividerDrag
       ) {
-        activeWorkspaceDividerDragCleanupRef.current = null;
+        activeExplorerDividerDragCleanupRef.current = null;
       }
     };
 
-    activeWorkspaceDividerDragCleanupRef.current = finishWorkspaceDividerDrag;
+    activeExplorerDividerDragCleanupRef.current = finishExplorerDividerDrag;
     document.body.classList.add('is-resizing-panes');
     window.addEventListener('mousemove', handleWindowMouseMove);
-    window.addEventListener('mouseup', finishWorkspaceDividerDrag);
-    resizeWorkspacePanesFromClientX(event.clientX);
+    window.addEventListener('mouseup', finishExplorerDividerDrag);
+    resizeExplorerPaneFromClientX(event.clientX);
   };
+
+  const startTerminalDividerDrag = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (!isTerminalPaneVisible || isCompactWorkspaceLayoutActive()) {
+      return;
+    }
+
+    event.preventDefault();
+    activeTerminalDividerDragCleanupRef.current?.();
+    activeExplorerDividerDragCleanupRef.current?.();
+
+    const handleWindowMouseMove = (mouseMoveEvent: MouseEvent) => {
+      resizeTerminalPaneFromClientX(mouseMoveEvent.clientX);
+    };
+
+    const finishTerminalDividerDrag = () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', finishTerminalDividerDrag);
+      document.body.classList.remove('is-resizing-panes');
+      if (
+        activeTerminalDividerDragCleanupRef.current ===
+        finishTerminalDividerDrag
+      ) {
+        activeTerminalDividerDragCleanupRef.current = null;
+      }
+    };
+
+    activeTerminalDividerDragCleanupRef.current = finishTerminalDividerDrag;
+    document.body.classList.add('is-resizing-panes');
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', finishTerminalDividerDrag);
+    resizeTerminalPaneFromClientX(event.clientX);
+  };
+
+  // The explorer should behave like the terminal pane: manual collapse keeps a
+  // remembered width and shrinks or expands the native window by that footprint.
+  const toggleExplorerPaneCollapsedState = useCallback(() => {
+    if (!isExplorerRepositoryAvailable) {
+      return;
+    }
+
+    if (isExplorerPaneManuallyCollapsed) {
+      setIsExplorerPaneManuallyCollapsed(false);
+      void getWindowApi()
+        .adjustWindowWidthBy({
+          deltaWidth: lastExpandedExplorerPaneAreaWidthPixelsRef.current,
+        })
+        .catch((error: unknown) => {
+          console.error(error);
+        });
+      return;
+    }
+
+    const measuredExplorerPaneAreaWidthPixels =
+      measureVisiblePaneAreaWidthPixels(
+        workspaceElementRef.current,
+        '.workspace-pane--explorer',
+        '.workspace-divider--explorer',
+      );
+    if (measuredExplorerPaneAreaWidthPixels > 0) {
+      lastExpandedExplorerPaneAreaWidthPixelsRef.current =
+        measuredExplorerPaneAreaWidthPixels;
+    }
+
+    activeExplorerDividerDragCleanupRef.current?.();
+    setIsExplorerPaneManuallyCollapsed(true);
+    void getWindowApi()
+      .adjustWindowWidthBy({
+        deltaWidth: -lastExpandedExplorerPaneAreaWidthPixelsRef.current,
+      })
+      .catch((error: unknown) => {
+        console.error(error);
+      });
+  }, [isExplorerPaneManuallyCollapsed, isExplorerRepositoryAvailable]);
 
   // Expanding/collapsing should feel like one intentional layout action, so
   // this callback updates split state and asks main to resize the native window
   // by the pane area width that was hidden or restored.
   const toggleTerminalPaneCollapsedState = useCallback(() => {
     if (isTerminalPaneCollapsed) {
-      const widthToExpandByPixels = Math.max(
-        1,
-        Math.round(lastExpandedTerminalPaneAreaWidthPixelsRef.current),
-      );
       setIsTerminalPaneCollapsed(false);
       void getWindowApi()
-        .adjustWindowWidthBy({ deltaWidth: widthToExpandByPixels })
+        .adjustWindowWidthBy({
+          deltaWidth: lastExpandedTerminalPaneAreaWidthPixelsRef.current,
+        })
         .catch((error: unknown) => {
           console.error(error);
         });
@@ -699,13 +1015,17 @@ export const App = () => {
     }
 
     const measuredTerminalPaneAreaWidthPixels =
-      measureVisibleTerminalPaneAreaWidthPixels(workspaceElementRef.current);
+      measureVisiblePaneAreaWidthPixels(
+        workspaceElementRef.current,
+        '.terminal-pane',
+        '.workspace-divider--terminal',
+      );
     if (measuredTerminalPaneAreaWidthPixels > 0) {
       lastExpandedTerminalPaneAreaWidthPixelsRef.current =
         measuredTerminalPaneAreaWidthPixels;
     }
 
-    activeWorkspaceDividerDragCleanupRef.current?.();
+    activeTerminalDividerDragCleanupRef.current?.();
     setIsTerminalPaneCollapsed(true);
     void getWindowApi()
       .adjustWindowWidthBy({
@@ -716,11 +1036,14 @@ export const App = () => {
       });
   }, [isTerminalPaneCollapsed]);
 
-  // The label and title stay in sync so screen readers and pointer users both
-  // get clear affordance for the same toggle action.
-  const terminalPaneToggleLabel = isTerminalPaneCollapsed
-    ? 'Expand terminal pane'
-    : 'Collapse terminal pane';
+  // The labels and titles stay in sync so screen readers and pointer users both
+  // get clear affordance for the same toggle actions.
+  const explorerPaneToggleLabel = isExplorerPaneVisible
+    ? 'Collapse file explorer pane'
+    : 'Expand file explorer pane';
+  const terminalPaneToggleLabel = isTerminalPaneVisible
+    ? 'Collapse terminal pane'
+    : 'Expand terminal pane';
 
   // Desktop save expectations favor a window-level Mod+S action, so this
   // shortcut mirrors the top-bar Save button regardless of focused sub-pane.
@@ -805,36 +1128,72 @@ export const App = () => {
         <div className="file-path">{loadedDocument?.filePath ?? ''}</div>
         <div className="save-status">{saveStatusText}</div>
         <button
-          className={`topbar-icon-button ${
-            isTerminalPaneCollapsed ? '' : 'topbar-icon-button--active'
+          className={`topbar-icon-button topbar-explorer-toggle-button ${
+            isExplorerPaneVisible ? 'topbar-icon-button--active' : ''
+          }`.trim()}
+          type="button"
+          aria-label={explorerPaneToggleLabel}
+          aria-pressed={isExplorerPaneVisible}
+          title={
+            isExplorerRepositoryAvailable
+              ? explorerPaneToggleLabel
+              : 'File explorer unavailable for non-git files'
+          }
+          disabled={!isExplorerRepositoryAvailable}
+          onClick={() => {
+            toggleExplorerPaneCollapsedState();
+          }}
+        >
+          <ExplorerPaneToggleIcon
+            isExplorerPaneVisible={isExplorerPaneVisible}
+          />
+        </button>
+        <button
+          className={`topbar-icon-button topbar-terminal-toggle-button ${
+            isTerminalPaneVisible ? 'topbar-icon-button--active' : ''
           }`.trim()}
           type="button"
           aria-label={terminalPaneToggleLabel}
-          aria-pressed={!isTerminalPaneCollapsed}
+          aria-pressed={isTerminalPaneVisible}
           title={terminalPaneToggleLabel}
           onClick={() => {
             toggleTerminalPaneCollapsedState();
           }}
         >
           <TerminalPaneToggleIcon
-            isTerminalPaneCollapsed={isTerminalPaneCollapsed}
+            isTerminalPaneVisible={isTerminalPaneVisible}
           />
         </button>
       </header>
       <main
         className={`workspace workspace--split ${
-          isTerminalPaneCollapsed ? 'workspace--terminal-collapsed' : ''
+          isExplorerPaneVisible ? '' : 'workspace--explorer-collapsed'
+        } ${
+          isTerminalPaneVisible ? '' : 'workspace--terminal-collapsed'
         }`.trim()}
         ref={workspaceElementRef}
         style={
           {
-            '--workspace-split-columns': buildWorkspaceSplitColumnsValue(
-              editorPaneWidthRatio,
-              isTerminalPaneCollapsed,
-            ),
+            '--workspace-split-columns': buildWorkspaceSplitColumnsValue({
+              explorerPaneWidthPixels,
+              isExplorerPaneVisible,
+              isTerminalPaneVisible,
+              terminalPaneWidthPixels,
+            }),
           } as CSSProperties
         }
       >
+        <RepositoryFileExplorerPane
+          onRequestOpenFile={openMarkdownFileAtPath}
+          onRepositoryAvailabilityChanged={setExplorerRepositoryAvailability}
+        />
+        <div
+          className={`workspace-divider workspace-divider--explorer ${
+            isExplorerPaneVisible ? '' : 'workspace-divider--collapsed'
+          }`.trim()}
+          aria-hidden="true"
+          onMouseDown={startExplorerDividerDrag}
+        />
         <section className="pane workspace-pane workspace-pane--editor">
           <div className="pane-title">
             <span>Document</span>
@@ -867,11 +1226,11 @@ export const App = () => {
           />
         </section>
         <div
-          className={`workspace-divider ${
-            isTerminalPaneCollapsed ? 'workspace-divider--collapsed' : ''
+          className={`workspace-divider workspace-divider--terminal ${
+            isTerminalPaneVisible ? '' : 'workspace-divider--collapsed'
           }`.trim()}
           aria-hidden="true"
-          onMouseDown={startWorkspaceDividerDrag}
+          onMouseDown={startTerminalDividerDrag}
         />
         <TerminalPane
           title="Terminal"

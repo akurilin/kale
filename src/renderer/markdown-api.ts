@@ -5,10 +5,13 @@
 
 import type {
   CommitCurrentMarkdownFileResponse,
+  CurrentMarkdownFilePathChangedEvent,
   CreateMarkdownFileResponse,
   GetCurrentMarkdownGitBranchStateResponse,
   ExternalMarkdownFileChangedEvent,
+  GetCurrentFileRepositoryMarkdownTreeResponse,
   LoadMarkdownResponse,
+  OpenMarkdownFileAtPathResponse,
   OpenMarkdownFileResponse,
   RestoreMarkdownFromGitResponse,
   SaveMarkdownResponse,
@@ -19,8 +22,12 @@ import type {
 type MarkdownApi = {
   loadMarkdown: () => Promise<LoadMarkdownResponse>;
   openMarkdownFile: () => Promise<OpenMarkdownFileResponse>;
+  openMarkdownFileAtPath: (
+    filePath: string,
+  ) => Promise<OpenMarkdownFileAtPathResponse>;
   createMarkdownFile: () => Promise<CreateMarkdownFileResponse>;
   saveMarkdown: (content: string) => Promise<SaveMarkdownResponse>;
+  getCurrentFileRepositoryMarkdownTree: () => Promise<GetCurrentFileRepositoryMarkdownTreeResponse>;
   restoreCurrentMarkdownFromGit: () => Promise<RestoreMarkdownFromGitResponse>;
   commitCurrentMarkdownFile: () => Promise<CommitCurrentMarkdownFileResponse>;
   getCurrentMarkdownGitBranchState: () => Promise<GetCurrentMarkdownGitBranchStateResponse>;
@@ -29,6 +36,9 @@ type MarkdownApi = {
   ) => Promise<SwitchCurrentMarkdownGitBranchResponse>;
   onExternalMarkdownFileChanged: (
     handler: (event: ExternalMarkdownFileChangedEvent) => void,
+  ) => () => void;
+  onCurrentMarkdownFilePathChanged: (
+    handler: (event: CurrentMarkdownFilePathChangedEvent) => void,
   ) => () => void;
 };
 

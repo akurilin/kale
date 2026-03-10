@@ -7,16 +7,20 @@ import { watch as watchWithChokidar, type FSWatcher } from 'chokidar';
 
 import type {
   CommitCurrentMarkdownFileResponse,
+  CurrentMarkdownFilePathChangedEvent,
   CreateMarkdownFileResponse,
   CurrentMarkdownGitBranchState,
   ExternalMarkdownFileChangedEvent,
+  GetCurrentFileRepositoryMarkdownTreeResponse,
   GetCurrentMarkdownGitBranchStateResponse,
   LoadMarkdownResponse,
+  OpenMarkdownFileAtPathResponse,
   OpenMarkdownFileResponse,
   RestoreMarkdownFromGitResponse,
   SwitchCurrentMarkdownGitBranchRequest,
   SwitchCurrentMarkdownGitBranchResponse,
 } from '../shared-types';
+import { buildRepositoryMarkdownTree } from './repository-markdown-tree';
 
 const BUNDLED_SAMPLE_MARKDOWN_FILE = path.resolve(
   app.getAppPath(),
@@ -116,6 +120,18 @@ export const createMarkdownFileService = () => {
     }
   };
 
+  // Renderer-side file-aware surfaces (like the explorer) need the active file
+  // path without coupling to sibling props, so path changes are broadcast here.
+  const broadcastCurrentMarkdownFilePathChanged = (filePath: string) => {
+    const eventPayload: CurrentMarkdownFilePathChangedEvent = { filePath };
+    for (const browserWindow of BrowserWindow.getAllWindows()) {
+      browserWindow.webContents.send(
+        'editor:current-markdown-file-path-changed',
+        eventPayload,
+      );
+    }
+  };
+
   // Chokidar smooths over platform-specific save behavior, so this watcher
   // treats change/add events as notifications. The debounce only deduplicates
   // rapid chokidar events; correctness still comes from renderer content checks.
@@ -184,6 +200,7 @@ export const createMarkdownFileService = () => {
   // IDE workspace synchronization depends on file-path transitions, so this
   // helper fan-outs active-file updates to subscribers in main.
   const emitCurrentMarkdownFilePathChanged = (filePath: string) => {
+    broadcastCurrentMarkdownFilePathChanged(filePath);
     for (const listener of currentMarkdownFilePathChangedListeners) {
       try {
         listener(filePath);
@@ -333,6 +350,22 @@ export const createMarkdownFileService = () => {
     await setCurrentMarkdownFilePath(filePath);
     await ensureWatchingActiveMarkdownFile(filePath);
     return { content, filePath };
+  };
+
+  // Explorer row clicks should flow through the same active-document path as
+  // every other document switch, while returning a structured error contract.
+  const openMarkdownFileAtPath = async (
+    filePath: string,
+  ): Promise<OpenMarkdownFileAtPathResponse> => {
+    try {
+      const resolvedFilePath = path.resolve(filePath);
+      const loadedDocument = await activateMarkdownFileAtPath(resolvedFilePath);
+      return { ok: true, ...loadedDocument };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown file open error';
+      return { ok: false, errorMessage };
+    }
   };
 
   // The New flow should always produce a markdown document, so this normalizes
@@ -527,6 +560,44 @@ export const createMarkdownFileService = () => {
       isCurrentFileModified: porcelainStatusOutput.trim().length > 0,
     };
   };
+
+  // Explorer loading should treat "not in a git repo" as an expected empty
+  // state rather than a generic failure, so this helper normalizes that split.
+  const readCurrentFileRepositoryMarkdownTree =
+    async (): Promise<GetCurrentFileRepositoryMarkdownTreeResponse> => {
+      try {
+        const activeFilePath = await ensureCurrentMarkdownFilePath();
+        const repositoryRoot = await resolveGitRepositoryRoot(activeFilePath);
+        const tree = await buildRepositoryMarkdownTree(repositoryRoot);
+        return {
+          ok: true,
+          repositoryRoot,
+          activeFilePath,
+          tree,
+        };
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : 'Unknown repository explorer error';
+        const normalizedErrorMessage = errorMessage.toLowerCase();
+        const looksLikeNotInGitRepositoryError =
+          normalizedErrorMessage.includes('not a git repository') ||
+          normalizedErrorMessage.includes('not a git repo');
+        if (looksLikeNotInGitRepositoryError) {
+          return {
+            ok: false,
+            reason: 'not-in-git-repo',
+          };
+        }
+
+        return {
+          ok: false,
+          reason: 'load-failed',
+          errorMessage,
+        };
+      }
+    };
 
   // Branch switching can only keep the current file open if that file exists
   // on the target branch, so this guard blocks confusing post-switch failures.
@@ -839,6 +910,13 @@ export const createMarkdownFileService = () => {
     );
 
     ipcMain.handle(
+      'editor:get-current-file-repository-markdown-tree',
+      async (): Promise<GetCurrentFileRepositoryMarkdownTreeResponse> => {
+        return readCurrentFileRepositoryMarkdownTree();
+      },
+    );
+
+    ipcMain.handle(
       'editor:create-markdown-file',
       async (): Promise<CreateMarkdownFileResponse> => {
         const browserWindow = BrowserWindow.getFocusedWindow();
@@ -868,6 +946,16 @@ export const createMarkdownFileService = () => {
           normalizedMarkdownFilePath,
         );
         return { canceled: false, ...loadedDocument };
+      },
+    );
+
+    ipcMain.handle(
+      'editor:open-markdown-file-at-path',
+      async (
+        _event,
+        filePath: string,
+      ): Promise<OpenMarkdownFileAtPathResponse> => {
+        return openMarkdownFileAtPath(filePath);
       },
     );
 

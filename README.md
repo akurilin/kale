@@ -52,6 +52,12 @@ The right side of the window is an embedded Claude Code terminal. Claude can see
 
 Use the preset prompt buttons or type directly in the terminal to interact with Claude.
 
+### Repository File Explorer
+
+When the active file is inside a git repository, Kale shows a collapsible file explorer on the left side of the workspace rooted at that repository's top-level directory.
+
+The explorer lists markdown files from the repository filesystem, including untracked files, and lets you expand folders and open another document with a single click. If the active file is not inside a git repository, the explorer stays unavailable.
+
 ### Git Integration
 
 Kale is git-aware. If your Markdown file is inside a git repo, you can:
@@ -83,6 +89,8 @@ This produces platform-specific distributables in the `out/` directory.
 ## Architecture
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed documentation of the codebase structure, runtime architecture, and design decisions.
+
+Implementation notes and feature plans live in [`docs/`](docs/), including the repository explorer plan in [`docs/repository-file-explorer-pane-plan.md`](docs/repository-file-explorer-pane-plan.md).
 
 ## License
 

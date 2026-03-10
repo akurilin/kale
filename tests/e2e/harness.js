@@ -60,7 +60,7 @@ const createIsolatedUserDataDir = ({ seedDefaultMarkdownContent } = {}) => {
  * Why: centralizing Electron launch options keeps test invocations consistent
  * across scenarios and preserves CI-specific Linux flags in one place.
  */
-const launchElectronAppForE2E = async (testUserDataDir) => {
+const launchElectronAppForE2E = async (testUserDataDir, launchEnv = {}) => {
   const electronArgs = [path.join(BUILD_DIR, 'main.js')];
   if (process.platform === 'linux') {
     electronArgs.push('--no-sandbox', '--disable-gpu');
@@ -73,6 +73,7 @@ const launchElectronAppForE2E = async (testUserDataDir) => {
       KALE_HEADLESS: '1',
       KALE_SKIP_TERMINAL_VALIDATION: '1',
       KALE_USER_DATA_DIR: testUserDataDir,
+      ...launchEnv,
     },
   });
 };
@@ -311,6 +312,7 @@ const findCommentRangeWrappingExactText = (markdownContent, wrappedText) => {
 const runIsolatedE2ETest = async ({
   testName,
   seedDefaultMarkdownContent,
+  launchEnv,
   testBody,
 }) => {
   const testUserDataDir = createIsolatedUserDataDir({
@@ -323,7 +325,7 @@ const runIsolatedE2ETest = async ({
 
   copyRuntimeAssetsToBuildDir();
 
-  const electronApp = await launchElectronAppForE2E(testUserDataDir);
+  const electronApp = await launchElectronAppForE2E(testUserDataDir, launchEnv);
 
   try {
     const page = await electronApp.firstWindow();

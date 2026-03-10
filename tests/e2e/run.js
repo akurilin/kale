@@ -19,6 +19,12 @@ const {
 const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
+const {
+  runRepositoryFileExplorerPaneScenario,
+} = require('./scenarios/repository-file-explorer-pane.scenario');
+const {
+  runRepositoryFileExplorerNonGitScenario,
+} = require('./scenarios/repository-file-explorer-non-git.scenario');
 
 /**
  * Why: sequential execution avoids cross-test interference between isolated
@@ -31,6 +37,8 @@ const runAllE2ETests = async () => {
   await runInlineCommentDeleteScrollStabilityScenario();
   await runInlineCommentActiveFocusSyncScenario();
   await runTerminalPaneCollapseExpandScenario();
+  await runRepositoryFileExplorerPaneScenario();
+  await runRepositoryFileExplorerNonGitScenario();
   console.log('\nAll E2E tests passed!');
 };
 

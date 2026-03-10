@@ -11,6 +11,23 @@ export type LoadMarkdownResponse = {
   filePath: string;
 };
 
+export type RepositoryMarkdownExplorerFileNode = {
+  type: 'file';
+  name: string;
+  path: string;
+};
+
+export type RepositoryMarkdownExplorerDirectoryNode = {
+  type: 'directory';
+  name: string;
+  path: string;
+  children: RepositoryMarkdownExplorerNode[];
+};
+
+export type RepositoryMarkdownExplorerNode =
+  | RepositoryMarkdownExplorerFileNode
+  | RepositoryMarkdownExplorerDirectoryNode;
+
 export type SaveMarkdownResponse = {
   ok: boolean;
 };
@@ -19,13 +36,34 @@ export type ExternalMarkdownFileChangedEvent = {
   filePath: string;
 };
 
+export type CurrentMarkdownFilePathChangedEvent = {
+  filePath: string;
+};
+
 export type OpenMarkdownFileResponse =
   | { canceled: true }
   | ({ canceled: false } & LoadMarkdownResponse);
 
+export type OpenMarkdownFileAtPathResponse =
+  | ({ ok: true } & LoadMarkdownResponse)
+  | { ok: false; errorMessage: string };
+
 export type CreateMarkdownFileResponse =
   | { canceled: true }
   | ({ canceled: false } & LoadMarkdownResponse);
+
+export type GetCurrentFileRepositoryMarkdownTreeResponse =
+  | {
+      ok: true;
+      repositoryRoot: string;
+      activeFilePath: string;
+      tree: RepositoryMarkdownExplorerNode[];
+    }
+  | {
+      ok: false;
+      reason: 'not-in-git-repo' | 'load-failed';
+      errorMessage?: string;
+    };
 
 export type RestoreMarkdownFromGitResponse =
   | ({ ok: true } & LoadMarkdownResponse)

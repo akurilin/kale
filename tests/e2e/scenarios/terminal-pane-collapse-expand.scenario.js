@@ -23,10 +23,11 @@ const readWorkspaceGeometrySnapshot = async (page) => {
     const workspaceElement = document.querySelector('.workspace');
     const editorPaneElement = document.querySelector('.workspace-pane--editor');
     const terminalPaneElement = document.querySelector('.terminal-pane');
-    const workspaceDividerElement =
-      document.querySelector('.workspace-divider');
+    const workspaceDividerElement = document.querySelector(
+      '.workspace-divider--terminal',
+    );
     const terminalToggleButtonElement = document.querySelector(
-      '.topbar-icon-button',
+      '.topbar-terminal-toggle-button',
     );
 
     const editorPaneWidth =
@@ -82,7 +83,7 @@ const waitForTerminalToggleLabel = async (page, expectedLabel) => {
     await page.waitForFunction(
       (expectedTerminalToggleLabel) => {
         const terminalToggleButtonElement = document.querySelector(
-          '.topbar-icon-button',
+          '.topbar-terminal-toggle-button',
         );
         return (
           terminalToggleButtonElement?.getAttribute('aria-label') ===
@@ -256,7 +257,9 @@ const runTerminalPaneCollapseExpandScenario = async () => {
     testName: 'E2E terminal-pane collapse/expand regression',
     testBody: async ({ page, electronApp }) => {
       await page.waitForSelector('.terminal-pane', { timeout: 10_000 });
-      await page.waitForSelector('.topbar-icon-button', { timeout: 10_000 });
+      await page.waitForSelector('.topbar-terminal-toggle-button', {
+        timeout: 10_000,
+      });
 
       await runCollapseExpandAssertionsForCurrentZoomLevel(page, 'zoom-1.0');
 

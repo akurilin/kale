@@ -9,6 +9,7 @@ Kale is a desktop markdown writing tool built on Electron + React + CodeMirror.
 It combines:
 
 - A prose-first markdown editor with inline comments persisted directly in markdown.
+- A git-rooted repository file explorer for markdown documents.
 - Git-aware file actions (`Reset`, single-file commit save).
 - A PTY-backed Claude Code terminal pane.
 - A local IDE MCP WebSocket server so Claude Code can query live editor selection/context.
@@ -83,6 +84,13 @@ Owns active-file state, settings persistence, file watcher lifecycle, and git fi
   - stock commit message: `Edits to <filename>`
   - returns `didCreateCommit=false` when there are no changes
 
+#### Repository Explorer Support
+
+- Resolves the active file's git repository root with `git rev-parse --show-toplevel`.
+- Builds a filesystem-backed markdown tree rooted at that repository.
+- Exposes direct open-by-path activation for explorer clicks.
+- Broadcasts active markdown file path changes to renderer subscribers.
+
 ### Terminal Session Service (`src/main/terminal-session-service.ts`)
 
 Owns PTY spawn/IO/resize/kill and Claude startup prerequisites.
@@ -140,12 +148,15 @@ Implements MCP-over-WebSocket for Claude Code IDE integration.
 - `editor:load-markdown`
 - `editor:create-markdown-file`
 - `editor:open-markdown-file`
+- `editor:open-markdown-file-at-path`
 - `editor:save-markdown`
+- `editor:get-current-file-repository-markdown-tree`
 - `editor:restore-current-markdown-from-git`
 - `editor:commit-current-markdown-file`
 - `editor:get-current-markdown-git-branch-state`
 - `editor:switch-current-markdown-git-branch`
 - event: `editor:external-markdown-file-changed`
+- event: `editor:current-markdown-file-path-changed`
 
 ### Terminal IPC
 
@@ -175,12 +186,20 @@ Owns document lifecycle and top-level UI orchestration:
 - Bootstraps active markdown file.
 - Schedules autosave through save controller.
 - Handles new/open/restore/commit actions.
+- Handles explorer-driven file switches through the same save-before-switch flow.
 - Maps `Cmd+S`/`Ctrl+S` at window scope to the same save-commit action as the top-bar **Save** button.
 - Treats `Saved` status as transient UI feedback (auto-clears after a short delay) so repeated saves remain visually noticeable.
-- Handles terminal-pane collapse/expand and native width resize requests.
+- Handles explorer-pane collapse/expand, terminal-pane collapse/expand, divider drags, and native width resize requests.
 - Pushes selection updates to IDE integration.
 - Maintains live editor word count state for the document header badge.
 - Flushes save on blur/beforeunload.
+
+### Repository File Explorer (`src/renderer/RepositoryFileExplorerPane.tsx`)
+
+- Loads repo-tree data through the preload markdown bridge.
+- Keeps its own folder expansion, focus, and active-file reveal state.
+- Listens for active-file path changes from main instead of depending on sibling props.
+- Requests file opens through the app shell so save-before-switch behavior stays centralized.
 
 ### Document + Inline Comments (`src/renderer/DocumentCommentsPane.tsx`)
 
@@ -303,6 +322,8 @@ Top-level layout and responsibilities:
   - comment deletion scroll stability
   - comment active-focus synchronization + Cmd/Ctrl+Enter defocus behavior
   - terminal pane collapse/expand + window width behavior
+  - repository file explorer open/collapse behavior
+  - repository file explorer non-git suppression behavior
 
 ## Important Environment Variables
 
