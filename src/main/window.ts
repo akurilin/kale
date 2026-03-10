@@ -1,10 +1,5 @@
-import { app, BrowserWindow, screen, type IpcMain } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 import path from 'node:path';
-
-import type {
-  AdjustWindowWidthRequest,
-  AdjustWindowWidthResponse,
-} from '../shared-types';
 
 const DEFAULT_WINDOW_WIDTH = 2560;
 const DEFAULT_WINDOW_HEIGHT = 1440;
@@ -26,9 +21,8 @@ const parseWindowDimension = (value: string | undefined, fallback: number) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
 
-// Startup dimensions should respect the active display work area so later
-// width-delta toggles (like terminal collapse/expand) are computed from a
-// realistic baseline instead of a size that is already off-screen.
+// Startup dimensions should respect the active display work area so the app
+// always opens fully on-screen even when defaults exceed the current display.
 const clampInitialWindowSizeToPrimaryDisplay = (
   requestedWidth: number,
   requestedHeight: number,
@@ -39,34 +33,6 @@ const clampInitialWindowSizeToPrimaryDisplay = (
     width: Math.min(requestedWidth, maximumWidth),
     height: Math.min(requestedHeight, maximumHeight),
   };
-};
-
-// Window-size mutations must stay bounded by both the active display work area
-// and BrowserWindow minimum constraints so layout toggles never push the app
-// off-screen or below an unusable size.
-const clampWindowWidthToSafeBounds = (
-  browserWindow: BrowserWindow,
-  requestedWidth: number,
-) => {
-  const [minimumWindowWidth] = browserWindow.getMinimumSize();
-  const activeDisplay = screen.getDisplayMatching(browserWindow.getBounds());
-  const maximumWindowWidth = activeDisplay.workArea.width;
-  return Math.max(
-    minimumWindowWidth,
-    Math.min(maximumWindowWidth, requestedWidth),
-  );
-};
-
-// Renderer layout measurements are reported in CSS pixels, but BrowserWindow
-// sizing APIs use DIP units. This conversion keeps width adjustments accurate
-// at non-default zoom factors (for example after Cmd+ plus/minus zoom changes).
-const convertCssPixelDeltaToWindowPixelDelta = (
-  cssPixelDelta: number,
-  zoomFactor: number,
-) => {
-  const safeZoomFactor =
-    Number.isFinite(zoomFactor) && zoomFactor > 0 ? zoomFactor : 1;
-  return cssPixelDelta * safeZoomFactor;
 };
 
 // Electron packager does not apply dock/taskbar icon metadata on Linux, so
@@ -81,55 +47,6 @@ const resolveLinuxRuntimeWindowIconPath = () => {
   }
 
   return path.resolve(__dirname, '../../assets/icons/icon.png');
-};
-
-// This handler lets renderer layout toggles adjust the native window width
-// while keeping authority in main over clamping and per-window ownership.
-export const registerWindowIpcHandlers = (ipcMain: IpcMain) => {
-  ipcMain.handle(
-    'window:adjust-width-by',
-    async (
-      event,
-      request: AdjustWindowWidthRequest,
-    ): Promise<AdjustWindowWidthResponse> => {
-      const browserWindow = BrowserWindow.fromWebContents(event.sender);
-      if (!browserWindow) {
-        return {
-          ok: false,
-          appliedWidth: 0,
-          appliedHeight: 0,
-          wasClamped: false,
-        };
-      }
-
-      const [currentWindowWidth, currentWindowHeight] = browserWindow.getSize();
-      const zoomFactor = event.sender.getZoomFactor();
-      const windowPixelDelta = convertCssPixelDeltaToWindowPixelDelta(
-        request.deltaWidth,
-        zoomFactor,
-      );
-      const requestedWindowWidth = Math.round(
-        currentWindowWidth + windowPixelDelta,
-      );
-      const nextWindowWidth = clampWindowWidthToSafeBounds(
-        browserWindow,
-        requestedWindowWidth,
-      );
-      const wasClamped = nextWindowWidth !== requestedWindowWidth;
-
-      if (nextWindowWidth !== currentWindowWidth) {
-        browserWindow.setSize(nextWindowWidth, currentWindowHeight);
-      }
-
-      const [appliedWidth, appliedHeight] = browserWindow.getSize();
-      return {
-        ok: true,
-        appliedWidth,
-        appliedHeight,
-        wasClamped,
-      };
-    },
-  );
 };
 
 // The main process creates renderer windows so preload wiring and Forge/Vite

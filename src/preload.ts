@@ -6,8 +6,6 @@
 import { contextBridge, ipcRenderer, webFrame } from 'electron';
 
 import type {
-  AdjustWindowWidthRequest,
-  AdjustWindowWidthResponse,
   CommitCurrentMarkdownFileResponse,
   CurrentMarkdownFilePathChangedEvent,
   CreateMarkdownFileResponse,
@@ -161,13 +159,4 @@ contextBridge.exposeInMainWorld('spellcheckApi', {
   getSuggestions: (word: string): string[] => webFrame.getWordSuggestions(word),
   addToDictionary: (word: string): Promise<boolean> =>
     ipcRenderer.invoke('spellcheck:add-to-dictionary', word),
-});
-
-// Window controls stay explicit in preload so renderer layout code can request
-// native size adjustments without direct Electron access.
-contextBridge.exposeInMainWorld('windowApi', {
-  adjustWindowWidthBy: (
-    request: AdjustWindowWidthRequest,
-  ): Promise<AdjustWindowWidthResponse> =>
-    ipcRenderer.invoke('window:adjust-width-by', request),
 });

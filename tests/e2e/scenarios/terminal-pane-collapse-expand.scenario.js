@@ -1,14 +1,14 @@
 /**
  * Terminal-pane collapse/expand regression scenario: verifies the top-bar
- * toggle hides/reveals the terminal pane and resizes the window width so
- * collapsing does not leave a large blank editor region.
+ * toggle hides/reveals the terminal pane without changing the native window
+ * width, so workspace layout changes stay contained inside the app chrome.
  */
 
 const assert = require('node:assert');
 
 const { runIsolatedE2ETest } = require('../harness');
 
-const WINDOW_RESIZE_TOLERANCE_PIXELS = 10;
+const WINDOW_WIDTH_STABILITY_TOLERANCE_PIXELS = 2;
 const EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS = 10;
 const COLLAPSED_TERMINAL_AREA_MAX_PRIMARY_AXIS_PIXELS = 4;
 const NON_DEFAULT_ZOOM_FACTOR = 1.25;
@@ -16,7 +16,7 @@ const ZOOM_FACTOR_ASSERTION_TOLERANCE = 0.001;
 
 /**
  * Why: this helper captures renderer-visible workspace geometry so assertions
- * can verify both pane visibility and native window resizing from one snapshot.
+ * can verify both pane visibility and native window stability from one snapshot.
  */
 const readWorkspaceGeometrySnapshot = async (page) => {
   return page.evaluate(() => {
@@ -139,8 +139,8 @@ const setMainWindowZoomFactor = async (electronApp, zoomFactor) => {
 };
 
 /**
- * Why: this regression ensures terminal toggle behavior stays aligned with the
- * writing-first UX by coupling pane collapse with native window width changes.
+ * Why: this regression ensures terminal toggles stay local to the workspace
+ * layout instead of mutating the native window size.
  */
 const runCollapseExpandAssertionsForCurrentZoomLevel = async (
   page,
@@ -186,25 +186,25 @@ const runCollapseExpandAssertionsForCurrentZoomLevel = async (
       COLLAPSED_TERMINAL_AREA_MAX_PRIMARY_AXIS_PIXELS,
     `[${zoomLabel}] Collapsed terminal area should stay <= ${COLLAPSED_TERMINAL_AREA_MAX_PRIMARY_AXIS_PIXELS}px on the active layout axis. Got ${collapsedGeometrySnapshot.terminalPanePrimaryAxisFootprint}.`,
   );
-  const expectedCollapsedInnerWindowWidth = Math.round(
-    initialGeometrySnapshot.innerWindowWidth -
-      initialGeometrySnapshot.terminalPaneAreaWidth,
-  );
   assertWithinTolerance({
     actualValue: collapsedGeometrySnapshot.innerWindowWidth,
-    expectedValue: expectedCollapsedInnerWindowWidth,
-    tolerancePixels: WINDOW_RESIZE_TOLERANCE_PIXELS,
-    assertionDescription: `[${zoomLabel}] Collapsed window width should shrink by terminal pane area width`,
+    expectedValue: initialGeometrySnapshot.innerWindowWidth,
+    tolerancePixels: WINDOW_WIDTH_STABILITY_TOLERANCE_PIXELS,
+    assertionDescription: `[${zoomLabel}] Collapsed window width should stay unchanged`,
   });
   if (
     collapsedGeometrySnapshot.isVerticalStackedLayout ===
     initialGeometrySnapshot.isVerticalStackedLayout
   ) {
+    const expectedCollapsedEditorPaneWidth = Math.round(
+      initialGeometrySnapshot.editorPaneWidth +
+        initialGeometrySnapshot.terminalPaneAreaWidth,
+    );
     assertWithinTolerance({
       actualValue: collapsedGeometrySnapshot.editorPaneWidth,
-      expectedValue: initialGeometrySnapshot.editorPaneWidth,
+      expectedValue: expectedCollapsedEditorPaneWidth,
       tolerancePixels: EDITOR_WIDTH_STABILITY_TOLERANCE_PIXELS,
-      assertionDescription: `[${zoomLabel}] Editor pane width should stay stable when terminal collapses`,
+      assertionDescription: `[${zoomLabel}] Editor pane width should expand into the collapsed terminal area`,
     });
   } else {
     assert.ok(
@@ -237,8 +237,8 @@ const runCollapseExpandAssertionsForCurrentZoomLevel = async (
   assertWithinTolerance({
     actualValue: reExpandedGeometrySnapshot.innerWindowWidth,
     expectedValue: initialGeometrySnapshot.innerWindowWidth,
-    tolerancePixels: WINDOW_RESIZE_TOLERANCE_PIXELS,
-    assertionDescription: `[${zoomLabel}] Re-expanded window width should return to initial width`,
+    tolerancePixels: WINDOW_WIDTH_STABILITY_TOLERANCE_PIXELS,
+    assertionDescription: `[${zoomLabel}] Re-expanded window width should stay unchanged`,
   });
   assertWithinTolerance({
     actualValue: reExpandedGeometrySnapshot.editorPaneWidth,
@@ -249,8 +249,8 @@ const runCollapseExpandAssertionsForCurrentZoomLevel = async (
 };
 
 /**
- * Why: this regression now runs at default and non-default zoom levels to
- * prevent CSS-to-window pixel conversion drift from regressing collapse sizing.
+ * Why: this regression now runs at default and non-default zoom levels so zoom
+ * changes cannot reintroduce native window resizing during pane toggles.
  */
 const runTerminalPaneCollapseExpandScenario = async () => {
   await runIsolatedE2ETest({

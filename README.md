@@ -52,11 +52,15 @@ The right side of the window is an embedded Claude Code terminal. Claude can see
 
 Use the preset prompt buttons or type directly in the terminal to interact with Claude.
 
+Collapsing or expanding the terminal only changes the workspace split inside Kale. The native window size stays fixed.
+
 ### Repository File Explorer
 
 When the active file is inside a git repository, Kale shows a collapsible file explorer on the left side of the workspace rooted at that repository's top-level directory.
 
 The explorer lists markdown files from the repository filesystem, including untracked files, and lets you expand folders and open another document with a single click. If the active file is not inside a git repository, the explorer stays unavailable.
+
+Collapsing or expanding the explorer also keeps the native window size unchanged.
 
 ### Git Integration
 

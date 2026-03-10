@@ -11,7 +11,7 @@ const path = require('node:path');
 
 const { runIsolatedE2ETest } = require('../harness');
 
-const WINDOW_RESIZE_TOLERANCE_PIXELS = 10;
+const WINDOW_WIDTH_STABILITY_TOLERANCE_PIXELS = 2;
 const COLLAPSED_EXPLORER_AREA_MAX_PRIMARY_AXIS_PIXELS = 4;
 
 /**
@@ -73,8 +73,8 @@ const createRepositoryFixture = () => {
 };
 
 /**
- * Why: geometry assertions should read the left-pane state directly so window
- * resize and pane visibility are verified from one renderer snapshot.
+ * Why: geometry assertions should read the left-pane state directly so pane
+ * visibility and native window stability are verified from one snapshot.
  */
 const readExplorerGeometrySnapshot = async (page) => {
   return page.evaluate(() => {
@@ -221,6 +221,10 @@ const runRepositoryFileExplorerPaneScenario = async () => {
           initialGeometrySnapshot.explorerTogglePressed,
           'true',
         );
+        assert.ok(
+          initialGeometrySnapshot.explorerPaneAreaWidth > 100,
+          `Expanded explorer area should be visible. Got ${initialGeometrySnapshot.explorerPaneAreaWidth}.`,
+        );
 
         await page
           .getByRole('button', { name: 'Collapse file explorer pane' })
@@ -241,16 +245,12 @@ const runRepositoryFileExplorerPaneScenario = async () => {
         assert.ok(
           Math.abs(
             collapsedGeometrySnapshot.innerWindowWidth -
-              Math.round(
-                initialGeometrySnapshot.innerWindowWidth -
-                  initialGeometrySnapshot.explorerPaneAreaWidth,
-              ),
-          ) <= WINDOW_RESIZE_TOLERANCE_PIXELS,
+              initialGeometrySnapshot.innerWindowWidth,
+          ) <= WINDOW_WIDTH_STABILITY_TOLERANCE_PIXELS,
           [
-            'Collapsed window width should shrink by the explorer pane area width.',
+            'Collapsed window width should stay unchanged.',
             `Initial width: ${initialGeometrySnapshot.innerWindowWidth}.`,
             `Collapsed width: ${collapsedGeometrySnapshot.innerWindowWidth}.`,
-            `Explorer area: ${initialGeometrySnapshot.explorerPaneAreaWidth}.`,
           ].join(' '),
         );
 
@@ -264,6 +264,21 @@ const runRepositoryFileExplorerPaneScenario = async () => {
         assert.strictEqual(
           reExpandedGeometrySnapshot.explorerTogglePressed,
           'true',
+        );
+        assert.ok(
+          reExpandedGeometrySnapshot.explorerPaneAreaWidth > 100,
+          `Re-expanded explorer area should be visible. Got ${reExpandedGeometrySnapshot.explorerPaneAreaWidth}.`,
+        );
+        assert.ok(
+          Math.abs(
+            reExpandedGeometrySnapshot.innerWindowWidth -
+              initialGeometrySnapshot.innerWindowWidth,
+          ) <= WINDOW_WIDTH_STABILITY_TOLERANCE_PIXELS,
+          [
+            'Re-expanded window width should stay unchanged.',
+            `Initial width: ${initialGeometrySnapshot.innerWindowWidth}.`,
+            `Re-expanded width: ${reExpandedGeometrySnapshot.innerWindowWidth}.`,
+          ].join(' '),
         );
       },
     });
