@@ -89,7 +89,15 @@ const startApplication = async () => {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown startup prompt error';
-      console.error(`Fatal startup error: ${errorMessage}`);
+      console.error('');
+      console.error('='.repeat(70));
+      console.error('  KALE — FATAL STARTUP ERROR');
+      console.error('='.repeat(70));
+      console.error('');
+      console.error(errorMessage);
+      console.error('');
+      console.error('='.repeat(70));
+      console.error('');
       showFatalStartupErrorDialogIfVisible(errorMessage);
       app.exit(1);
       return;

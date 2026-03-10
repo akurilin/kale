@@ -13,6 +13,7 @@ import type {
 } from '../shared-types';
 
 const execFileAsync = promisify(execFile);
+const CLAUDE_CLI_BINARY_NAME = 'claude';
 const KALE_PROMPT_ACTIVE_FILE_PATH_TOKEN = '@@KALE:ACTIVE_FILE_PATH@@';
 const COMMON_DARWIN_CLI_BIN_DIRECTORIES = [
   '/opt/homebrew/bin',
@@ -128,7 +129,7 @@ export const createTerminalSessionService = (
   // PATH reachability before the UI opens to avoid later confusing failures.
   const ensureClaudeCliIsInstalledOrThrow = async () => {
     try {
-      await execFileAsync('claude', ['--version'], {
+      await execFileAsync(CLAUDE_CLI_BINARY_NAME, ['--version'], {
         windowsHide: true,
         env: terminalRuntimeEnvironmentVariables,
       });
@@ -141,7 +142,19 @@ export const createTerminalSessionService = (
         'Unknown Claude CLI startup check error';
 
       throw new Error(
-        `Claude CLI is required but was not found or could not be executed via PATH. Install Claude Code and ensure the 'claude' command is available. If Kale was launched from Finder on macOS, ensure Claude is installed in a standard executable directory (for example /opt/homebrew/bin). Details: ${failureDetail}`,
+        [
+          `Kale requires Claude Code but the '${CLAUDE_CLI_BINARY_NAME}' command was not found.`,
+          '',
+          'Install Claude Code from: https://docs.anthropic.com/en/docs/claude-code',
+          '',
+          `After installing, verify that '${CLAUDE_CLI_BINARY_NAME}' is on your PATH by running:`,
+          `  ${CLAUDE_CLI_BINARY_NAME} --version`,
+          '',
+          'If Kale was launched from Finder on macOS, ensure Claude Code is',
+          'installed in a standard directory (e.g. /opt/homebrew/bin).',
+          '',
+          `Details: ${failureDetail}`,
+        ].join('\n'),
       );
     }
   };
@@ -175,7 +188,7 @@ export const createTerminalSessionService = (
       : await dependencies.ensureCurrentMarkdownFilePath();
 
     return {
-      command: 'claude',
+      command: CLAUDE_CLI_BINARY_NAME,
       args: [
         '--dangerously-skip-permissions',
         '--append-system-prompt',
