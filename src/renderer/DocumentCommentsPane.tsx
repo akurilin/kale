@@ -499,57 +499,59 @@ const DocumentCommentsPaneImpl = (
       className="document-comments-layout"
       ref={documentCommentsLayoutElementRef}
     >
-      <MarkdownEditorPane
-        ref={markdownEditorPaneRef}
-        loadedDocumentContent={loadedDocumentContent}
-        loadedDocumentRevision={loadedDocumentRevision}
-        onUserEditedDocument={handleUserEditedDocument}
-        onDocumentContentReplacedFromDisk={onDocumentContentReplacedFromDisk}
-        onSelectionDetailsChanged={onSelectionDetailsChanged}
-        onInlineCommentAnchorGeometryChanged={
-          handleInlineCommentAnchorGeometryChanged
-        }
-        onInlineCommentCreationAnchorChanged={setInlineCommentSelectionAnchor}
-        onInlineCommentRangeInteraction={handleInlineCommentRangeInteraction}
-      />
-      {loadedDocumentContent !== null && inlineCommentSelectionAnchor ? (
-        <button
-          className="inline-comment-selection-action"
-          type="button"
-          onMouseDown={handleSelectionActionMouseDown}
-          onClick={createInlineCommentFromSelection}
-          style={
-            {
-              left: Math.max(
-                INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-                inlineCommentSelectionAnchor.left -
-                  INLINE_COMMENT_SELECTION_BUTTON_WIDTH,
-              ),
-              top: Math.max(
-                INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-                inlineCommentSelectionAnchor.top -
-                  INLINE_COMMENT_SELECTION_BUTTON_HEIGHT -
-                  INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-              ),
-            } as CSSProperties
+      <div className="document-comments-content">
+        <MarkdownEditorPane
+          ref={markdownEditorPaneRef}
+          loadedDocumentContent={loadedDocumentContent}
+          loadedDocumentRevision={loadedDocumentRevision}
+          onUserEditedDocument={handleUserEditedDocument}
+          onDocumentContentReplacedFromDisk={onDocumentContentReplacedFromDisk}
+          onSelectionDetailsChanged={onSelectionDetailsChanged}
+          onInlineCommentAnchorGeometryChanged={
+            handleInlineCommentAnchorGeometryChanged
           }
-        >
-          Comment
-        </button>
-      ) : null}
-      <InlineCommentsSidebar
-        comments={inlineComments}
-        commentTopOffsetsById={inlineCommentTopOffsetsById}
-        hiddenCommentIds={hiddenInlineCommentIds}
-        onChangeCommentText={updateInlineCommentText}
-        onDeleteComment={deleteInlineComment}
-        activeCommentId={activeInlineCommentId}
-        onActivateComment={handleCommentCardActivated}
-        onCompleteCommentEditing={handleCommentEditingCompleted}
-        autoFocusCommentId={autoFocusInlineCommentId}
-        onAutoFocusCommentHandled={handleAutoFocusCommentHandled}
-        onCommentCardHeightChanged={handleInlineCommentCardHeightChanged}
-      />
+          onInlineCommentCreationAnchorChanged={setInlineCommentSelectionAnchor}
+          onInlineCommentRangeInteraction={handleInlineCommentRangeInteraction}
+        />
+        {loadedDocumentContent !== null && inlineCommentSelectionAnchor ? (
+          <button
+            className="inline-comment-selection-action"
+            type="button"
+            onMouseDown={handleSelectionActionMouseDown}
+            onClick={createInlineCommentFromSelection}
+            style={
+              {
+                left: Math.max(
+                  INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
+                  inlineCommentSelectionAnchor.left -
+                    INLINE_COMMENT_SELECTION_BUTTON_WIDTH,
+                ),
+                top: Math.max(
+                  INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
+                  inlineCommentSelectionAnchor.top -
+                    INLINE_COMMENT_SELECTION_BUTTON_HEIGHT -
+                    INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
+                ),
+              } as CSSProperties
+            }
+          >
+            Comment
+          </button>
+        ) : null}
+        <InlineCommentsSidebar
+          comments={inlineComments}
+          commentTopOffsetsById={inlineCommentTopOffsetsById}
+          hiddenCommentIds={hiddenInlineCommentIds}
+          onChangeCommentText={updateInlineCommentText}
+          onDeleteComment={deleteInlineComment}
+          activeCommentId={activeInlineCommentId}
+          onActivateComment={handleCommentCardActivated}
+          onCompleteCommentEditing={handleCommentEditingCompleted}
+          autoFocusCommentId={autoFocusInlineCommentId}
+          onAutoFocusCommentHandled={handleAutoFocusCommentHandled}
+          onCommentCardHeightChanged={handleInlineCommentCardHeightChanged}
+        />
+      </div>
     </div>
   );
 };

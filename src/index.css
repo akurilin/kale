@@ -1,6 +1,13 @@
 :root {
   color-scheme: light;
   font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --editor-readable-column-max-width: 920px;
+  --inline-comments-sidebar-width: 280px;
+  --document-comments-column-gap: 20px;
+  --document-comments-content-max-width: calc(
+    var(--editor-readable-column-max-width) +
+      var(--inline-comments-sidebar-width) + var(--document-comments-column-gap)
+  );
 }
 
 * {
@@ -461,13 +468,33 @@ body {
   flex: 1;
   min-height: 0;
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  width: 100%;
   border-top: 0;
+}
+
+.document-comments-content {
+  position: relative;
+  display: grid;
+  width: min(100%, var(--document-comments-content-max-width));
+  max-width: var(--document-comments-content-max-width);
+  height: 100%;
+  min-height: 0;
+  margin-left: max(
+    0px,
+    min(
+      calc(50% - var(--editor-readable-column-max-width) / 2),
+      calc(100% - var(--document-comments-content-max-width))
+    )
+  );
+  column-gap: var(--document-comments-column-gap);
+  grid-template-columns: minmax(0, 1fr) var(--inline-comments-sidebar-width);
 }
 
 .editor .cm-editor {
   height: 100%;
+  width: 100%;
+  max-width: var(--editor-readable-column-max-width);
+  margin: 0 auto;
 }
 
 .editor .cm-scroller {
@@ -507,7 +534,8 @@ body {
 }
 
 .editor .cm-content {
-  max-width: 920px;
+  width: 100%;
+  max-width: 100%;
   caret-color: #1f1f1f;
 }
 
@@ -612,7 +640,7 @@ body {
   overflow: hidden;
   border-left: none;
   background: rgb(252, 251, 248);
-  padding: 10px;
+  padding: 10px 10px 10px 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -666,7 +694,7 @@ body {
 
 .inline-comments-floating-layer {
   position: absolute;
-  inset: 0 10px 10px;
+  inset: 0 10px 10px 0;
 }
 
 .inline-comment-floating-slot {

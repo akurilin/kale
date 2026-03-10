@@ -38,11 +38,11 @@ This launches the app in development mode. On first launch, Kale opens a default
 
 ### Writing
 
-Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is rendered inline as you type — headings, bold, italic, links, and code all preview live without a separate preview pane.
+Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is rendered inline as you type — headings, bold, italic, links, and code all preview live without a separate preview pane. On wider windows, the prose column stays centered on the pane and only shifts left when needed to keep inline comments visible.
 
 ### Inline Comments
 
-Select text and add a comment to annotate your draft. Comments are stored directly in the Markdown file as HTML comment markers, so they travel with the file and work with git diffs.
+Select text and add a comment to annotate your draft. Comments are stored directly in the Markdown file as HTML comment markers, so they travel with the file and work with git diffs. On wide windows, comment cards stay beside the prose column instead of drifting to the far edge of the pane.
 
 Use comments to leave instructions for Claude ("find a citation for this", "rewrite this paragraph") or as personal notes.
 
