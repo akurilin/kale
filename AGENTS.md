@@ -14,6 +14,18 @@
 - Shellcheck: `npm run shellcheck`
 - Static validation pass: `npm run validate:static`
 
+## Development Methodology
+
+Follow a spec-driven, BDD-style development approach:
+
+1. **Spec first**: before implementing new functionality, write the test suite that describes the expected behavior. This applies to both unit tests (Vitest) and E2E scenarios (Playwright). Define what the feature should do before writing the code that does it.
+2. **API design through tests**: writing tests first forces deliberate decisions about function signatures, module boundaries, and data flow. Use this as a design tool, not just a verification step.
+3. **Red-green-refactor**: write a failing test, make it pass with the simplest implementation, then refactor. Don't skip steps.
+4. **Test placement**:
+   - Unit tests: colocated with source files as `<module>.test.ts` (e.g. `src/renderer/line-merge.test.ts`)
+   - E2E scenarios: `tests/e2e/scenarios/<name>.scenario.js`
+5. **Be judicious about what gets tested**: focus tests on code where bugs would be subtle and hard to trace — parsing, data transformations, merge logic, algorithmic code, state machines. Skip tests for things where bugs are immediately obvious — CSS/styling, static config, thin wiring/glue code, one-liners, framework boilerplate, and anything TypeScript already enforces. If a test just restates the implementation, it's not adding value.
+
 ## Coding style
 
 - Use a self-explanatory naming style that makes it easy to understand what a function does based on the name alone. It's better to make it longer and clearer than to try to be brief and obscure.

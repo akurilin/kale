@@ -17,48 +17,73 @@ Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into t
 
 ![Kale — document editor with inline comments and integrated Claude Code terminal](assets/readme-screenshot.jpg)
 
-## Technology
+## Prerequisites
 
-This repository is an Electron Forge + Vite + TypeScript (v5.9.3) desktop app with a React renderer shell.
+- [Node.js](https://nodejs.org/) v22 or later
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) — powers the built-in terminal (`npm install -g @anthropic-ai/claude-code`)
+- [Git](https://git-scm.com/) — used for file history, branch switching, and single-file commits
 
-## Editor Shortcuts
+## Getting Started
 
-- Bold: `Cmd/Ctrl+B`
-- Italic: `Cmd/Ctrl+I`
-- Heading levels: `Cmd/Ctrl+Option/Alt+1..6`
-- Complete inline comment editing and defocus active comment: `Cmd/Ctrl+Enter`
+```bash
+git clone https://github.com/akurilin/kale.git
+cd kale
+npm install
+npm start
+```
 
-## Run Commands
+This launches the app in development mode. On first launch, Kale opens a default scratch document. Use **File > Open** or **File > New** to work with your own Markdown files.
 
-- Start in development: `npm start`
-- Start in development and explicitly open docked DevTools: `KALE_OPEN_DEVTOOLS=1 npm start`
-- Start in development with a custom window size: `KALE_WINDOW_WIDTH=1800 KALE_WINDOW_HEIGHT=1100 npm start` (requested dimensions are clamped to the active display work area)
-- Start in development with a forced startup markdown file path (overrides persisted last-opened-file for that app session): `KALE_STARTUP_MARKDOWN_FILE_PATH=/tmp/kale-repro.md npm start`
-- Start an instance-scoped CDP QA session (required instance ID, headless by default, runs in foreground until terminal exits): `scripts/start-with-cdp.sh --instance my-qa-run`
-- Start an instance-scoped CDP QA session with machine-readable-only startup output (`KALE_QA_READY` marker still always emitted): `scripts/start-with-cdp.sh --instance my-qa-run --json`
-- Start a CDP QA session with a visible window (for manual debugging): `scripts/start-with-cdp.sh --instance my-qa-run --no-headless`
-- Reuse an existing build during QA iteration: `scripts/start-with-cdp.sh --instance my-qa-run --skip-build`
-- Run unit tests: `npm test`
-- Run unit tests in watch mode: `npm run test:watch`
-- Run E2E test (builds the app first): `npm run test:e2e`
-- Format files: `npm run format`
-- Check formatting: `npm run format:check`
-- Lint: `npm run lint`
-- Typecheck: `npm run typecheck`
-- Shellcheck all repo shell scripts/hooks: `npm run shellcheck`
-- Run full static validation pass (lint + format check + typecheck + shellcheck): `npm run validate:static`
-- Package app: `npm run package`
-- Build distributables: `npm run make`
+## Usage
 
-## Git Hooks
+### Writing
 
-- Git hooks are configured automatically on dependency install via `npm` `prepare`.
-- The pre-commit hook runs:
-  - `lint-staged` for staged formatting/linting
-  - `npm run shellcheck` for repository shell scripts and hooks
-  - `gitleaks` staged secret scan (if installed locally)
+Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is rendered inline as you type — headings, bold, italic, links, and code all preview live without a separate preview pane.
+
+### Inline Comments
+
+Select text and add a comment to annotate your draft. Comments are stored directly in the Markdown file as HTML comment markers, so they travel with the file and work with git diffs.
+
+Use comments to leave instructions for Claude ("find a citation for this", "rewrite this paragraph") or as personal notes.
+
+### Claude Code Terminal
+
+The right side of the window is an embedded Claude Code terminal. Claude can see your document context through the IDE MCP integration — select text in the editor and Claude knows what you're focused on.
+
+Use the preset prompt buttons or type directly in the terminal to interact with Claude.
+
+### Git Integration
+
+Kale is git-aware. If your Markdown file is inside a git repo, you can:
+
+- **Save (commit)**: commits just the active file with a stock message
+- **Reset**: restores the file from the latest commit
+- **Switch branches**: move between branches without leaving the editor
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Cmd/Ctrl+B` | Bold |
+| `Cmd/Ctrl+I` | Italic |
+| `Cmd/Ctrl+Option/Alt+1..6` | Heading level 1–6 |
+| `Cmd/Ctrl+S` | Save (commit) |
+| `Cmd/Ctrl+Enter` | Finish editing a comment |
+
+## Building Distributables
+
+To package the app for your platform:
+
+```bash
+npm run make
+```
+
+This produces platform-specific distributables in the `out/` directory.
 
 ## Architecture
 
-Project architecture and repository-structure documentation now lives in [`ARCHITECTURE.md`](ARCHITECTURE.md).
-Update that file whenever the implementation changes.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed documentation of the codebase structure, runtime architecture, and design decisions.
+
+## License
+
+[MIT](LICENSE)
