@@ -15,7 +15,7 @@ Kale integrates with Claude Code through its IDE MCP server (activated with `/id
 
 Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into the tool I wished existed.
 
-![Kale — document editor with inline comments and integrated Claude Code terminal](assets/readme-screenshot.jpg)
+![Kale — document editor with inline comments and integrated Claude Code terminal](assets/readme-screenshot.jpg?v=2)
 
 ## Prerequisites
 
