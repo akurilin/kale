@@ -61,6 +61,7 @@ When the active file is inside a git repository, Kale shows a collapsible file e
 The explorer lists markdown files from the repository filesystem, including untracked files, and lets you expand folders and open another document with a single click. If the active file is not inside a git repository, the explorer stays unavailable.
 
 Collapsing or expanding the explorer also keeps the native window size unchanged.
+Explorer path handling is normalized internally so the pane behaves consistently across Windows and Unix-style path separators.
 
 ### Git Integration
 

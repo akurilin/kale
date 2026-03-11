@@ -3,103 +3,28 @@
 // can treat it as an isolated sidebar pane instead of another special-case UI.
 //
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 
 import type { RepositoryMarkdownExplorerNode } from '../shared-types';
 import { getMarkdownApi } from './markdown-api';
+import {
+  buildVisibleExplorerItems,
+  collectAncestorDirectoryPaths,
+  findVisibleItemIndexByPath,
+  normalizeRepositoryExplorerPath,
+  normalizeRepositoryExplorerSuccessResponse,
+} from './repository-file-explorer-state';
 
 type RepositoryFileExplorerPaneProps = {
   onRequestOpenFile: (filePath: string) => Promise<void>;
   onRepositoryAvailabilityChanged?: (isAvailable: boolean) => void;
   title?: string;
-};
-
-type VisibleExplorerItem = {
-  depth: number;
-  node: RepositoryMarkdownExplorerNode;
-  parentDirectoryPath: string | null;
-};
-
-/**
- * Why: the active file should reveal itself inside the tree without forcing the
- * shell to understand folder structure or maintain explorer-specific state.
- */
-const collectAncestorDirectoryPaths = (
-  filePath: string,
-  repositoryRootPath: string,
-) => {
-  const ancestorDirectoryPaths: string[] = [];
-  const repositoryRootWithForwardSlashes = repositoryRootPath.replace(
-    /\\/g,
-    '/',
-  );
-  let currentDirectoryPath = filePath.replace(/\\/g, '/');
-  let lastSlashIndex = currentDirectoryPath.lastIndexOf('/');
-
-  while (lastSlashIndex > repositoryRootWithForwardSlashes.length) {
-    currentDirectoryPath = currentDirectoryPath.slice(0, lastSlashIndex);
-    ancestorDirectoryPaths.unshift(currentDirectoryPath);
-    lastSlashIndex = currentDirectoryPath.lastIndexOf('/');
-  }
-
-  return ancestorDirectoryPaths;
-};
-
-/**
- * Why: tree keyboard navigation and rendering both operate on the visible row
- * order, so one flattening helper keeps those views perfectly in sync.
- */
-const buildVisibleExplorerItems = (
-  nodes: RepositoryMarkdownExplorerNode[],
-  expandedDirectoryPaths: Set<string>,
-  depth = 0,
-  parentDirectoryPath: string | null = null,
-): VisibleExplorerItem[] => {
-  const visibleExplorerItems: VisibleExplorerItem[] = [];
-
-  for (const node of nodes) {
-    visibleExplorerItems.push({
-      depth,
-      node,
-      parentDirectoryPath,
-    });
-
-    if (
-      node.type === 'directory' &&
-      expandedDirectoryPaths.has(node.path.replace(/\\/g, '/'))
-    ) {
-      visibleExplorerItems.push(
-        ...buildVisibleExplorerItems(
-          node.children,
-          expandedDirectoryPaths,
-          depth + 1,
-          node.path.replace(/\\/g, '/'),
-        ),
-      );
-    }
-  }
-
-  return visibleExplorerItems;
-};
-
-/**
- * Why: focus should never land on a row that is currently hidden, so this
- * lookup keeps keyboard handling tied to the actual rendered tree order.
- */
-const findVisibleItemIndexByPath = (
-  visibleExplorerItems: VisibleExplorerItem[],
-  targetPath: string | null,
-) => {
-  if (!targetPath) {
-    return -1;
-  }
-
-  const normalizedTargetPath = targetPath.replace(/\\/g, '/');
-  return visibleExplorerItems.findIndex(
-    (visibleExplorerItem) =>
-      visibleExplorerItem.node.path.replace(/\\/g, '/') ===
-      normalizedTargetPath,
-  );
 };
 
 export const RepositoryFileExplorerPane = ({
@@ -125,9 +50,9 @@ export const RepositoryFileExplorerPane = ({
   const latestRepositoryRootPathRef = useRef<string | null>(null);
   const latestLoadRequestIdRef = useRef(0);
 
-  const visibleExplorerItems = buildVisibleExplorerItems(
-    tree,
-    expandedDirectoryPaths,
+  const visibleExplorerItems = useMemo(
+    () => buildVisibleExplorerItems(tree, expandedDirectoryPaths),
+    [tree, expandedDirectoryPaths],
   );
 
   useEffect(() => {
@@ -164,33 +89,33 @@ export const RepositoryFileExplorerPane = ({
         return;
       }
 
+      const normalizedResponse =
+        normalizeRepositoryExplorerSuccessResponse(response);
       const previousRepositoryRootPath = latestRepositoryRootPathRef.current;
-      latestRepositoryRootPathRef.current = response.repositoryRoot;
+      latestRepositoryRootPathRef.current = normalizedResponse.repositoryRoot;
 
-      setTree(response.tree);
-      setRepositoryRootPath(response.repositoryRoot);
-      setActiveFilePath(response.activeFilePath);
+      setTree(normalizedResponse.tree);
+      setRepositoryRootPath(normalizedResponse.repositoryRoot);
+      setActiveFilePath(normalizedResponse.activeFilePath);
       setLoadErrorText(null);
       setIsLoadingTree(false);
       onRepositoryAvailabilityChanged?.(true);
 
       const activeFileAncestorDirectoryPaths = collectAncestorDirectoryPaths(
-        response.activeFilePath,
-        response.repositoryRoot,
+        normalizedResponse.activeFilePath,
+        normalizedResponse.repositoryRoot,
       );
       setExpandedDirectoryPaths((previousExpandedDirectoryPaths) => {
         const nextExpandedDirectoryPaths =
-          previousRepositoryRootPath === response.repositoryRoot
+          previousRepositoryRootPath === normalizedResponse.repositoryRoot
             ? new Set(previousExpandedDirectoryPaths)
             : new Set<string>();
         for (const ancestorDirectoryPath of activeFileAncestorDirectoryPaths) {
-          nextExpandedDirectoryPaths.add(
-            ancestorDirectoryPath.replace(/\\/g, '/'),
-          );
+          nextExpandedDirectoryPaths.add(ancestorDirectoryPath);
         }
         return nextExpandedDirectoryPaths;
       });
-      setFocusedItemPath(response.activeFilePath);
+      setFocusedItemPath(normalizedResponse.activeFilePath);
     };
 
     void loadRepositoryTree();
@@ -213,10 +138,7 @@ export const RepositoryFileExplorerPane = ({
     );
     if (activeVisibleItemIndex >= 0) {
       setFocusedItemPath(
-        visibleExplorerItems[activeVisibleItemIndex].node.path.replace(
-          /\\/g,
-          '/',
-        ),
+        visibleExplorerItems[activeVisibleItemIndex].node.path,
       );
       return;
     }
@@ -229,9 +151,7 @@ export const RepositoryFileExplorerPane = ({
       return;
     }
 
-    setFocusedItemPath(
-      visibleExplorerItems[0]?.node.path.replace(/\\/g, '/') ?? null,
-    );
+    setFocusedItemPath(visibleExplorerItems[0]?.node.path ?? null);
   }, [activeFilePath, focusedItemPath, visibleExplorerItems]);
 
   /**
@@ -239,7 +159,8 @@ export const RepositoryFileExplorerPane = ({
    * even when upstream paths arrive with platform-specific separators.
    */
   const toggleDirectoryExpandedState = (directoryPath: string) => {
-    const normalizedDirectoryPath = directoryPath.replace(/\\/g, '/');
+    const normalizedDirectoryPath =
+      normalizeRepositoryExplorerPath(directoryPath);
     setExpandedDirectoryPaths((previousExpandedDirectoryPaths) => {
       const nextExpandedDirectoryPaths = new Set(
         previousExpandedDirectoryPaths,
@@ -258,7 +179,7 @@ export const RepositoryFileExplorerPane = ({
    * the shell can preserve save-before-switch behavior for the active document.
    */
   const requestFileOpen = async (filePath: string) => {
-    setFocusedItemPath(filePath.replace(/\\/g, '/'));
+    setFocusedItemPath(normalizeRepositoryExplorerPath(filePath));
     await onRequestOpenFile(filePath);
   };
 
@@ -271,7 +192,7 @@ export const RepositoryFileExplorerPane = ({
       return;
     }
 
-    const normalizedTargetPath = targetPath.replace(/\\/g, '/');
+    const normalizedTargetPath = normalizeRepositoryExplorerPath(targetPath);
     const targetRowElement =
       rowElementByPathRef.current.get(normalizedTargetPath) ?? null;
     targetRowElement?.focus();
@@ -279,7 +200,7 @@ export const RepositoryFileExplorerPane = ({
   };
 
   const rootLabelText = repositoryRootPath
-    ? repositoryRootPath.replace(/\\/g, '/').split('/').pop()
+    ? repositoryRootPath.split('/').pop()
     : null;
 
   return (
@@ -309,20 +230,15 @@ export const RepositoryFileExplorerPane = ({
             role="tree"
           >
             {visibleExplorerItems.map((visibleExplorerItem) => {
-              const normalizedNodePath = visibleExplorerItem.node.path.replace(
-                /\\/g,
-                '/',
-              );
+              const normalizedNodePath = visibleExplorerItem.node.path;
               const isDirectory = visibleExplorerItem.node.type === 'directory';
               const isExpanded =
                 isDirectory && expandedDirectoryPaths.has(normalizedNodePath);
               const isActiveFile =
                 visibleExplorerItem.node.type === 'file' &&
-                activeFilePath?.replace(/\\/g, '/') === normalizedNodePath;
+                activeFilePath === normalizedNodePath;
               const rowTabIndex =
-                focusedItemPath?.replace(/\\/g, '/') === normalizedNodePath
-                  ? 0
-                  : -1;
+                focusedItemPath === normalizedNodePath ? 0 : -1;
 
               return (
                 <button
