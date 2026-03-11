@@ -58,8 +58,8 @@ x-claude-code-ide-authorization: <authToken from lock file>
 
 Once connected, Claude Code can call these tools on the IDE server via JSON-RPC 2.0:
 
-| Tool                  | Purpose                                                    |
-|-----------------------|------------------------------------------------------------|
+| Tool                  | Purpose                                                     |
+| --------------------- | ----------------------------------------------------------- |
 | `getCurrentSelection` | Selected text + line/char coordinates in the focused editor |
 | `getLatestSelection`  | Most recent selection across any editor tab                 |
 | `getOpenEditors`      | All open tabs with file paths and metadata                  |
@@ -99,6 +99,7 @@ notification to Claude Code containing:
 - Position range (start/end line and column)
 
 The extension also injects **system reminder messages** into Claude's context, e.g.:
+
 > "The user opened the file [path] in the IDE. This may or may not be related to the current task."
 
 ### Pull: Claude to IDE (on-demand queries)

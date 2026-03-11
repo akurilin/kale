@@ -120,7 +120,7 @@ const sessionState = JSON.parse(
 );
 const browser = await chromium.connectOverCDP(sessionState.cdpUrl);
 const pages = browser.contexts()[0].pages();
-const page = pages.find(p => !p.url().startsWith('devtools://'));
+const page = pages.find((p) => !p.url().startsWith('devtools://'));
 ```
 
 The CDP endpoint exposes multiple pages (including DevTools). Filter for the app page by
@@ -159,7 +159,11 @@ await page.keyboard.type('Your new paragraph text here.', { delay: 10 });
 **Taking a screenshot:**
 
 ```js
-await page.screenshot({ path: '/tmp/kale-screenshot.jpg', type: 'jpeg', quality: 80 });
+await page.screenshot({
+  path: '/tmp/kale-screenshot.jpg',
+  type: 'jpeg',
+  quality: 80,
+});
 ```
 
 ### Step 4: Wait for autosave and verify

@@ -82,8 +82,17 @@ Suggested response shape:
 
 ```ts
 type RepositoryMarkdownTreeResponse =
-  | { ok: true; repositoryRoot: string; activeFilePath: string; tree: ExplorerNode[] }
-  | { ok: false; reason: 'not-in-git-repo' | 'load-failed'; errorMessage?: string };
+  | {
+      ok: true;
+      repositoryRoot: string;
+      activeFilePath: string;
+      tree: ExplorerNode[];
+    }
+  | {
+      ok: false;
+      reason: 'not-in-git-repo' | 'load-failed';
+      errorMessage?: string;
+    };
 
 type ExplorerNode =
   | {

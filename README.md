@@ -73,13 +73,13 @@ Kale is git-aware. If your Markdown file is inside a git repo, you can:
 
 ### Keyboard Shortcuts
 
-| Shortcut | Action |
-|---|---|
-| `Cmd/Ctrl+B` | Bold |
-| `Cmd/Ctrl+I` | Italic |
-| `Cmd/Ctrl+Option/Alt+1..6` | Heading level 1–6 |
-| `Cmd/Ctrl+S` | Save (commit) |
-| `Cmd/Ctrl+Enter` | Finish editing a comment |
+| Shortcut                   | Action                   |
+| -------------------------- | ------------------------ |
+| `Cmd/Ctrl+B`               | Bold                     |
+| `Cmd/Ctrl+I`               | Italic                   |
+| `Cmd/Ctrl+Option/Alt+1..6` | Heading level 1–6        |
+| `Cmd/Ctrl+S`               | Save (commit)            |
+| `Cmd/Ctrl+Enter`           | Finish editing a comment |
 
 ## Building Distributables
 

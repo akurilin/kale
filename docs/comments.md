@@ -52,10 +52,14 @@ Embed comment anchors directly in the Markdown body using HTML comment syntax wi
 
 ```markdown
 The real problem with most startups isn't
+
 <!-- @comment:c1 start | "tighten this, too wordy" -->
+
 that founders consistently and repeatedly confuse
 motion with progress and activity with achievement
+
 <!-- @comment:c1 end -->
+
 in their day-to-day operations.
 ```
 
@@ -110,18 +114,18 @@ This gives full control over the comment model but means the file is no longer d
 
 ## Trade-Off Matrix
 
-| Criteria | A: Inline HTML | B: Sidecar File | C: End-of-File Block | D: Proprietary Format |
-|---|---|---|---|---|
-| **Markdown stays valid** | ✅ Yes, HTML comments are spec-compliant | ✅ Markdown is untouched | ✅ Yes, HTML comments are spec-compliant | ❌ Not a `.md` file at all |
-| **Clean raw view in other editors** | ⚠️ Markers visible in source view | ✅ Completely clean | ⚠️ One comment block visible at end of file | ❌ Not openable in other editors |
-| **Clean rendered output** | ✅ HTML comments are hidden by renderers | ✅ No comment artifacts | ✅ HTML comments are hidden by renderers | ✅ Export produces clean Markdown |
-| **Character-level anchor precision** | ✅ Exact range via markers (when marker placement is valid) | ⚠️ Depends on fuzzy matching quality | ⚠️ Depends on anchor quote uniqueness | ✅ Full control over anchor model |
-| **Agent can see instructions** | ✅ Instructions inline next to relevant text | ❌ Must read separate file and cross-reference | ⚠️ Visible but separated from relevant text | ❌ Requires custom tooling |
-| **Agent can edit without special tools** | ✅ Plain text manipulation | ⚠️ Must update both files and maintain offsets | ✅ Plain text manipulation | ❌ Must use editor API or MCP tool |
-| **Survives external edits** | ⚠️ Often survives simple edits, but malformed/orphaned markers are possible | ❌ Offsets break; fuzzy matching may recover | ⚠️ Anchor quotes may no longer match after edits | ❌ External edits not possible |
-| **Comment density scales** | ⚠️ Heavy commenting clutters the source | ✅ No impact on source readability | ⚠️ Large comment block at end, but body stays clean | ✅ Comments in separate layer |
-| **Implementation complexity** | 🟡 Medium — marker parsing/validation, malformed-marker recovery | 🔴 High — fuzzy matching, offset tracking, two-file sync | 🟡 Medium — parse comment block + anchor resolution | 🔴 High — custom format, import/export pipeline |
-| **Works for ephemeral task-style comments** | ✅ Agent acts on it and deletes markers | ⚠️ Agent must clean up sidecar entries | ✅ Agent resolves and removes entries from block | ✅ Full control |
+| Criteria                                    | A: Inline HTML                                                              | B: Sidecar File                                          | C: End-of-File Block                                | D: Proprietary Format                           |
+| ------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------- |
+| **Markdown stays valid**                    | ✅ Yes, HTML comments are spec-compliant                                    | ✅ Markdown is untouched                                 | ✅ Yes, HTML comments are spec-compliant            | ❌ Not a `.md` file at all                      |
+| **Clean raw view in other editors**         | ⚠️ Markers visible in source view                                           | ✅ Completely clean                                      | ⚠️ One comment block visible at end of file         | ❌ Not openable in other editors                |
+| **Clean rendered output**                   | ✅ HTML comments are hidden by renderers                                    | ✅ No comment artifacts                                  | ✅ HTML comments are hidden by renderers            | ✅ Export produces clean Markdown               |
+| **Character-level anchor precision**        | ✅ Exact range via markers (when marker placement is valid)                 | ⚠️ Depends on fuzzy matching quality                     | ⚠️ Depends on anchor quote uniqueness               | ✅ Full control over anchor model               |
+| **Agent can see instructions**              | ✅ Instructions inline next to relevant text                                | ❌ Must read separate file and cross-reference           | ⚠️ Visible but separated from relevant text         | ❌ Requires custom tooling                      |
+| **Agent can edit without special tools**    | ✅ Plain text manipulation                                                  | ⚠️ Must update both files and maintain offsets           | ✅ Plain text manipulation                          | ❌ Must use editor API or MCP tool              |
+| **Survives external edits**                 | ⚠️ Often survives simple edits, but malformed/orphaned markers are possible | ❌ Offsets break; fuzzy matching may recover             | ⚠️ Anchor quotes may no longer match after edits    | ❌ External edits not possible                  |
+| **Comment density scales**                  | ⚠️ Heavy commenting clutters the source                                     | ✅ No impact on source readability                       | ⚠️ Large comment block at end, but body stays clean | ✅ Comments in separate layer                   |
+| **Implementation complexity**               | 🟡 Medium — marker parsing/validation, malformed-marker recovery            | 🔴 High — fuzzy matching, offset tracking, two-file sync | 🟡 Medium — parse comment block + anchor resolution | 🔴 High — custom format, import/export pipeline |
+| **Works for ephemeral task-style comments** | ✅ Agent acts on it and deletes markers                                     | ⚠️ Agent must clean up sidecar entries                   | ✅ Agent resolves and removes entries from block    | ✅ Full control                                 |
 
 ---
 
