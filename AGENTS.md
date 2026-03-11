@@ -25,6 +25,7 @@ Follow a spec-driven, BDD-style development approach:
    - Unit tests: colocated with source files as `<module>.test.ts` (e.g. `src/renderer/line-merge.test.ts`)
    - E2E scenarios: `tests/e2e/scenarios/<name>.scenario.js`
 5. **Be judicious about what gets tested**: focus tests on code where bugs would be subtle and hard to trace — parsing, data transformations, merge logic, algorithmic code, state machines. Skip tests for things where bugs are immediately obvious — CSS/styling, static config, thin wiring/glue code, one-liners, framework boilerplate, and anything TypeScript already enforces. If a test just restates the implementation, it's not adding value.
+6. **Bug fixes start with a regression test**: when a bug is reported, do not jump straight to fixing it. First, write a test that reproduces the bug (red). Then use subagents to implement the fix in parallel and verify it by running the test (green).
 
 ## Coding style
 
