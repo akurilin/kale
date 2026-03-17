@@ -1,48 +1,15 @@
 /**
- * E2E suite entrypoint: runs all defined scenarios sequentially so CI and local
- * workflows use one command while scenario files stay focused and modular.
+ * CI-safe E2E suite entrypoint: runs only the scenarios that do not require
+ * local Claude access or other developer-machine-only dependencies.
  */
 
-const { runHappyPathScenario } = require('./scenarios/happy-path.scenario');
-const {
-  runInlineCommentBoundaryWhitespaceScenario,
-} = require('./scenarios/inline-comment-boundary-whitespace.scenario');
-const {
-  runInlineCommentTypingScrollStabilityScenario,
-} = require('./scenarios/inline-comment-typing-scroll-stability.scenario');
-const {
-  runInlineCommentDeleteScrollStabilityScenario,
-} = require('./scenarios/inline-comment-delete-scroll-stability.scenario');
-const {
-  runInlineCommentActiveFocusSyncScenario,
-} = require('./scenarios/inline-comment-active-focus-sync.scenario');
-const {
-  runTerminalPaneCollapseExpandScenario,
-} = require('./scenarios/terminal-pane-collapse-expand.scenario');
-const {
-  runRepositoryFileExplorerPaneScenario,
-} = require('./scenarios/repository-file-explorer-pane.scenario');
-const {
-  runRepositoryFileExplorerNonGitScenario,
-} = require('./scenarios/repository-file-explorer-non-git.scenario');
+const { ciScenarioDefinitions } = require('./scenario-suites');
+const { runScenarioSuite } = require('./run-suite');
 
-/**
- * Why: sequential execution avoids cross-test interference between isolated
- * Electron sessions while preserving deterministic logs for debugging failures.
- */
-const runAllE2ETests = async () => {
-  await runHappyPathScenario();
-  await runInlineCommentBoundaryWhitespaceScenario();
-  await runInlineCommentTypingScrollStabilityScenario();
-  await runInlineCommentDeleteScrollStabilityScenario();
-  await runInlineCommentActiveFocusSyncScenario();
-  await runTerminalPaneCollapseExpandScenario();
-  await runRepositoryFileExplorerPaneScenario();
-  await runRepositoryFileExplorerNonGitScenario();
-  console.log('\nAll E2E tests passed!');
-};
-
-runAllE2ETests().catch((error) => {
+runScenarioSuite({
+  suiteName: 'CI-safe E2E suite',
+  scenarioDefinitions: ciScenarioDefinitions,
+}).catch((error) => {
   console.error('\nE2E test suite FAILED:', error.message || error);
   process.exit(1);
 });

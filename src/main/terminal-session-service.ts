@@ -1,6 +1,6 @@
 import { app, BrowserWindow, type IpcMain } from 'electron';
 import { execFile } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import * as nodePty from 'node-pty';
@@ -11,6 +11,10 @@ import type {
   StartTerminalSessionResponse,
   TerminalProcessExitEvent,
 } from '../shared-types';
+import {
+  resolveTerminalLaunchProfileFromEnvironment,
+  type TerminalLaunchProfile,
+} from './terminal-launch-profile';
 
 const execFileAsync = promisify(execFile);
 const CLAUDE_CLI_BINARY_NAME = 'claude';
@@ -20,6 +24,12 @@ const COMMON_DARWIN_CLI_BIN_DIRECTORIES = [
   '/opt/homebrew/sbin',
   '/usr/local/bin',
   '/usr/local/sbin',
+];
+const COMMON_WINDOWS_EXECUTABLE_FILE_EXTENSIONS = [
+  '.com',
+  '.exe',
+  '.bat',
+  '.cmd',
 ];
 
 type TerminalSessionServiceDependencies = {
@@ -51,7 +61,7 @@ const buildEnvironmentPathWithAdditionalEntries = (
 
 // Terminal child processes and startup dependency checks should share one
 // normalized environment so `claude` resolution behaves the same everywhere.
-const buildTerminalRuntimeEnvironmentVariables = () => {
+const buildTerminalRuntimeEnvironmentVariables = (): NodeJS.ProcessEnv => {
   if (process.platform !== 'darwin') {
     return { ...process.env };
   }
@@ -71,6 +81,7 @@ export const createTerminalSessionService = (
   dependencies: TerminalSessionServiceDependencies,
 ) => {
   let bundledClaudeSystemPromptMarkdownText: string | null = null;
+  let resolvedTerminalLaunchProfile: TerminalLaunchProfile | null = null;
   const terminalSessionsById = new Map<string, nodePty.IPty>();
   const terminalRuntimeEnvironmentVariables =
     buildTerminalRuntimeEnvironmentVariables();
@@ -125,6 +136,20 @@ export const createTerminalSessionService = (
     return promptText;
   };
 
+  // Terminal launch mode is environment-driven so QA can swap Claude for a
+  // shell or diagnostic command without changing production defaults.
+  const getResolvedTerminalLaunchProfileOrThrow = () => {
+    if (resolvedTerminalLaunchProfile) {
+      return resolvedTerminalLaunchProfile;
+    }
+
+    resolvedTerminalLaunchProfile = resolveTerminalLaunchProfileFromEnvironment(
+      process.env,
+      process.platform,
+    );
+    return resolvedTerminalLaunchProfile;
+  };
+
   // Kale's primary workflow depends on the Claude CLI binary, so startup checks
   // PATH reachability before the UI opens to avoid later confusing failures.
   const ensureClaudeCliIsInstalledOrThrow = async () => {
@@ -159,6 +184,69 @@ export const createTerminalSessionService = (
     }
   };
 
+  // QA/test overrides should fail fast during startup when the chosen command
+  // cannot be resolved, instead of opening the app and only failing on launch.
+  const ensureTerminalCommandIsInstalledOrThrow = async (command: string) => {
+    const isExplicitCommandPath =
+      path.isAbsolute(command) || /[\\/]/.test(command);
+    const pathEntries = (terminalRuntimeEnvironmentVariables.PATH ?? '').split(
+      path.delimiter,
+    );
+    const executableFileExtensions =
+      process.platform === 'win32'
+        ? (() => {
+            const configuredPathExtensions =
+              terminalRuntimeEnvironmentVariables['PATHEXT']
+                ?.split(';')
+                .filter((extension: string) => extension.trim().length > 0) ??
+              COMMON_WINDOWS_EXECUTABLE_FILE_EXTENSIONS;
+            return configuredPathExtensions;
+          })()
+        : [''];
+    const candidateCommandFilePaths = isExplicitCommandPath
+      ? [command]
+      : pathEntries.flatMap((pathEntry) => {
+          if (!pathEntry) {
+            return [];
+          }
+
+          const commandPathWithoutExtension = path.join(pathEntry, command);
+          if (process.platform !== 'win32') {
+            return [commandPathWithoutExtension];
+          }
+
+          const commandAlreadyIncludesExtension =
+            path.extname(command).length > 0;
+          if (commandAlreadyIncludesExtension) {
+            return [commandPathWithoutExtension];
+          }
+
+          return executableFileExtensions.map(
+            (extension: string) => `${commandPathWithoutExtension}${extension}`,
+          );
+        });
+
+    const accessibilityCheckConstant =
+      process.platform === 'win32' ? fsConstants.F_OK : fsConstants.X_OK;
+
+    for (const candidateCommandFilePath of candidateCommandFilePaths) {
+      try {
+        await fs.access(candidateCommandFilePath, accessibilityCheckConstant);
+        return;
+      } catch {
+        // Keep probing remaining PATH candidates until one resolves.
+      }
+    }
+
+    throw new Error(
+      [
+        `Configured terminal command '${command}' could not be found.`,
+        '',
+        'Set KALE_TERMINAL_COMMAND to an absolute path or ensure the command is on PATH.',
+      ].join('\n'),
+    );
+  };
+
   // Session IDs stay opaque and renderer-generated IDs are avoided so main can
   // remain the authority for PTY process lookup and lifecycle management.
   const createTerminalSessionId = () =>
@@ -183,17 +271,45 @@ export const createTerminalSessionService = (
   const resolveTerminalLaunchCommand = async (
     request: StartTerminalSessionRequest,
   ) => {
+    const terminalLaunchProfile = getResolvedTerminalLaunchProfileOrThrow();
+    if (terminalLaunchProfile.kind === 'custom') {
+      return {
+        command: terminalLaunchProfile.command,
+        args: terminalLaunchProfile.args,
+      };
+    }
+
+    if (terminalLaunchProfile.kind === 'shell') {
+      return {
+        command: terminalLaunchProfile.command,
+        args: terminalLaunchProfile.args,
+      };
+    }
+
     const activeFilePathForPrompt = request.targetFilePath.trim()
       ? request.targetFilePath.trim()
       : await dependencies.ensureCurrentMarkdownFilePath();
 
+    const sharedClaudeLaunchArguments = [
+      '--append-system-prompt',
+      buildClaudeSystemPromptFromTemplate(activeFilePathForPrompt),
+    ];
+    if (terminalLaunchProfile.kind === 'claude-safe') {
+      return {
+        command: CLAUDE_CLI_BINARY_NAME,
+        args: [
+          '--permission-mode',
+          'default',
+          '--tools',
+          '',
+          ...sharedClaudeLaunchArguments,
+        ],
+      };
+    }
+
     return {
       command: CLAUDE_CLI_BINARY_NAME,
-      args: [
-        '--dangerously-skip-permissions',
-        '--append-system-prompt',
-        buildClaudeSystemPromptFromTemplate(activeFilePathForPrompt),
-      ],
+      args: ['--dangerously-skip-permissions', ...sharedClaudeLaunchArguments],
     };
   };
 
@@ -353,8 +469,19 @@ export const createTerminalSessionService = (
   // Startup validates required Claude CLI dependencies and prompt assets before
   // windows open so terminal failures are visible and deterministic.
   const prepareRuntimeOrThrow = async () => {
-    await ensureClaudeCliIsInstalledOrThrow();
-    await loadBundledClaudeSystemPromptMarkdownOrThrow();
+    const terminalLaunchProfile = getResolvedTerminalLaunchProfileOrThrow();
+    if (
+      terminalLaunchProfile.kind === 'claude' ||
+      terminalLaunchProfile.kind === 'claude-safe'
+    ) {
+      await ensureClaudeCliIsInstalledOrThrow();
+      await loadBundledClaudeSystemPromptMarkdownOrThrow();
+      return;
+    }
+
+    await ensureTerminalCommandIsInstalledOrThrow(
+      terminalLaunchProfile.command,
+    );
   };
 
   // App shutdown kills any surviving PTYs so child processes do not outlive the

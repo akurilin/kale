@@ -95,10 +95,17 @@ Owns active-file state, settings persistence, file watcher lifecycle, and git fi
 
 Owns PTY spawn/IO/resize/kill and Claude startup prerequisites.
 
-- Validates `claude` CLI via `claude --version`.
-- Preloads `prompts/claude-system-prompt.md`.
-- Builds launch command:
+- Defaults to a Claude launch profile, but QA can override it with:
+  - `KALE_TERMINAL_PROFILE=claude-safe`
+  - `KALE_TERMINAL_PROFILE=shell`
+  - `KALE_TERMINAL_COMMAND=<command>`
+  - `KALE_TERMINAL_ARGS_JSON='["arg1","arg2"]'`
+- Validates `claude` via `claude --version` only when the Claude profile is active.
+- Preloads `prompts/claude-system-prompt.md` only for the Claude profile.
+- Builds the default launch command as:
   - `claude --dangerously-skip-permissions --append-system-prompt <resolved prompt>`
+- Builds the safe Claude QA command as:
+  - `claude --permission-mode default --tools "" --append-system-prompt <resolved prompt>`
 - Resolves active file path token in prompt template (`@@KALE:ACTIVE_FILE_PATH@@`).
 - Spawns PTY with renderer-provided initial rows/cols for correct first-frame full-screen CLI rendering.
 - Streams `terminal:process-data` and `terminal:process-exit` events to renderer.

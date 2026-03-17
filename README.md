@@ -54,6 +54,22 @@ Use the preset prompt buttons or type directly in the terminal to interact with 
 
 Collapsing or expanding the terminal only changes the workspace split inside Kale. The native window size stays fixed.
 
+### Terminal Overrides For QA
+
+Kale launches `claude` by default, but QA/debug sessions can swap the terminal command without editing the app code:
+
+- `KALE_TERMINAL_PROFILE=claude-safe npm start` launches Claude without dangerous permission bypass and with tools disabled.
+- `KALE_TERMINAL_PROFILE=shell npm start` launches an interactive shell instead of Claude.
+- `KALE_TERMINAL_COMMAND=/bin/cat KALE_TERMINAL_ARGS_JSON='["-v"]' npm start` launches an arbitrary command with explicit JSON arguments.
+
+The same overrides work with the CDP QA launcher. For example:
+
+```bash
+KALE_TERMINAL_PROFILE=claude-safe scripts/start-with-cdp.sh --instance claude-safe-qa
+```
+
+`KALE_TERMINAL_ARGS_JSON` is only used together with `KALE_TERMINAL_COMMAND`, and it must be a JSON array of strings so test launches stay deterministic across shells and platforms.
+
 ### Repository File Explorer
 
 When the active file is inside a git repository, Kale shows a collapsible file explorer on the left side of the workspace rooted at that repository's top-level directory.
@@ -90,6 +106,12 @@ npm run make
 ```
 
 This produces platform-specific distributables in the `out/` directory.
+
+## Testing
+
+- `npm test` runs the unit test suite.
+- `npm run test:e2e` runs the CI-safe E2E suite.
+- `npm run test:e2e:local` runs developer-local E2E scenarios, including Claude-dependent regressions such as the safe-mode `Shift+Enter` repro. This suite is intentionally kept out of CI because it requires local Claude Code access and may stay red while a Claude-only bug is being fixed.
 
 ## Architecture
 
