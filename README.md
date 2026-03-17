@@ -67,7 +67,7 @@ Explorer path handling is normalized internally so the pane behaves consistently
 
 Kale is git-aware. If your Markdown file is inside a git repo, you can:
 
-- **Save (commit)**: commits just the active file with a stock message
+- **Save (commit)**: commits just the active file with a stock message. The Save action is enabled only when the active file lives in a git repository and has changes to commit.
 - **Reset**: restores the file from the latest commit
 - **Switch branches**: move between branches without leaving the editor
 

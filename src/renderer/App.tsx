@@ -25,6 +25,7 @@ import { getIdeServerApi } from './ide-server-api';
 import { mergeDocumentLines } from './line-merge';
 import { getMarkdownApi } from './markdown-api';
 import { RepositoryFileExplorerPane } from './RepositoryFileExplorerPane';
+import { shouldDisableSaveCurrentFileToGitAction } from './save-current-file-to-git-state';
 import { TerminalPane } from './TerminalPane';
 import { countWordsInMarkdownContent } from './word-count';
 
@@ -198,6 +199,16 @@ type ApplyLoadedDocumentOptions = {
   saveStatusTextAfterLoad?: string;
 };
 
+type CurrentFileGitSaveState = {
+  isCurrentFileInsideGitRepository: boolean;
+  hasPersistedGitChanges: boolean;
+};
+
+const DEFAULT_CURRENT_FILE_GIT_SAVE_STATE: CurrentFileGitSaveState = {
+  isCurrentFileInsideGitRepository: false,
+  hasPersistedGitChanges: false,
+};
+
 // React owns shell composition and lifecycle wiring here because those flows
 // benefit from explicit state transitions more than imperative DOM queries.
 export const App = () => {
@@ -215,6 +226,8 @@ export const App = () => {
   const [isRestoringFromGit, setIsRestoringFromGit] = useState(false);
   const [isSavingCurrentFileToGit, setIsSavingCurrentFileToGit] =
     useState(false);
+  const [currentFileGitSaveState, setCurrentFileGitSaveState] =
+    useState<CurrentFileGitSaveState>(DEFAULT_CURRENT_FILE_GIT_SAVE_STATE);
   const [explorerPaneWidthPixels, setExplorerPaneWidthPixels] = useState(
     DEFAULT_EXPLORER_PANE_WIDTH_PIXELS,
   );
@@ -236,6 +249,7 @@ export const App = () => {
   const activeTerminalDividerDragCleanupRef = useRef<(() => void) | null>(null);
   const isSuppressingLifecycleSaveRef = useRef(false);
   const isSuppressingExternalMarkdownReloadRef = useRef(false);
+  const currentFileGitSaveStateRefreshIdRef = useRef(0);
   // When a three-way merge produces content that differs from disk, this ref
   // holds the actual disk content so the post-replacement callback can set
   // lastSavedContent to what's truly persisted (not the merged result). This
@@ -258,12 +272,43 @@ export const App = () => {
     clearSaveSuccessStatusTimeoutRef.current = null;
   }, []);
 
+  // Save availability depends on git dirtiness that lives outside the local
+  // editor state, so this helper refreshes the current file's repo state after
+  // reloads, autosaves, and commits while ignoring stale async responses.
+  const refreshCurrentFileGitSaveState = useCallback(async () => {
+    const refreshId = currentFileGitSaveStateRefreshIdRef.current + 1;
+    currentFileGitSaveStateRefreshIdRef.current = refreshId;
+
+    const response = await getMarkdownApi().getCurrentMarkdownGitBranchState();
+    if (currentFileGitSaveStateRefreshIdRef.current !== refreshId) {
+      return;
+    }
+
+    if (!response.ok) {
+      setCurrentFileGitSaveState(DEFAULT_CURRENT_FILE_GIT_SAVE_STATE);
+      return;
+    }
+
+    setCurrentFileGitSaveState({
+      isCurrentFileInsideGitRepository: true,
+      hasPersistedGitChanges: response.gitBranchState.isCurrentFileModified,
+    });
+  }, []);
+
+  // File switches should clear the prior file's save eligibility immediately so
+  // Save never stays enabled on the wrong document while state refreshes.
+  const clearCurrentFileGitSaveState = useCallback(() => {
+    currentFileGitSaveStateRefreshIdRef.current += 1;
+    setCurrentFileGitSaveState(DEFAULT_CURRENT_FILE_GIT_SAVE_STATE);
+  }, []);
+
   if (!saveControllerRef.current) {
     saveControllerRef.current = createSaveController({
       // the controller owns debounced autosave behavior while the React shell
       // remains focused on file lifecycle and UI state composition.
       saveMarkdownContent: async (content) => {
         await getMarkdownApi().saveMarkdown(content);
+        await refreshCurrentFileGitSaveState();
       },
       setSaveStatusText: (text) => {
         setSaveStatusText(text);
@@ -280,14 +325,26 @@ export const App = () => {
   const isExplorerPaneVisible =
     isExplorerRepositoryAvailable && !isExplorerPaneManuallyCollapsed;
   const isTerminalPaneVisible = !isTerminalPaneCollapsed;
-  const activeDocumentWordCount = countWordsInMarkdownContent(
-    editorContentForWordCount ?? loadedDocument?.content ?? null,
-  );
+  const currentEditorContent =
+    editorContentForWordCount ?? loadedDocument?.content ?? null;
+  const hasUnsavedEditorChanges =
+    currentEditorContent !== null &&
+    currentEditorContent !== saveController.getLastSavedContent();
+  const activeDocumentWordCount =
+    countWordsInMarkdownContent(currentEditorContent);
   const activeDocumentWordCountLabel = formatWordCountLabel(
     activeDocumentWordCount,
   );
   const isSaveCurrentFileToGitActionDisabled =
-    !loadedDocument || isSavingCurrentFileToGit || isRestoringFromGit;
+    shouldDisableSaveCurrentFileToGitAction({
+      hasLoadedDocument: loadedDocument !== null,
+      isCurrentFileInsideGitRepository:
+        currentFileGitSaveState.isCurrentFileInsideGitRepository,
+      hasPersistedGitChanges: currentFileGitSaveState.hasPersistedGitChanges,
+      hasUnsavedEditorChanges,
+      isSavingCurrentFileToGit,
+      isRestoringFromGit,
+    });
 
   // "Saved" should pulse briefly and then clear so the next successful save
   // provides a fresh visual acknowledgment instead of persistent idle text.
@@ -325,12 +382,13 @@ export const App = () => {
         saveStatusTextAfterLoad = INITIAL_SAVE_STATUS_TEXT,
       }: ApplyLoadedDocumentOptions = {},
     ) => {
+      clearCurrentFileGitSaveState();
       setLoadedDocument(nextLoadedDocument);
       setLoadedDocumentRevision((previousRevision) => previousRevision + 1);
       setEditorContentForWordCount(nextLoadedDocument.content);
       setSaveStatusText(saveStatusTextAfterLoad);
     },
-    [],
+    [clearCurrentFileGitSaveState],
   );
 
   // This callback fires after MarkdownEditorPane's useEffect has dispatched
@@ -388,6 +446,8 @@ export const App = () => {
         return;
       }
 
+      await refreshCurrentFileGitSaveState();
+
       setSaveStatusText(
         response.didCreateCommit ? 'Committed' : 'No changes to commit',
       );
@@ -397,7 +457,11 @@ export const App = () => {
     } finally {
       setIsSavingCurrentFileToGit(false);
     }
-  }, [isSaveCurrentFileToGitActionDisabled, saveController]);
+  }, [
+    isSaveCurrentFileToGitActionDisabled,
+    refreshCurrentFileGitSaveState,
+    saveController,
+  ]);
 
   // Startup is async because main decides which file path/content to restore.
   // Status intentionally stays blank here until there's actionable feedback.
@@ -421,6 +485,22 @@ export const App = () => {
       isDisposed = true;
     };
   }, [applyLoadedDocument]);
+
+  // The Save action should track the active file's current git state, so each
+  // completed load or reload triggers a fresh repo-status read.
+  useEffect(() => {
+    if (!loadedDocument) {
+      clearCurrentFileGitSaveState();
+      return;
+    }
+
+    void refreshCurrentFileGitSaveState();
+  }, [
+    clearCurrentFileGitSaveState,
+    loadedDocument,
+    loadedDocumentRevision,
+    refreshCurrentFileGitSaveState,
+  ]);
 
   // File-change notifications arrive for every disk write — including the
   // app's own saves. Content comparison against the save controller's last
