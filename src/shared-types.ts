@@ -129,6 +129,7 @@ export type StartTerminalSessionResponse =
       targetFilePath: string;
       command: string;
       args: string[];
+      usesClaudeCodeShiftEnterRemap: boolean;
     }
   | {
       ok: false;

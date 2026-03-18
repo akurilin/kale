@@ -36,6 +36,12 @@ type TerminalSessionServiceDependencies = {
   ensureCurrentMarkdownFilePath: () => Promise<string>;
 };
 
+type ResolvedTerminalLaunchCommand = {
+  command: string;
+  args: string[];
+  usesClaudeCodeShiftEnterRemap: boolean;
+};
+
 // Finder-launched macOS apps inherit a limited PATH, so we append common
 // Homebrew/system locations and dedupe entries to keep CLI lookup reliable.
 const buildEnvironmentPathWithAdditionalEntries = (
@@ -270,12 +276,13 @@ export const createTerminalSessionService = (
   // target file from the active editor when the renderer omits a path.
   const resolveTerminalLaunchCommand = async (
     request: StartTerminalSessionRequest,
-  ) => {
+  ): Promise<ResolvedTerminalLaunchCommand> => {
     const terminalLaunchProfile = getResolvedTerminalLaunchProfileOrThrow();
     if (terminalLaunchProfile.kind === 'custom') {
       return {
         command: terminalLaunchProfile.command,
         args: terminalLaunchProfile.args,
+        usesClaudeCodeShiftEnterRemap: false,
       };
     }
 
@@ -283,6 +290,7 @@ export const createTerminalSessionService = (
       return {
         command: terminalLaunchProfile.command,
         args: terminalLaunchProfile.args,
+        usesClaudeCodeShiftEnterRemap: false,
       };
     }
 
@@ -304,12 +312,14 @@ export const createTerminalSessionService = (
           '',
           ...sharedClaudeLaunchArguments,
         ],
+        usesClaudeCodeShiftEnterRemap: true,
       };
     }
 
     return {
       command: CLAUDE_CLI_BINARY_NAME,
       args: ['--dangerously-skip-permissions', ...sharedClaudeLaunchArguments],
+      usesClaudeCodeShiftEnterRemap: true,
     };
   };
 
@@ -318,7 +328,8 @@ export const createTerminalSessionService = (
   const startTerminalSession = async (
     request: StartTerminalSessionRequest,
   ): Promise<StartTerminalSessionResponse> => {
-    const { command, args } = await resolveTerminalLaunchCommand(request);
+    const { command, args, usesClaudeCodeShiftEnterRemap } =
+      await resolveTerminalLaunchCommand(request);
     const sessionId = createTerminalSessionId();
     const initialPtyGeometry = resolveInitialPtyGeometryForSpawn(request);
 
@@ -379,6 +390,7 @@ export const createTerminalSessionService = (
         targetFilePath: request.targetFilePath,
         command,
         args,
+        usesClaudeCodeShiftEnterRemap,
       };
     } catch (error) {
       const errorMessage =

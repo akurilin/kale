@@ -20,6 +20,7 @@ import type {
   StartTerminalSessionResponse,
   TerminalProcessExitEvent,
 } from '../shared-types';
+import { getTerminalKeyboardRemapAction } from './terminal-key-event-policy';
 import { getTerminalApi } from './terminal-api';
 
 type TerminalSessionState = {
@@ -27,6 +28,7 @@ type TerminalSessionState = {
   pid: number;
   command: string;
   args: string[];
+  usesClaudeCodeShiftEnterRemap: boolean;
 };
 
 type TerminalPaneProps = {
@@ -68,17 +70,6 @@ const terminalPromptPresets: TerminalPromptPreset[] = [
       'Analyze the document and provide feedback on the overall structure and flow, and critique how the flow of the whole document could be improved if there are any suggestions.',
   },
 ];
-
-const claudeShiftEnterEscapeSequence = '\u001b[13;2u';
-
-// Claude's multiline composer expects a distinct modified-Enter sequence, so
-// this helper centralizes the exact key shape we remap from xterm defaults.
-const isShiftEnterWithoutOtherModifiers = (keyboardEvent: KeyboardEvent) =>
-  keyboardEvent.key === 'Enter' &&
-  keyboardEvent.shiftKey &&
-  !keyboardEvent.altKey &&
-  !keyboardEvent.ctrlKey &&
-  !keyboardEvent.metaKey;
 
 // This helper derives a stable file-context key so the pane can ignore content
 // reloads for the same file while still restarting when the user switches files.
@@ -220,25 +211,24 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
       fitTerminalAndReadGeometry();
       terminal.focus();
 
-      // xterm maps Shift+Enter to plain CR, but Claude expects modified Enter
-      // (CSI u) to insert a newline without submitting the prompt.
+      // xterm emits multiple key event phases for Enter. The remap helper keeps
+      // Shift+Enter suppression consistent so Claude receives only one modified
+      // Enter sequence and never xterm's default plain carriage return.
       terminal.attachCustomKeyEventHandler((keyboardEvent: KeyboardEvent) => {
-        if (
-          keyboardEvent.type !== 'keydown' ||
-          !isShiftEnterWithoutOtherModifiers(keyboardEvent)
-        ) {
+        const remapAction = getTerminalKeyboardRemapAction(
+          keyboardEvent,
+          sessionRef.current?.usesClaudeCodeShiftEnterRemap ?? false,
+        );
+        if (remapAction.kind === 'pass-through') {
           return true;
         }
 
         const activeSessionId = sessionRef.current?.sessionId;
-        if (!activeSessionId) {
+        if (!activeSessionId || remapAction.kind === 'intercept-only') {
           return false;
         }
 
-        void getTerminalApi().sendInput(
-          activeSessionId,
-          claudeShiftEnterEscapeSequence,
-        );
+        void getTerminalApi().sendInput(activeSessionId, remapAction.data);
         return false;
       });
 
@@ -374,6 +364,8 @@ export const TerminalPane = forwardRef<TerminalPaneHandle, TerminalPaneProps>(
           pid: startResponse.pid,
           command: startResponse.command,
           args: startResponse.args,
+          usesClaudeCodeShiftEnterRemap:
+            startResponse.usesClaudeCodeShiftEnterRemap,
         };
         // Claude can emit control sequences immediately after spawn; setting the
         // ref synchronously prevents startup chunks from being dropped while

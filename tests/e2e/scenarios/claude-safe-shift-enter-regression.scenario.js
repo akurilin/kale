@@ -13,16 +13,64 @@ const CLAUDE_SAFE_SHIFT_ENTER_TIMEOUT_MS = 10_000;
  * Why: Claude startup is asynchronous and local-only, so this wait produces a
  * deterministic prompt-ready boundary before sending keyboard input.
  */
+const isClaudeMainComposerPromptVisible = () => {
+  const terminalRows = Array.from(
+    document.querySelectorAll('.terminal-pane .xterm-rows > div'),
+  ).map((row) => row.textContent || '');
+  return (
+    terminalRows.some((row) => row.includes('current:')) &&
+    terminalRows.some(
+      (row) => row.includes('❯') && !row.includes('Yes, I trust this folder'),
+    )
+  );
+};
+
+/**
+ * Why: the workspace-trust chooser also renders a `❯` marker, so prompt-ready
+ * detection must distinguish the real Claude composer from that gate screen.
+ */
 const waitForClaudePromptToBeReady = async (page) => {
+  await page.waitForFunction(isClaudeMainComposerPromptVisible, {
+    timeout: CLAUDE_SAFE_SHIFT_ENTER_TIMEOUT_MS,
+  });
+};
+
+/**
+ * Why: safe-mode Claude can show a one-time workspace-trust confirmation for
+ * the isolated temporary test directory. The regression should accept that
+ * prompt explicitly so the actual Shift+Enter assertion reaches the composer.
+ */
+const acceptClaudeWorkspaceTrustPromptIfPresent = async (page) => {
   await page.waitForFunction(
     () => {
       const terminalRows = Array.from(
         document.querySelectorAll('.terminal-pane .xterm-rows > div'),
       ).map((row) => row.textContent || '');
-      return terminalRows.some((row) => row.includes('❯'));
+      return (
+        terminalRows.some((row) => row.includes('Yes, I trust this folder')) ||
+        (terminalRows.some((row) => row.includes('current:')) &&
+          terminalRows.some(
+            (row) =>
+              row.includes('❯') && !row.includes('Yes, I trust this folder'),
+          ))
+      );
     },
     { timeout: CLAUDE_SAFE_SHIFT_ENTER_TIMEOUT_MS },
   );
+
+  const trustPromptIsVisible = await page.evaluate(() => {
+    const terminalRows = Array.from(
+      document.querySelectorAll('.terminal-pane .xterm-rows > div'),
+    ).map((row) => row.textContent || '');
+    return terminalRows.some((row) => row.includes('Yes, I trust this folder'));
+  });
+  if (!trustPromptIsVisible) {
+    return;
+  }
+
+  await focusTerminalInputTextarea(page);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1_000);
 };
 
 /**
@@ -39,8 +87,17 @@ const readTerminalRowsSnapshot = async (page) => {
         text: row.textContent || '',
         hasCursor: Boolean(row.querySelector('.xterm-cursor')),
       }))
-      .filter((row) => row.text.trim().length > 0);
+      .filter((row) => row.text.trim().length > 0 || row.hasCursor);
   });
+};
+
+/**
+ * Why: Claude labels the external editor affordance with the locally configured
+ * editor name, so the multiline check must anchor on the stable shortcut text
+ * instead of assuming one editor such as VS Code.
+ */
+const hasClaudeMultilineComposerFooter = (rowsSnapshot) => {
+  return rowsSnapshot.some((row) => /ctrl\+g to edit in /i.test(row.text));
 };
 
 /**
@@ -69,32 +126,54 @@ const enterClaudeMultilineModeFromAnEmptyPrompt = async (page) => {
 
 /**
  * Why: the intended behavior is "insert a newline without submitting", so the
- * red regression asserts both "no processing started" and "cursor moved below
- * the typed line" after Shift+Enter is pressed with prompt text present.
+ * red regression asserts both "no processing started" and "the multiline
+ * footer shifted downward by one row" after Shift+Enter is pressed with prompt
+ * text present.
  */
-const assertShiftEnterInsertedANewlineWithoutSubmitting = (rowsSnapshot) => {
-  const helloRow = rowsSnapshot.find((row) => row.text.includes('hello'));
+const assertShiftEnterInsertedANewlineWithoutSubmitting = (
+  beforeShiftRowsSnapshot,
+  afterShiftRowsSnapshot,
+) => {
+  const helloRow = afterShiftRowsSnapshot.find((row) =>
+    row.text.includes('hello'),
+  );
   assert.ok(
     helloRow,
-    `Expected to keep a visible row containing "hello". Got ${JSON.stringify(rowsSnapshot)}.`,
+    `Expected to keep a visible row containing "hello". Got ${JSON.stringify(afterShiftRowsSnapshot)}.`,
   );
 
-  const cursorRow = rowsSnapshot.find((row) => row.hasCursor);
-  assert.ok(
-    cursorRow,
-    `Expected the prompt cursor to remain visible after Shift+Enter. Got ${JSON.stringify(rowsSnapshot)}.`,
+  const beforeFooterSeparatorRow = beforeShiftRowsSnapshot.find(
+    (row) => row.index > helloRow.index && row.text.includes('────────────'),
+  );
+  const afterFooterSeparatorRow = afterShiftRowsSnapshot.find(
+    (row) => row.index > helloRow.index && row.text.includes('────────────'),
   );
   assert.ok(
-    cursorRow.index > helloRow.index,
+    beforeFooterSeparatorRow,
     [
-      'Shift+Enter should move the cursor onto a new line below the typed prompt text.',
-      `hello row index: ${helloRow.index}.`,
-      `cursor row index: ${cursorRow.index}.`,
-      `Rows: ${JSON.stringify(rowsSnapshot)}.`,
+      'Expected the multiline composer footer separator before Shift+Enter.',
+      `Rows: ${JSON.stringify(beforeShiftRowsSnapshot)}.`,
+    ].join(' '),
+  );
+  assert.ok(
+    afterFooterSeparatorRow,
+    [
+      'Expected the multiline composer footer separator after Shift+Enter.',
+      `Rows: ${JSON.stringify(afterShiftRowsSnapshot)}.`,
+    ].join(' '),
+  );
+  assert.ok(
+    afterFooterSeparatorRow.index > beforeFooterSeparatorRow.index,
+    [
+      'Shift+Enter should insert a newline and push the multiline composer footer downward.',
+      `before footer separator row index: ${beforeFooterSeparatorRow.index}.`,
+      `after footer separator row index: ${afterFooterSeparatorRow.index}.`,
+      `Rows before: ${JSON.stringify(beforeShiftRowsSnapshot)}.`,
+      `Rows after: ${JSON.stringify(afterShiftRowsSnapshot)}.`,
     ].join(' '),
   );
 
-  const processingRow = rowsSnapshot.find((row) =>
+  const processingRow = afterShiftRowsSnapshot.find((row) =>
     /(Cultivating|Thinking|⏺ )/.test(row.text),
   );
   assert.ok(
@@ -102,7 +181,7 @@ const assertShiftEnterInsertedANewlineWithoutSubmitting = (rowsSnapshot) => {
     [
       'Shift+Enter should not submit the prompt and start a Claude response.',
       `Unexpected processing row: ${JSON.stringify(processingRow)}.`,
-      `Rows: ${JSON.stringify(rowsSnapshot)}.`,
+      `Rows: ${JSON.stringify(afterShiftRowsSnapshot)}.`,
     ].join(' '),
   );
 };
@@ -120,15 +199,14 @@ const runClaudeSafeShiftEnterRegressionScenario = async () => {
       KALE_SKIP_TERMINAL_VALIDATION: '',
     },
     testBody: async ({ page }) => {
+      await acceptClaudeWorkspaceTrustPromptIfPresent(page);
       await waitForClaudePromptToBeReady(page);
       await focusTerminalInputTextarea(page);
       await enterClaudeMultilineModeFromAnEmptyPrompt(page);
 
       const multilineModeRowsSnapshot = await readTerminalRowsSnapshot(page);
       assert.ok(
-        multilineModeRowsSnapshot.some((row) =>
-          row.text.includes('ctrl+g to edit in VS Code'),
-        ),
+        hasClaudeMultilineComposerFooter(multilineModeRowsSnapshot),
         [
           'Expected Shift+Enter on an empty prompt to enter the multiline composer state.',
           `Rows: ${JSON.stringify(multilineModeRowsSnapshot)}.`,
@@ -137,12 +215,15 @@ const runClaudeSafeShiftEnterRegressionScenario = async () => {
 
       await page.keyboard.type('hello', { delay: 50 });
       await page.waitForTimeout(500);
+      const beforeTypedShiftEnterRowsSnapshot =
+        await readTerminalRowsSnapshot(page);
       await page.keyboard.press('Shift+Enter');
       await page.waitForTimeout(1_000);
 
       const afterTypedShiftEnterRowsSnapshot =
         await readTerminalRowsSnapshot(page);
       assertShiftEnterInsertedANewlineWithoutSubmitting(
+        beforeTypedShiftEnterRowsSnapshot,
         afterTypedShiftEnterRowsSnapshot,
       );
     },
