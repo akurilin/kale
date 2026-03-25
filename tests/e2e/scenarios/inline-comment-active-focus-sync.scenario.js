@@ -43,11 +43,23 @@ const readInlineCommentFocusState = async (page) => {
     );
     const firstCommentValue =
       document.querySelector('.inline-comment-card-input')?.value ?? '';
+    const editorRootElement = document.querySelector('.cm-editor');
+    const editorFocused = Boolean(
+      editorRootElement instanceof HTMLElement &&
+      editorRootElement.classList.contains('cm-focused'),
+    );
+    const editorOwnsActiveElement = Boolean(
+      activeElement instanceof HTMLElement &&
+      editorRootElement instanceof HTMLElement &&
+      editorRootElement.contains(activeElement),
+    );
 
     return {
       activeCommentCardCount,
       activeCommentRangeCount,
       isCommentInputFocused,
+      editorFocused,
+      editorOwnsActiveElement,
       firstCommentValue,
     };
   });
@@ -55,7 +67,8 @@ const readInlineCommentFocusState = async (page) => {
 
 /**
  * Why: this verifies the bidirectional active-comment contract users rely on:
- * editor-highlight clicks focus comment cards and card focus re-highlights text.
+ * editor-highlight clicks activate the matching card without stealing editor
+ * focus, and card focus still re-highlights the referenced text.
  */
 const runInlineCommentActiveFocusSyncScenario = async () => {
   await runIsolatedE2ETest({
@@ -138,11 +151,48 @@ const runInlineCommentActiveFocusSyncScenario = async () => {
           '.cm-inline-comment-range--active',
         );
         const activeElement = document.activeElement;
+        const editorRootElement = document.querySelector('.cm-editor');
         return (
           activeCommentCards.length === 1 &&
           activeCommentRanges.length === 1 &&
+          editorRootElement instanceof HTMLElement &&
+          editorRootElement.classList.contains('cm-focused') &&
+          activeElement instanceof HTMLElement &&
+          editorRootElement.contains(activeElement) &&
+          !(
+            activeElement instanceof HTMLTextAreaElement &&
+            activeElement.classList.contains('inline-comment-card-input')
+          )
+        );
+      });
+
+      const postEditorRangeClickState = await readInlineCommentFocusState(page);
+      assert.strictEqual(
+        postEditorRangeClickState.activeCommentCardCount,
+        1,
+        'Clicking highlighted prose should activate the matching comment card.',
+      );
+      assert.strictEqual(
+        postEditorRangeClickState.activeCommentRangeCount,
+        1,
+        'Clicking highlighted prose should reactivate the referenced text highlight.',
+      );
+      assert.ok(
+        postEditorRangeClickState.editorFocused &&
+          postEditorRangeClickState.editorOwnsActiveElement,
+        'Clicking highlighted prose should keep keyboard focus in the editor.',
+      );
+      assert.ok(
+        !postEditorRangeClickState.isCommentInputFocused,
+        'Clicking highlighted prose should not focus the comment textarea.',
+      );
+
+      await page.click('.inline-comment-card-input');
+      await page.waitForFunction(() => {
+        const activeElement = document.activeElement;
+        return Boolean(
           activeElement instanceof HTMLTextAreaElement &&
-          activeElement.classList.contains('inline-comment-card-input')
+          activeElement.classList.contains('inline-comment-card-input'),
         );
       });
 

@@ -160,6 +160,50 @@ export const parseInlineCommentsFromMarkdown = (
 };
 
 /**
+ * Why: editor hit-testing should treat inline comment ranges as half-open so
+ * clicks at the visual end boundary stay in prose instead of jumping to cards.
+ */
+export const findInlineCommentIdContainingDocumentPosition = (
+  markdownContent: string,
+  documentPosition: number,
+): string | null => {
+  const parsedComments = parseInlineCommentsFromMarkdown(markdownContent);
+  const inlineCommentAtPosition = parsedComments.find((comment) => {
+    return (
+      documentPosition >= comment.contentFrom &&
+      documentPosition < comment.contentTo
+    );
+  });
+  return inlineCommentAtPosition?.id ?? null;
+};
+
+/**
+ * Why: mouse clicks on inline comment boundaries should behave like prose
+ * editors: the start edge activates the comment, but the end edge leaves the
+ * caret outside so users can resume typing after the annotated text.
+ */
+export const findInlineCommentIdForDocumentClick = (
+  markdownContent: string,
+  documentPosition: number,
+  documentPositionSide: -1 | 1,
+): string | null => {
+  const parsedComments = parseInlineCommentsFromMarkdown(markdownContent);
+  const inlineCommentAtClick = parsedComments.find((comment) => {
+    if (
+      documentPosition > comment.contentFrom &&
+      documentPosition < comment.contentTo
+    ) {
+      return true;
+    }
+
+    return (
+      documentPosition === comment.contentFrom && documentPositionSide === 1
+    );
+  });
+  return inlineCommentAtClick?.id ?? null;
+};
+
+/**
  * Why: comment creation should use one marker syntax generator so future format
  * tweaks do not require coordinated edits across multiple call sites.
  */

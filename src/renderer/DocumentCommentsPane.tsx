@@ -427,11 +427,11 @@ const DocumentCommentsPaneImpl = (
 
   /**
    * Why: clicking highlighted editor text should activate the corresponding
-   * sidebar card and move keyboard focus into its textarea for editing.
+   * sidebar card while keeping the prose caret in the editor pane.
    */
   const handleInlineCommentRangeInteraction = (commentId: string | null) => {
     activateInlineComment(commentId, {
-      shouldMoveFocusToCommentInput: commentId !== null,
+      shouldMoveFocusToCommentInput: false,
     });
   };
 

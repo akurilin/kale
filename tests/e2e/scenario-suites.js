@@ -17,6 +17,9 @@ const {
   runInlineCommentActiveFocusSyncScenario,
 } = require('./scenarios/inline-comment-active-focus-sync.scenario');
 const {
+  runInlineCommentEndBoundaryClickFocusScenario,
+} = require('./scenarios/inline-comment-end-boundary-click-focus.scenario');
+const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
 const {
@@ -35,6 +38,7 @@ const ciScenarioDefinitions = [
   runInlineCommentTypingScrollStabilityScenario,
   runInlineCommentDeleteScrollStabilityScenario,
   runInlineCommentActiveFocusSyncScenario,
+  runInlineCommentEndBoundaryClickFocusScenario,
   runTerminalPaneCollapseExpandScenario,
   runRepositoryFileExplorerPaneScenario,
   runRepositoryFileExplorerNonGitScenario,

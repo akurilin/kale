@@ -60,6 +60,7 @@ import {
   createInlineCommentStartMarker,
   doesSelectionOverlapExistingInlineComment,
   encodeInlineCommentTextForMarker,
+  findInlineCommentIdForDocumentClick,
   findInlineCommentTextPayloadRangeInMarkdown,
   parseInlineCommentsFromMarkdown,
 } from './inline-comments';
@@ -268,24 +269,6 @@ const MarkdownEditorPaneImpl = (
   const onInlineCommentRangeInteractionRef = useLatestRef(
     onInlineCommentRangeInteraction,
   );
-
-  /**
-   * Why: editor click interactions should activate comment cards when users
-   * click highlighted prose, so pointer positions map to comment ranges here.
-   */
-  const findInlineCommentIdContainingDocumentPosition = (
-    markdownContent: string,
-    documentPosition: number,
-  ): string | null => {
-    const parsedComments = parseInlineCommentsFromMarkdown(markdownContent);
-    const inlineCommentAtPosition = parsedComments.find((comment) => {
-      return (
-        documentPosition >= comment.contentFrom &&
-        documentPosition <= comment.contentTo
-      );
-    });
-    return inlineCommentAtPosition?.id ?? null;
-  };
 
   /**
    * Why: floating comment cards and the selection action both need the same
@@ -578,7 +561,7 @@ const MarkdownEditorPaneImpl = (
               return false;
             }
 
-            const clickedPosition = view.posAtCoords({
+            const clickedPosition = view.posAndSideAtCoords({
               x: mouseEvent.clientX,
               y: mouseEvent.clientY,
             });
@@ -587,11 +570,11 @@ const MarkdownEditorPaneImpl = (
               return false;
             }
 
-            const clickedInlineCommentId =
-              findInlineCommentIdContainingDocumentPosition(
-                view.state.doc.toString(),
-                clickedPosition,
-              );
+            const clickedInlineCommentId = findInlineCommentIdForDocumentClick(
+              view.state.doc.toString(),
+              clickedPosition.pos,
+              clickedPosition.assoc,
+            );
             inlineCommentRangeInteractionCallback(clickedInlineCommentId);
             return false;
           },
