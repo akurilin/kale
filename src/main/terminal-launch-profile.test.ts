@@ -22,6 +22,19 @@ describe('resolveTerminalLaunchProfileFromEnvironment', () => {
     });
   });
 
+  it('uses the Codex profile when Codex is requested', () => {
+    expect(
+      resolveTerminalLaunchProfileFromEnvironment(
+        {
+          KALE_TERMINAL_PROFILE: 'codex',
+        },
+        'darwin',
+      ),
+    ).toEqual({
+      kind: 'codex',
+    });
+  });
+
   it('uses the current interactive shell when the shell profile is requested', () => {
     expect(
       resolveTerminalLaunchProfileFromEnvironment(
@@ -95,7 +108,7 @@ describe('resolveTerminalLaunchProfileFromEnvironment', () => {
         'darwin',
       ),
     ).toThrowError(
-      'Unsupported KALE_TERMINAL_PROFILE value "unknown-profile". Supported values: claude, claude-safe, shell.',
+      'Unsupported KALE_TERMINAL_PROFILE value "unknown-profile". Supported values: claude, claude-safe, codex, shell.',
     );
   });
 

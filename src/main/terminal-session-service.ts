@@ -12,12 +12,16 @@ import type {
   TerminalProcessExitEvent,
 } from '../shared-types';
 import {
+  buildAgentLaunchCommand,
+  type AgentTerminalLaunchProfileKind,
+  type ResolvedAgentLaunchCommand,
+} from './agent-launch-command';
+import {
   resolveTerminalLaunchProfileFromEnvironment,
   type TerminalLaunchProfile,
 } from './terminal-launch-profile';
 
 const execFileAsync = promisify(execFile);
-const CLAUDE_CLI_BINARY_NAME = 'claude';
 const KALE_PROMPT_ACTIVE_FILE_PATH_TOKEN = '@@KALE:ACTIVE_FILE_PATH@@';
 const COMMON_DARWIN_CLI_BIN_DIRECTORIES = [
   '/opt/homebrew/bin',
@@ -36,11 +40,7 @@ type TerminalSessionServiceDependencies = {
   ensureCurrentMarkdownFilePath: () => Promise<string>;
 };
 
-type ResolvedTerminalLaunchCommand = {
-  command: string;
-  args: string[];
-  usesClaudeCodeShiftEnterRemap: boolean;
-};
+type ResolvedTerminalLaunchCommand = ResolvedAgentLaunchCommand;
 
 // Finder-launched macOS apps inherit a limited PATH, so we append common
 // Homebrew/system locations and dedupe entries to keep CLI lookup reliable.
@@ -66,7 +66,7 @@ const buildEnvironmentPathWithAdditionalEntries = (
 };
 
 // Terminal child processes and startup dependency checks should share one
-// normalized environment so `claude` resolution behaves the same everywhere.
+// normalized environment so agent command resolution behaves the same everywhere.
 const buildTerminalRuntimeEnvironmentVariables = (): NodeJS.ProcessEnv => {
   if (process.platform !== 'darwin') {
     return { ...process.env };
@@ -82,11 +82,11 @@ const buildTerminalRuntimeEnvironmentVariables = (): NodeJS.ProcessEnv => {
 };
 
 // Terminal service is created once by main and owns PTY process state so only
-// narrow IPC commands can reach the local shell/Claude CLI process objects.
+// narrow IPC commands can reach the local shell/agent CLI process objects.
 export const createTerminalSessionService = (
   dependencies: TerminalSessionServiceDependencies,
 ) => {
-  let bundledClaudeSystemPromptMarkdownText: string | null = null;
+  let bundledAgentSystemPromptMarkdownText: string | null = null;
   let resolvedTerminalLaunchProfile: TerminalLaunchProfile | null = null;
   const terminalSessionsById = new Map<string, nodePty.IPty>();
   const terminalRuntimeEnvironmentVariables =
@@ -94,39 +94,39 @@ export const createTerminalSessionService = (
 
   // Prompt assets are resolved from the packaged app root so dev and packaged
   // builds use the same logical path and startup fails consistently if missing.
-  const getBundledClaudeSystemPromptMarkdownFilePath = () =>
-    path.resolve(app.getAppPath(), 'prompts', 'claude-system-prompt.md');
+  const getBundledAgentSystemPromptMarkdownFilePath = () =>
+    path.resolve(app.getAppPath(), 'prompts', 'agent-system-prompt.md');
 
-  // Claude launches depend on the bundled prompt template, so startup preloads
+  // Agent launches depend on the bundled prompt template, so startup preloads
   // and validates it once instead of paying file I/O on every new session.
-  const loadBundledClaudeSystemPromptMarkdownOrThrow = async () => {
-    const promptFilePath = getBundledClaudeSystemPromptMarkdownFilePath();
+  const loadBundledAgentSystemPromptMarkdownOrThrow = async () => {
+    const promptFilePath = getBundledAgentSystemPromptMarkdownFilePath();
     const promptMarkdownText = (
       await fs.readFile(promptFilePath, 'utf8')
     ).trim();
     if (!promptMarkdownText) {
-      throw new Error(`Claude system prompt file is empty: ${promptFilePath}`);
+      throw new Error(`Agent system prompt file is empty: ${promptFilePath}`);
     }
 
-    bundledClaudeSystemPromptMarkdownText = promptMarkdownText;
+    bundledAgentSystemPromptMarkdownText = promptMarkdownText;
   };
 
   // Session launch command construction depends on startup preload, so this
   // guard makes the failure mode explicit if startup wiring regresses.
-  const getRequiredBundledClaudeSystemPromptMarkdownText = () => {
-    if (bundledClaudeSystemPromptMarkdownText) {
-      return bundledClaudeSystemPromptMarkdownText;
+  const getRequiredBundledAgentSystemPromptMarkdownText = () => {
+    if (bundledAgentSystemPromptMarkdownText) {
+      return bundledAgentSystemPromptMarkdownText;
     }
 
     throw new Error(
-      `Claude system prompt not loaded. Expected startup preload from ${getBundledClaudeSystemPromptMarkdownFilePath()}.`,
+      `Agent system prompt not loaded. Expected startup preload from ${getBundledAgentSystemPromptMarkdownFilePath()}.`,
     );
   };
 
   // Prompt templates intentionally support only a small token set so prompt
   // interpolation remains auditable and fails hard on unexpected placeholders.
-  const buildClaudeSystemPromptFromTemplate = (activeFilePath: string) => {
-    const promptTemplate = getRequiredBundledClaudeSystemPromptMarkdownText();
+  const buildAgentSystemPromptFromTemplate = (activeFilePath: string) => {
+    const promptTemplate = getRequiredBundledAgentSystemPromptMarkdownText();
     const promptText = promptTemplate.replaceAll(
       KALE_PROMPT_ACTIVE_FILE_PATH_TOKEN,
       activeFilePath,
@@ -135,15 +135,15 @@ export const createTerminalSessionService = (
     const unresolvedTokenMatch = promptText.match(/@@KALE:[A-Z0-9_]+@@/);
     if (unresolvedTokenMatch) {
       throw new Error(
-        `Unresolved Claude system prompt token: ${unresolvedTokenMatch[0]}`,
+        `Unresolved agent system prompt token: ${unresolvedTokenMatch[0]}`,
       );
     }
 
     return promptText;
   };
 
-  // Terminal launch mode is environment-driven so QA can swap Claude for a
-  // shell or diagnostic command without changing production defaults.
+  // Terminal launch mode is environment-driven so the start command can select
+  // an agent and QA can still select a shell or diagnostic command.
   const getResolvedTerminalLaunchProfileOrThrow = () => {
     if (resolvedTerminalLaunchProfile) {
       return resolvedTerminalLaunchProfile;
@@ -156,11 +156,20 @@ export const createTerminalSessionService = (
     return resolvedTerminalLaunchProfile;
   };
 
-  // Kale's primary workflow depends on the Claude CLI binary, so startup checks
-  // PATH reachability before the UI opens to avoid later confusing failures.
-  const ensureClaudeCliIsInstalledOrThrow = async () => {
+  // Agent sessions depend on their selected CLI binary, so startup checks PATH
+  // reachability before the UI opens to avoid a later confusing failure.
+  const ensureAgentCliIsInstalledOrThrow = async (
+    agentProfileKind: AgentTerminalLaunchProfileKind,
+  ) => {
+    const isCodexAgent = agentProfileKind === 'codex';
+    const agentBinaryName = isCodexAgent ? 'codex' : 'claude';
+    const agentDisplayName = isCodexAgent ? 'Codex' : 'Claude Code';
+    const installationUrl = isCodexAgent
+      ? 'https://learn.chatgpt.com/docs/codex/cli'
+      : 'https://docs.anthropic.com/en/docs/claude-code';
+
     try {
-      await execFileAsync(CLAUDE_CLI_BINARY_NAME, ['--version'], {
+      await execFileAsync(agentBinaryName, ['--version'], {
         windowsHide: true,
         env: terminalRuntimeEnvironmentVariables,
       });
@@ -170,18 +179,18 @@ export const createTerminalSessionService = (
       const failureDetail =
         stderrText ||
         commandError.message ||
-        'Unknown Claude CLI startup check error';
+        `Unknown ${agentDisplayName} CLI startup check error`;
 
       throw new Error(
         [
-          `Kale requires Claude Code but the '${CLAUDE_CLI_BINARY_NAME}' command was not found.`,
+          `Kale requires ${agentDisplayName} but the '${agentBinaryName}' command was not found.`,
           '',
-          'Install Claude Code from: https://docs.anthropic.com/en/docs/claude-code',
+          `Install ${agentDisplayName} from: ${installationUrl}`,
           '',
-          `After installing, verify that '${CLAUDE_CLI_BINARY_NAME}' is on your PATH by running:`,
-          `  ${CLAUDE_CLI_BINARY_NAME} --version`,
+          `After installing, verify that '${agentBinaryName}' is on your PATH by running:`,
+          `  ${agentBinaryName} --version`,
           '',
-          'If Kale was launched from Finder on macOS, ensure Claude Code is',
+          `If Kale was launched from Finder on macOS, ensure ${agentDisplayName} is`,
           'installed in a standard directory (e.g. /opt/homebrew/bin).',
           '',
           `Details: ${failureDetail}`,
@@ -272,7 +281,7 @@ export const createTerminalSessionService = (
     };
   };
 
-  // Terminal launches always append Kale-specific prose guidance and derive the
+  // Agent launches always include Kale-specific prose guidance and derive the
   // target file from the active editor when the renderer omits a path.
   const resolveTerminalLaunchCommand = async (
     request: StartTerminalSessionRequest,
@@ -298,29 +307,10 @@ export const createTerminalSessionService = (
       ? request.targetFilePath.trim()
       : await dependencies.ensureCurrentMarkdownFilePath();
 
-    const sharedClaudeLaunchArguments = [
-      '--append-system-prompt',
-      buildClaudeSystemPromptFromTemplate(activeFilePathForPrompt),
-    ];
-    if (terminalLaunchProfile.kind === 'claude-safe') {
-      return {
-        command: CLAUDE_CLI_BINARY_NAME,
-        args: [
-          '--permission-mode',
-          'default',
-          '--tools',
-          '',
-          ...sharedClaudeLaunchArguments,
-        ],
-        usesClaudeCodeShiftEnterRemap: true,
-      };
-    }
-
-    return {
-      command: CLAUDE_CLI_BINARY_NAME,
-      args: ['--dangerously-skip-permissions', ...sharedClaudeLaunchArguments],
-      usesClaudeCodeShiftEnterRemap: true,
-    };
+    return buildAgentLaunchCommand(
+      terminalLaunchProfile.kind,
+      buildAgentSystemPromptFromTemplate(activeFilePathForPrompt),
+    );
   };
 
   // PTYs are spawned in main so renderers can stream I/O while process creation
@@ -478,16 +468,17 @@ export const createTerminalSessionService = (
     );
   };
 
-  // Startup validates required Claude CLI dependencies and prompt assets before
+  // Startup validates required agent CLI dependencies and prompt assets before
   // windows open so terminal failures are visible and deterministic.
   const prepareRuntimeOrThrow = async () => {
     const terminalLaunchProfile = getResolvedTerminalLaunchProfileOrThrow();
     if (
       terminalLaunchProfile.kind === 'claude' ||
-      terminalLaunchProfile.kind === 'claude-safe'
+      terminalLaunchProfile.kind === 'claude-safe' ||
+      terminalLaunchProfile.kind === 'codex'
     ) {
-      await ensureClaudeCliIsInstalledOrThrow();
-      await loadBundledClaudeSystemPromptMarkdownOrThrow();
+      await ensureAgentCliIsInstalledOrThrow(terminalLaunchProfile.kind);
+      await loadBundledAgentSystemPromptMarkdownOrThrow();
       return;
     }
 

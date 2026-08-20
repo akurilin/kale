@@ -6,6 +6,9 @@ export type TerminalLaunchProfile =
       kind: 'claude-safe';
     }
   | {
+      kind: 'codex';
+    }
+  | {
       kind: 'shell';
       command: string;
       args: string[];
@@ -67,7 +70,7 @@ const resolveDefaultInteractiveShellCommandForPlatform = (
 
 /**
  * Why: terminal launch behavior now needs a safe QA escape hatch, but the app
- * must still default to Claude unless an explicit override is configured.
+ * must still default to Claude unless an explicit agent or override is set.
  */
 export const resolveTerminalLaunchProfileFromEnvironment = (
   environmentVariables: NodeJS.ProcessEnv,
@@ -103,6 +106,10 @@ export const resolveTerminalLaunchProfileFromEnvironment = (
     return { kind: 'claude-safe' };
   }
 
+  if (configuredProfileName === 'codex') {
+    return { kind: 'codex' };
+  }
+
   if (configuredProfileName === 'shell') {
     return {
       kind: 'shell',
@@ -115,6 +122,6 @@ export const resolveTerminalLaunchProfileFromEnvironment = (
   }
 
   throw new Error(
-    `Unsupported KALE_TERMINAL_PROFILE value "${configuredProfileName}". Supported values: claude, claude-safe, shell.`,
+    `Unsupported KALE_TERMINAL_PROFILE value "${configuredProfileName}". Supported values: claude, claude-safe, codex, shell.`,
   );
 };

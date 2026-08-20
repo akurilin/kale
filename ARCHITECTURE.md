@@ -11,7 +11,7 @@ It combines:
 - A prose-first markdown editor with inline comments persisted directly in markdown.
 - A git-rooted repository file explorer for markdown documents.
 - Git-aware file actions (`Reset`, single-file commit save).
-- A PTY-backed Claude Code terminal pane.
+- A PTY-backed agent terminal pane for Claude Code or Codex.
 - A local IDE MCP WebSocket server so Claude Code can query live editor selection/context.
 
 ## Runtime Architecture
@@ -30,18 +30,19 @@ Kale has three process layers:
 
 ### Startup Sequence
 
-1. `app.setName('kale')` normalizes `userData` path across launch methods.
-2. Optional `KALE_USER_DATA_DIR` override is applied early (used by E2E isolation).
-3. Services are created:
+1. For development starts, `scripts/start-kale.mjs` consumes `--agent claude|codex`, sets the terminal profile, and forwards all other arguments to Electron Forge. Claude is the default. The `start:claude` and `start:codex` npm scripts provide short aliases.
+2. `app.setName('kale')` normalizes `userData` path across launch methods.
+3. Optional `KALE_USER_DATA_DIR` override is applied early (used by E2E isolation).
+4. Services are created:
    - markdown file service
    - terminal session service
    - IDE integration service
-4. IPC handlers are registered for markdown/terminal/IDE/spellcheck/window APIs.
-5. On `ready`:
+5. IPC handlers are registered for markdown/terminal/IDE/spellcheck/window APIs.
+6. On `ready`:
    - Terminal runtime validation runs unless `KALE_SKIP_TERMINAL_VALIDATION=1`.
    - Main window is created.
    - IDE server startup is attempted (non-fatal if it fails).
-6. On `window-all-closed`, services shut down before quit (except standard macOS behavior).
+7. On `window-all-closed`, services shut down before quit (except standard macOS behavior).
 
 ## Main Process Services
 
@@ -93,20 +94,25 @@ Owns active-file state, settings persistence, file watcher lifecycle, and git fi
 
 ### Terminal Session Service (`src/main/terminal-session-service.ts`)
 
-Owns PTY spawn/IO/resize/kill and Claude startup prerequisites.
+Owns PTY spawn/IO/resize/kill and selected-agent startup prerequisites.
 
-- Defaults to a Claude launch profile, but QA can override it with:
+- Defaults to Claude. `npm start -- --agent claude|codex` selects the user-facing agent.
+- QA can override the profile with:
   - `KALE_TERMINAL_PROFILE=claude-safe`
+  - `KALE_TERMINAL_PROFILE=codex`
   - `KALE_TERMINAL_PROFILE=shell`
   - `KALE_TERMINAL_COMMAND=<command>`
   - `KALE_TERMINAL_ARGS_JSON='["arg1","arg2"]'`
-- Validates `claude` via `claude --version` only when the Claude profile is active.
-- Preloads `prompts/claude-system-prompt.md` only for the Claude profile.
+- Validates only the selected agent with `claude --version` or `codex --version`.
+- Preloads the provider-neutral `prompts/agent-system-prompt.md` for agent profiles.
+- Resolves the active file path token in the prompt template (`@@KALE:ACTIVE_FILE_PATH@@`).
 - Builds the default launch command as:
   - `claude --dangerously-skip-permissions --append-system-prompt <resolved prompt>`
 - Builds the safe Claude QA command as:
   - `claude --permission-mode default --tools "" --append-system-prompt <resolved prompt>`
-- Resolves active file path token in prompt template (`@@KALE:ACTIVE_FILE_PATH@@`).
+- Builds the Codex command as:
+  - `codex --sandbox workspace-write --ask-for-approval on-request --no-alt-screen -c developer_instructions=<resolved prompt>`
+- Uses the Claude Shift+Enter keyboard remap only for Claude profiles. Codex handles multiline input directly.
 - Spawns PTY with renderer-provided initial rows/cols for correct first-frame full-screen CLI rendering.
 - Streams `terminal:process-data` and `terminal:process-exit` events to renderer.
 
@@ -300,20 +306,21 @@ Key rules:
 - Measures stable geometry before start and sends initial PTY rows/cols.
 - Mirrors xterm resize into PTY via `terminal:resize-session`.
 - Includes preset prompt buttons that write prompt + Enter to active session.
+- Uses the keyboard-input mode returned by the selected agent profile.
 
 ## Repository Structure
 
 Top-level layout and responsibilities:
 
 - `src/main.ts`: main-process bootstrap and lifecycle wiring.
-- `src/main/`: window, markdown file, terminal session, IDE integration services.
+- `src/main/`: window, markdown file, agent launch, terminal session, and IDE integration services.
 - `src/preload.ts`: contextBridge IPC API exposure.
 - `src/shared-types.ts`: cross-process payload contracts.
 - `src/ide-server/`: MCP WebSocket server + lock-file + RPC handlers.
 - `src/renderer/`: React app shell, CodeMirror integration, terminal pane, API wrappers.
 - `tests/e2e/`: Playwright Electron scenarios + shared harness.
-- `scripts/`: instance-scoped CDP QA session launcher (headless by default).
-- `prompts/`: Claude system prompt template.
+- `scripts/`: development start wrapper and instance-scoped CDP QA session launcher (headless by default).
+- `prompts/`: provider-neutral agent system prompt template.
 - `data/`: bundled sample markdown source.
 - `docs/`: product/protocol/planning docs.
 
@@ -335,7 +342,7 @@ Top-level layout and responsibilities:
 ## Important Environment Variables
 
 - `KALE_USER_DATA_DIR`: override Electron userData path.
-- `KALE_SKIP_TERMINAL_VALIDATION=1`: skip Claude CLI check.
+- `KALE_SKIP_TERMINAL_VALIDATION=1`: skip the selected agent CLI check.
 - `KALE_STARTUP_MARKDOWN_FILE_PATH`: force startup file.
 - `KALE_HEADLESS=1`: hide BrowserWindow and suppress DevTools.
 - `KALE_OPEN_DEVTOOLS=1`: open docked DevTools.
