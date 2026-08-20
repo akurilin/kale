@@ -20,6 +20,7 @@ import {
   Decoration,
   EditorView,
   ViewPlugin,
+  WidgetType,
   keymap,
   type ViewUpdate,
 } from '@codemirror/view';
@@ -31,12 +32,14 @@ import {
 const markerNodes = new Set([
   'HeaderMark',
   'QuoteMark',
-  'ListMark',
   'EmphasisMark',
   'CodeMark',
 ]);
 
 const livePreviewLinkLabelCssClassName = 'cm-live-link-label';
+const livePreviewListBulletCssClassName = 'cm-live-list-bullet';
+const livePreviewListBulletGlyph = '•';
+const unorderedListMarkdownMarkers = new Set(['-', '*', '+']);
 
 const markdownHeadingNodeNameToLevel = new Map<string, number>([
   ['ATXHeading1', 1],
@@ -127,6 +130,14 @@ export type LivePreviewDecorationInstruction =
       type: 'replace';
       from: number;
       to: number;
+    }
+  | {
+      type: 'replaceWithText';
+      from: number;
+      to: number;
+      text: string;
+      className: string;
+      accessibleLabel: string;
     }
   | {
       type: 'mark';
@@ -431,9 +442,7 @@ export const buildLivePreviewDecorationInstructionsForState = (
         let hideTo = to;
 
         if (
-          (name === 'HeaderMark' ||
-            name === 'QuoteMark' ||
-            name === 'ListMark') &&
+          (name === 'HeaderMark' || name === 'QuoteMark') &&
           editorState.sliceDoc(to, to + 1) === ' '
         ) {
           hideTo = to + 1;
@@ -443,6 +452,22 @@ export const buildLivePreviewDecorationInstructionsForState = (
           type: 'replace',
           from,
           to: hideTo,
+        });
+        return;
+      }
+
+      if (
+        name === 'ListMark' &&
+        unorderedListMarkdownMarkers.has(editorState.sliceDoc(from, to)) &&
+        !isSelectionContextActive(editorState, from, to)
+      ) {
+        decorationInstructions.push({
+          type: 'replaceWithText',
+          from,
+          to,
+          text: livePreviewListBulletGlyph,
+          className: livePreviewListBulletCssClassName,
+          accessibleLabel: 'bullet',
         });
         return;
       }
@@ -468,6 +493,40 @@ export const buildLivePreviewDecorationInstructionsForState = (
   return decorationInstructions;
 };
 
+// A widget keeps preview-only text outside the markdown document while giving
+// the replacement stable DOM identity during CodeMirror decoration updates.
+class LivePreviewTextReplacementWidget extends WidgetType {
+  // Replacement content and styling stay immutable so CodeMirror can compare
+  // widget instances safely when it decides whether to reuse existing DOM.
+  constructor(
+    private readonly replacementText: string,
+    private readonly cssClassName: string,
+    private readonly accessibleLabel: string,
+  ) {
+    super();
+  }
+
+  // Equal widgets can reuse their DOM nodes when selection changes rebuild the
+  // live-preview decorations without changing the replacement presentation.
+  eq(otherWidget: LivePreviewTextReplacementWidget): boolean {
+    return (
+      this.replacementText === otherWidget.replacementText &&
+      this.cssClassName === otherWidget.cssClassName &&
+      this.accessibleLabel === otherWidget.accessibleLabel
+    );
+  }
+
+  // The widget uses plain textContent so markdown source can never inject DOM
+  // when future replacement types reuse this presentation mechanism.
+  toDOM(): HTMLElement {
+    const replacementElement = document.createElement('span');
+    replacementElement.className = this.cssClassName;
+    replacementElement.textContent = this.replacementText;
+    replacementElement.setAttribute('aria-label', this.accessibleLabel);
+    return replacementElement;
+  }
+}
+
 // Syntax-tree-driven decoration generation is less fragile than regex parsing
 // and stays aligned with CodeMirror markdown semantics.
 const buildLivePreviewMarkerDecorations = (
@@ -481,6 +540,19 @@ const buildLivePreviewMarkerDecorations = (
     if (instruction.type === 'replace') {
       decorations.push(
         Decoration.replace({}).range(instruction.from, instruction.to),
+      );
+      continue;
+    }
+
+    if (instruction.type === 'replaceWithText') {
+      decorations.push(
+        Decoration.replace({
+          widget: new LivePreviewTextReplacementWidget(
+            instruction.text,
+            instruction.className,
+            instruction.accessibleLabel,
+          ),
+        }).range(instruction.from, instruction.to),
       );
       continue;
     }

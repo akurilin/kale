@@ -249,6 +249,53 @@ describe('buildMarkdownHeadingShortcutChangesForState', () => {
 });
 
 describe('buildLivePreviewDecorationInstructionsForState', () => {
+  it.each(['-', '*', '+'])(
+    'renders the %s unordered list source marker as a bullet on an inactive line',
+    (unorderedListMarker) => {
+      const markdownEditorState = buildMarkdownEditorStateWithCursor(
+        `${unorderedListMarker} tldr\nSecond line`,
+        8,
+      );
+
+      expect(
+        buildLivePreviewDecorationInstructionsForState(markdownEditorState),
+      ).toContainEqual({
+        type: 'replaceWithText',
+        from: 0,
+        to: 1,
+        text: '•',
+        className: 'cm-live-list-bullet',
+        accessibleLabel: 'bullet',
+      });
+    },
+  );
+
+  it('keeps an unordered list source marker editable on the active line', () => {
+    const markdownEditorState = buildMarkdownEditorStateWithCursor(
+      '- tldr\nSecond line',
+      3,
+    );
+
+    expect(
+      buildLivePreviewDecorationInstructionsForState(markdownEditorState),
+    ).not.toContainEqual(
+      expect.objectContaining({ type: 'replaceWithText', from: 0, to: 1 }),
+    );
+  });
+
+  it('does not replace ordered list markers with unordered bullets', () => {
+    const markdownEditorState = buildMarkdownEditorStateWithCursor(
+      '1. first\nSecond line',
+      10,
+    );
+
+    expect(
+      buildLivePreviewDecorationInstructionsForState(markdownEditorState),
+    ).not.toContainEqual(
+      expect.objectContaining({ type: 'replaceWithText', from: 0, to: 2 }),
+    );
+  });
+
   it('conceals standard inline link syntax on inactive lines', () => {
     const markdownEditorState = buildMarkdownEditorStateWithCursor(
       '[Google](https://google.com)\nSecond line',

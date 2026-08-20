@@ -56,7 +56,7 @@ On first launch, Kale opens a default scratch document. Use **File > Open** or *
 
 ### Writing
 
-Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is rendered inline as you type — headings, bold, italic, links, and code all preview live without a separate preview pane. On wider windows, the prose column stays centered on the pane and only shifts left when needed to keep inline comments visible.
+Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is rendered inline as you type — headings, bold, italic, links, and code all preview live without a separate preview pane. Unordered list markers appear as bullets when a list line is not active and return to editable Markdown source on the active line. On wider windows, the prose column stays centered on the pane and only shifts left when needed to keep inline comments visible.
 
 ### Inline Comments
 

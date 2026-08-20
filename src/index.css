@@ -609,6 +609,15 @@ body {
   text-underline-offset: 0.12em;
 }
 
+/* Render inactive unordered-list source markers as clear prose bullets while
+   keeping the raw Markdown marker available whenever its line is active. */
+.editor .cm-live-list-bullet {
+  display: inline-block;
+  font-size: 1.2em;
+  line-height: 1;
+  vertical-align: -0.08em;
+}
+
 .editor .cm-line.cm-frontmatter-line {
   color: #9a9690;
 }
