@@ -449,7 +449,7 @@ export const createMarkdownFileService = () => {
     );
   };
 
-  // Save-to-git should operate on one active file only, so this helper scopes
+  // Commit should operate on one active file only, so this helper scopes
   // status checks to a single repository-relative path.
   const readRepositoryFilePorcelainStatus = async (
     repositoryRoot: string,
@@ -474,7 +474,7 @@ export const createMarkdownFileService = () => {
     return stdout.trim();
   };
 
-  // The Save action uses a deterministic commit message so users can persist
+  // The Commit action uses a deterministic message so users can persist
   // quickly without waiting for an LLM-generated summary.
   const buildStockCommitMessageForFilePath = (filePath: string) =>
     `Edits to ${path.basename(filePath)}`;
@@ -722,8 +722,8 @@ export const createMarkdownFileService = () => {
     );
   };
 
-  // Top-bar save should stage and commit only the active markdown file in the
-  // same repository that file belongs to, regardless of Kale's own repo path.
+  // Top-bar Commit should stage and commit only the active markdown file in
+  // that file's repository, regardless of Kale's own repository path.
   const commitCurrentMarkdownFileWithStockMessage = async (
     filePath: string,
   ) => {

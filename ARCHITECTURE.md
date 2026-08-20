@@ -80,7 +80,7 @@ Owns active-file state, settings persistence, file watcher lifecycle, and git fi
   - ensures active file exists on target branch
   - optional pre-switch discard of current file changes
   - uses `git switch`, fallback to `git checkout`
-- **Save (commit)**:
+- **Commit**:
   - stages/commits only the active file in that file's repository
   - stock commit message: `Edits to <filename>`
   - returns `didCreateCommit=false` when there are no changes
@@ -200,7 +200,7 @@ Owns document lifecycle and top-level UI orchestration:
 - Schedules autosave through save controller.
 - Handles new/open/restore/commit actions.
 - Handles explorer-driven file switches through the same save-before-switch flow.
-- Maps `Cmd+S`/`Ctrl+S` at window scope to the same save-commit action as the top-bar **Save** button.
+- Keeps Git commits behind the explicit top-bar **Commit** button and does not map `Cmd+S`/`Ctrl+S` to Git.
 - Treats `Saved` status as transient UI feedback (auto-clears after a short delay) so repeated saves remain visually noticeable.
 - Handles explorer-pane collapse/expand, terminal-pane collapse/expand, divider drags, and native width resize requests.
 - Pushes selection updates to IDE integration.

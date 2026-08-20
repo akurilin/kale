@@ -100,7 +100,7 @@ Collapsing or expanding the explorer also keeps the native window size unchanged
 
 Kale is git-aware. If your Markdown file is inside a git repo, you can:
 
-- **Save (commit)**: commits just the active file with a stock message. The Save action is enabled only when the active file lives in a git repository and has changes to commit.
+- **Commit**: commits only the active file with a stock message. The Commit action is enabled only when the active file is in a git repository and has changes to commit.
 - **Reset**: restores the file from the latest commit
 - **Switch branches**: move between branches without leaving the editor
 
@@ -111,7 +111,6 @@ Kale is git-aware. If your Markdown file is inside a git repo, you can:
 | `Cmd/Ctrl+B`               | Bold                     |
 | `Cmd/Ctrl+I`               | Italic                   |
 | `Cmd/Ctrl+Option/Alt+1..6` | Heading level 1–6        |
-| `Cmd/Ctrl+S`               | Save (commit)            |
 | `Cmd/Ctrl+Enter`           | Finish editing a comment |
 
 ## Building Distributables

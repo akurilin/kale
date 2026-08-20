@@ -29,6 +29,9 @@ const {
   runRepositoryFileExplorerNonGitScenario,
 } = require('./scenarios/repository-file-explorer-non-git.scenario');
 const {
+  runCommitActionScenario,
+} = require('./scenarios/commit-action.scenario');
+const {
   runClaudeSafeShiftEnterRegressionScenario,
 } = require('./scenarios/claude-safe-shift-enter-regression.scenario');
 
@@ -42,6 +45,7 @@ const ciScenarioDefinitions = [
   runTerminalPaneCollapseExpandScenario,
   runRepositoryFileExplorerPaneScenario,
   runRepositoryFileExplorerNonGitScenario,
+  runCommitActionScenario,
 ];
 
 const developerLocalScenarioDefinitions = [

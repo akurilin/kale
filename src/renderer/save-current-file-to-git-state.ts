@@ -8,9 +8,9 @@ type ShouldDisableSaveCurrentFileToGitActionOptions = {
 };
 
 /**
- * Why: the top-bar Save action only makes sense when the current document can
- * actually produce a git commit, so this helper centralizes that gate for UI
- * code and keeps the decision testable without rendering the full app.
+ * Why: the top-bar Commit action only makes sense when the current document
+ * can produce a git commit, so this helper centralizes that gate for UI code
+ * and keeps the decision testable without rendering the full app.
  */
 export const shouldDisableSaveCurrentFileToGitAction = ({
   hasLoadedDocument,

@@ -272,7 +272,7 @@ export const App = () => {
     clearSaveSuccessStatusTimeoutRef.current = null;
   }, []);
 
-  // Save availability depends on git dirtiness that lives outside the local
+  // Commit availability depends on git dirtiness that lives outside the local
   // editor state, so this helper refreshes the current file's repo state after
   // reloads, autosaves, and commits while ignoring stale async responses.
   const refreshCurrentFileGitSaveState = useCallback(async () => {
@@ -295,8 +295,8 @@ export const App = () => {
     });
   }, []);
 
-  // File switches should clear the prior file's save eligibility immediately so
-  // Save never stays enabled on the wrong document while state refreshes.
+  // File switches should clear the prior file's commit eligibility immediately
+  // so Commit never stays enabled on the wrong document while state refreshes.
   const clearCurrentFileGitSaveState = useCallback(() => {
     currentFileGitSaveStateRefreshIdRef.current += 1;
     setCurrentFileGitSaveState(DEFAULT_CURRENT_FILE_GIT_SAVE_STATE);
@@ -422,9 +422,9 @@ export const App = () => {
     [saveController],
   );
 
-  // Save should be fast and deterministic, so this flow flushes editor content
-  // to disk first, then stages/commits only the active file with a stock
-  // message in that file's own git repository.
+  // Commit should be fast and deterministic, so this flow flushes editor
+  // content to disk first, then stages/commits only the active file with a
+  // stock message in that file's own git repository.
   const saveCurrentFileToGitWithStockMessage = useCallback(async () => {
     if (isSaveCurrentFileToGitActionDisabled) {
       return;
@@ -441,7 +441,7 @@ export const App = () => {
       setSaveStatusText('Committing...');
       const response = await getMarkdownApi().commitCurrentMarkdownFile();
       if (!response.ok) {
-        setSaveStatusText('Save failed');
+        setSaveStatusText('Commit failed');
         window.alert(`Could not commit this file.\n\n${response.errorMessage}`);
         return;
       }
@@ -452,7 +452,7 @@ export const App = () => {
         response.didCreateCommit ? 'Committed' : 'No changes to commit',
       );
     } catch (error) {
-      setSaveStatusText('Save failed');
+      setSaveStatusText('Commit failed');
       console.error(error);
     } finally {
       setIsSavingCurrentFileToGit(false);
@@ -486,7 +486,7 @@ export const App = () => {
     };
   }, [applyLoadedDocument]);
 
-  // The Save action should track the active file's current git state, so each
+  // The Commit action should track the active file's current git state, so each
   // completed load or reload triggers a fresh repo-status read.
   useEffect(() => {
     if (!loadedDocument) {
@@ -989,41 +989,6 @@ export const App = () => {
     ? 'Collapse terminal pane'
     : 'Expand terminal pane';
 
-  // Desktop save expectations favor a window-level Mod+S action, so this
-  // shortcut mirrors the top-bar Save button regardless of focused sub-pane.
-  useEffect(() => {
-    const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      const isSaveShortcutKey = event.key.toLowerCase() === 's';
-      if (
-        !isSaveShortcutKey ||
-        !(event.metaKey || event.ctrlKey) ||
-        event.altKey ||
-        event.shiftKey
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      if (isSaveCurrentFileToGitActionDisabled) {
-        return;
-      }
-
-      void saveCurrentFileToGitWithStockMessage();
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown);
-    };
-  }, [
-    isSaveCurrentFileToGitActionDisabled,
-    saveCurrentFileToGitWithStockMessage,
-  ]);
-
   return (
     <>
       <header className="topbar">
@@ -1065,9 +1030,9 @@ export const App = () => {
             void saveCurrentFileToGitWithStockMessage();
           }}
           disabled={isSaveCurrentFileToGitActionDisabled}
-          title="Save this file by committing it with a stock git message"
+          title="Commit this file with a stock git message"
         >
-          {isSavingCurrentFileToGit ? 'Saving...' : 'Save'}
+          {isSavingCurrentFileToGit ? 'Committing...' : 'Commit'}
         </button>
         <div className="file-path">{loadedDocument?.filePath ?? ''}</div>
         <div className="save-status">{saveStatusText}</div>
