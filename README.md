@@ -69,11 +69,13 @@ When you delete all text for one inline comment, Kale also removes that comment.
 
 Use comments to leave instructions for the agent ("find a citation for this", "rewrite this paragraph") or as personal notes.
 
+When a comment input has focus, Kale treats the complete comment text as the current agent selection. The caret position or a partial textarea selection does not limit this context. You can focus a comment, move to the terminal, and use that comment as the subject of your next prompt.
+
 ### Agent Terminal
 
 The right side of the window is an embedded terminal for Claude Code, Codex, or Pi. All agents receive Kale's writing rules and the absolute path of the active document. They can also read the current text selection.
 
-Kale does not push each selection change into the Codex conversation. Codex requests one current snapshot when the user submits a prompt. An empty selection includes the file through the normal Kale prompt and open-tab context, but it does not include a cursor position.
+Kale does not push each selection change into the Codex conversation. Codex requests one current snapshot when the user submits a prompt. The snapshot can contain highlighted document text or the complete text of the last focused comment. An empty selection includes the file through the normal Kale prompt and open-tab context, but it does not include a cursor position.
 
 Kale loads its own extension when it starts Pi. The Pi footer shows how many lines are selected. Before each Pi prompt, the extension gets a new snapshot with the exact selected text, its end-exclusive range, and the selected line count. It adds this snapshot only to the system prompt for that turn, so old selections do not remain in later turns. If no text is selected, Pi still receives the active file and a clear `No text is selected` state. Kale does not set Pi's provider or model. Pi continues to use the provider and model that you saved in Pi.
 

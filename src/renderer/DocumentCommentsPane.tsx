@@ -25,6 +25,7 @@ import {
   parseInlineCommentsFromMarkdown,
   type InlineComment,
 } from './inline-comments';
+import { buildInlineCommentIdeSelectionDetails } from './inline-comment-ide-selection';
 
 const INLINE_COMMENT_SELECTION_BUTTON_WIDTH = 92;
 const INLINE_COMMENT_SELECTION_BUTTON_HEIGHT = 34;
@@ -357,7 +358,10 @@ const DocumentCommentsPaneImpl = (
       window.alert(
         'Could not update comment text. The comment markers may be malformed.',
       );
+      return;
     }
+
+    emitInlineCommentIdeSelection(commentId);
   };
 
   /**
@@ -408,6 +412,35 @@ const DocumentCommentsPaneImpl = (
     activateInlineComment(commentId, {
       shouldMoveFocusToCommentInput: false,
     });
+  };
+
+  /**
+   * Why: the IDE integration reads source-backed selection details, so comment
+   * focus and edits must convert the complete comment into the same contract.
+   */
+  const emitInlineCommentIdeSelection = (commentId: string): void => {
+    if (!onSelectionDetailsChanged) {
+      return;
+    }
+
+    const markdownContent =
+      markdownEditorPaneRef.current?.getCurrentContent() ?? null;
+    if (markdownContent === null) {
+      onSelectionDetailsChanged(null);
+      return;
+    }
+
+    onSelectionDetailsChanged(
+      buildInlineCommentIdeSelectionDetails(markdownContent, commentId),
+    );
+  };
+
+  /**
+   * Why: input focus represents an intentional comment selection for agent
+   * context, while card activation alone remains a visual-only interaction.
+   */
+  const handleCommentInputFocused = (commentId: string): void => {
+    emitInlineCommentIdeSelection(commentId);
   };
 
   /**
@@ -546,6 +579,7 @@ const DocumentCommentsPaneImpl = (
           onDeleteComment={deleteInlineComment}
           activeCommentId={activeInlineCommentId}
           onActivateComment={handleCommentCardActivated}
+          onFocusCommentInput={handleCommentInputFocused}
           onCompleteCommentEditing={handleCommentEditingCompleted}
           autoFocusCommentId={autoFocusInlineCommentId}
           onAutoFocusCommentHandled={handleAutoFocusCommentHandled}

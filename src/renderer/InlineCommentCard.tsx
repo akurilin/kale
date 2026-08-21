@@ -22,6 +22,7 @@ type InlineCommentCardProps = {
   onDeleteComment: (commentId: string) => void;
   isActive?: boolean;
   onActivateComment?: (commentId: string) => void;
+  onFocusCommentInput?: (commentId: string) => void;
   onCompleteCommentEditing?: (commentId: string) => void;
   shouldAutoFocusInput?: boolean;
   onAutoFocusHandled?: (commentId: string) => void;
@@ -66,6 +67,7 @@ export const InlineCommentCard = ({
   onDeleteComment,
   isActive = false,
   onActivateComment,
+  onFocusCommentInput,
   onCompleteCommentEditing,
   shouldAutoFocusInput = false,
   onAutoFocusHandled,
@@ -158,6 +160,7 @@ export const InlineCommentCard = ({
    */
   const handleCommentInputFocus = (): void => {
     onActivateComment?.(comment.id);
+    onFocusCommentInput?.(comment.id);
   };
 
   /**

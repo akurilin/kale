@@ -135,7 +135,7 @@ Coordinates renderer selection events with all IDE context adapters.
 - Starts and stops the Codex IDE provider.
 - Starts and stops the Pi loopback context server.
 - Starts, stops, and restarts the Claude IDE server when workspace folders change.
-- Caches latest editor selection.
+- Caches the latest document or focused-comment selection.
 - Broadcasts debounced (`50ms`) `selection_changed` notifications to Claude clients.
 - Builds Codex context only when Codex requests it for a submitted prompt.
 - Gives Pi an authenticated endpoint that returns the active file and cached selection on each request.
@@ -172,7 +172,7 @@ Implements the local IDE IPC contract used by the Codex CLI `/ide` command.
 - Starts a local router when no OpenAI application owns an IPC endpoint.
 - Uses four-byte unsigned little-endian JSON frame lengths.
 - Registers Kale as an IDE provider and claims only matching workspace roots.
-- Returns the active file and the latest non-empty CodeMirror selection at request time.
+- Returns the active file and the latest non-empty document or focused-comment selection at request time.
 - Does not return a cursor-only range. With no selection, it returns the file only as an open tab.
 - Uses owner-only directory and socket permissions on Unix systems.
 
@@ -263,6 +263,8 @@ Owns document lifecycle and top-level UI orchestration:
 - Routes bidirectional activation:
   - clicking highlighted text focuses the corresponding comment card
   - focusing/clicking a comment card activates the referenced editor highlight
+- Reports the complete decoded comment text as IDE selection context when a comment input gets focus or its text changes.
+- Uses the encoded comment payload inside the Markdown start marker as the focused comment's source range.
 - Clears active comment state on any pointer interaction outside the current active comment card/range.
 - Handles comment-edit completion shortcut (`Cmd/Ctrl+Enter`) to defocus active comment state.
 
@@ -374,6 +376,7 @@ Top-level layout and responsibilities:
   - comment typing scroll stability
   - comment deletion scroll stability
   - comment active-focus synchronization + Cmd/Ctrl+Enter defocus behavior
+  - focused comment text through the IDE selection context channel
   - terminal pane collapse/expand + window width behavior
   - repository file explorer open/collapse behavior
   - repository file explorer non-git suppression behavior
