@@ -12,6 +12,7 @@ export type ResolvedAgentLaunchCommand = {
   command: string;
   args: string[];
   usesClaudeCodeShiftEnterRemap: boolean;
+  automaticInputAfterStartup?: string;
 };
 
 /**
@@ -36,6 +37,7 @@ export const buildAgentLaunchCommand = (
         `developer_instructions=${JSON.stringify(systemPromptText)}`,
       ],
       usesClaudeCodeShiftEnterRemap: false,
+      automaticInputAfterStartup: '/ide on',
     };
   }
 

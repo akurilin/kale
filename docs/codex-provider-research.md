@@ -3,11 +3,11 @@
 ## Status
 
 - Research date: August 20, 2026
-- Local Codex CLI checked: `codex-cli 0.147.0`
+- Local Codex CLI checked: `codex-cli 0.148.0`
 - Local authentication checked: ChatGPT sign-in is active
 - Scope: offer Codex as a user-selected alternative to Claude Code
-- Recommendation: add Codex through the existing PTY terminal first, then add a standard MCP adapter for live editor context
-- Implementation: the first terminal release is present on this branch through `npm start -- --agent claude|codex`
+- Recommendation: use the existing PTY terminal and the Codex request-time IDE context path
+- Implementation: terminal selection and automatic IDE selection context are present on this branch
 
 ## Decision
 
@@ -18,13 +18,13 @@ The current Claude integration has two separate parts:
 1. The terminal process starts Claude Code with Kale instructions.
 2. A Claude-specific IDE server gives Claude live file and selection context.
 
-Codex can replace the first part with a provider launch profile. Codex cannot use the second part as it exists. The current server uses Claude's lock-file discovery, WebSocket transport, and authentication header. For full context parity, Kale must also offer its editor tools through a standard MCP transport that Codex can load.
+Codex replaces the first part with a provider launch profile. It cannot use the Claude adapter because that server uses Claude's lock-file discovery, WebSocket transport, and authentication header. Kale now uses a separate Codex IDE IPC adapter. Codex requests the current editor snapshot when the user submits a prompt.
 
 The delivery order is:
 
 1. Add process-start agent selection and a Codex CLI launch profile. **Complete on this branch.**
-2. Keep the current Claude IDE adapter.
-3. Add a standard local MCP adapter for Codex.
+2. Keep the current Claude IDE adapter. **Complete on this branch.**
+3. Add automatic Codex request-time IDE context. **Complete on this branch.**
 4. Consider Codex App Server only if Kale replaces the terminal with a native assistant UI.
 
 ## Official Codex Capabilities
@@ -69,7 +69,7 @@ This branch now includes the first terminal release:
 - Codex does not use the Claude-specific Shift+Enter remap.
 - Existing shell, custom-command, and `claude-safe` QA profiles continue to work when `--agent` is absent.
 
-Live Codex selection context and an exact one-file write boundary remain deferred.
+An exact one-file write boundary remains deferred.
 
 ## Current Kale Fit
 
@@ -140,9 +140,9 @@ Kale can add the current file path, range, and selected text to prompts that Kal
 
 Limit: it does not apply to text that the user types directly into the terminal. It can also copy a large selection into terminal input.
 
-### Option 3: standard MCP adapter for Codex
+### Option 3: Codex request-time IDE context
 
-This is the recommended parity step.
+This is the implemented parity step.
 
 Kale should keep one provider-neutral editor-state service and expose it through two adapters:
 
@@ -154,34 +154,20 @@ editor-state service
         |
         +--> Claude IDE WebSocket adapter + ~/.claude lock file
         |
-        +--> standard local MCP HTTP adapter for Codex
+        +--> local IDE IPC provider for Codex
 ```
 
-The Codex adapter should:
+The Codex adapter:
 
-- bind only to `127.0.0.1` on a random port;
-- use streamable HTTP MCP;
-- require a random bearer token;
-- expose `getCurrentSelection`, `getLatestSelection`, `getOpenEditors`, and `getDiagnostics`;
-- pass its dynamic URL and token environment-variable name through per-process `-c mcp_servers.kale.*` overrides;
-- stop when Kale stops;
-- use current MCP protocol types, preferably through the official MCP TypeScript SDK instead of more custom protocol code.
+- joins the user-scoped Codex IPC router or starts one if none is active;
+- answers `ide-context` requests only for Kale's current workspace;
+- returns the active file and exact non-empty selection;
+- omits cursor data when there is no selection;
+- stops its provider client and any Kale-owned router when Kale stops.
 
-The launch profile can add configuration with this shape:
+Kale sends `/ide on` to the Codex TUI after startup. The user does not have to run a command. The Codex CLI then requests the current context for each prompt.
 
-```text
--c mcp_servers.kale.url="http://127.0.0.1:<port>/mcp"
--c mcp_servers.kale.bearer_token_env_var="KALE_CODEX_MCP_TOKEN"
--c mcp_servers.kale.required=true
-```
-
-Kale can add an instruction that tells Codex to call the selection tool when a user refers to the current selection. MCP tool access is on demand. A selection-change notification does not by itself put new text into the model context.
-
-### Stdio bridge alternative
-
-Codex can start a stdio MCP server through `mcp_servers.<id>.command`. Kale could package a small bridge process that connects back to Electron over a local authenticated socket.
-
-This design avoids an HTTP listener. It adds process packaging, reconnect, and cross-platform IPC work. The local HTTP adapter is the simpler fit for the current Electron main process.
+The IPC protocol is used by current OpenAI IDE integrations, but it is not a public extension API. Kale keeps this code in a separate module and tests its framing, routing, and payload shape. A future Codex release can require a compatibility update.
 
 ## Codex App Server Option
 
@@ -231,11 +217,20 @@ For Codex, the first release should improve the default:
 6. Kept the Claude-only Shift+Enter behavior disabled for Codex.
 7. Updated product text, prerequisites, architecture notes, and QA instructions.
 
+### Completed: Codex IDE selection context
+
+1. Added request-time Codex IDE context payload tests.
+2. Added framed local socket routing and provider discovery.
+3. Reused the current CodeMirror selection cache.
+4. Excluded cursor-only ranges from Codex context.
+5. Enabled `/ide on` automatically after Codex starts.
+6. Ran a developer-local end-to-end test with a temporary Markdown file.
+
 ### Deferred improvements
 
 1. Replace `usesClaudeCodeShiftEnterRemap` with a provider-neutral keyboard-input mode.
 2. Add a persisted provider selection and an in-app selector if needed.
-3. Add standard MCP support for live Codex editor context.
+3. Monitor Codex IPC compatibility as the CLI changes.
 
 Primary files:
 
@@ -250,18 +245,18 @@ Primary files:
 
 ### Context parity release
 
-1. Add protocol tests for a standard MCP initialize, tool list, and tool call.
-2. Extract the editor state from the Claude IDE lifecycle.
-3. Keep the Claude discovery adapter unchanged for compatibility.
-4. Add the authenticated local streamable HTTP adapter.
-5. Add dynamic Codex MCP launch overrides.
-6. Add local end-to-end coverage that verifies Codex can call `getCurrentSelection`.
+1. Protocol tests cover frame parsing, provider discovery, workspace filtering, and live context reads.
+2. The shared editor selection cache continues to serve Claude and Codex.
+3. The Claude discovery adapter stays unchanged for compatibility.
+4. The Codex provider answers request-time IDE context over local IPC.
+5. The launch profile enables `/ide on` without user action.
+6. Local end-to-end coverage verifies that Codex reads a CodeMirror selection.
 
 Primary files:
 
 - `src/main/ide-integration-service.ts`
 - `src/ide-server/*`
-- a new standard MCP server module
+- `src/codex-ide-server/*`
 - `src/main/terminal-session-service.ts`
 - `src/main.ts`
 
@@ -277,8 +272,8 @@ Follow the repository's spec-first and red-green-refactor rules.
 - Codex launch arguments contain resolved Kale instructions and no unresolved path token.
 - A Codex session does not use the Claude Shift+Enter mode.
 - Provider-specific install errors name the correct command and official help page.
-- Standard MCP returns the current file, selection, open editor, and diagnostics data.
-- MCP rejects a missing or incorrect bearer token.
+- Codex IPC returns the current file and selection.
+- Codex IPC does not claim a workspace that Kale does not own.
 
 ### CI-safe end-to-end tests
 
@@ -292,7 +287,7 @@ Follow the repository's spec-first and red-green-refactor rules.
 - Verify prompt entry, Shift+Enter behavior, resize, and process cleanup.
 - In read-only mode, verify a preset can return analysis without a file change.
 - In workspace-write mode, verify one requested edit reaches disk and Kale reloads it.
-- With the context adapter, select text in CodeMirror and verify Codex reads the same text through MCP.
+- With the context adapter, select text in CodeMirror and verify Codex reads the same text through IDE IPC.
 
 ## Open Product Choices
 
@@ -300,11 +295,11 @@ These choices remain open for later releases:
 
 - Whether Kale also needs a persisted, in-app agent selector.
 - Whether a persisted selection applies globally or only to the current document.
-- Whether a later release includes live selection parity.
+- Whether a later release shows live selection state in the Codex UI.
 - Whether Kale can continue to accept directory-wide writes or needs a stronger file boundary.
 
 ## Conclusion
 
-Kale can offer Codex without a new assistant architecture. The first useful release is a provider-aware Codex CLI profile in the existing terminal. The main parity gap is live editor context, not terminal rendering or file editing. A standard authenticated MCP adapter closes that gap while the Claude adapter continues to use its existing discovery protocol.
+Kale can offer Codex without a new assistant architecture. The provider-aware Codex CLI profile uses the existing terminal. A separate request-time IDE provider closes the editor-selection gap while the Claude adapter continues to use its existing discovery protocol.
 
 Codex App Server is the correct later path only if Kale wants a native chat, approval, progress, and diff experience instead of an embedded terminal.

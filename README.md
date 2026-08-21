@@ -11,7 +11,7 @@ An agentic word processor for technical essay writers. Combines the aesthetics o
 
 Annotate your draft with comments — "find a link for this claim", "this paragraph reads clunky", "is this actually true?" — and your selected agent acts on them when you are ready. You can also ask the agent to add comments as an editor and writing coach.
 
-Kale supports Claude Code, Codex, and Pi in its built-in terminal. Claude Code connects through Kale's IDE MCP server, and Pi uses Kale's bundled extension. Claude Code and Pi receive live editor selection context. Codex receives the active file path but does not have live selection context yet.
+Kale supports Claude Code, Codex, and Pi in its built-in terminal. All three agents can receive the active file and the current text selection. Kale turns on the Codex and Pi context links automatically.
 
 Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into the tool I wished existed.
 
@@ -69,7 +69,9 @@ Use comments to leave instructions for the agent ("find a citation for this", "r
 
 ### Agent Terminal
 
-The right side of the window is an embedded terminal for Claude Code, Codex, or Pi. All agents receive Kale's writing rules and the absolute path of the active document. Claude Code and Pi can also read the current text selection. Codex does not have live selection integration yet.
+The right side of the window is an embedded terminal for Claude Code, Codex, or Pi. All agents receive Kale's writing rules and the absolute path of the active document. They can also read the current text selection.
+
+Kale does not push each selection change into the Codex conversation. Codex requests one current snapshot when the user submits a prompt. An empty selection includes the file through the normal Kale prompt and open-tab context, but it does not include a cursor position.
 
 Kale loads its own extension when it starts Pi. The Pi footer shows how many lines are selected. Before each Pi prompt, the extension gets a new snapshot with the exact selected text, its end-exclusive range, and the selected line count. It adds this snapshot only to the system prompt for that turn, so old selections do not remain in later turns. If no text is selected, Pi still receives the active file and a clear `No text is selected` state. Kale does not set Pi's provider or model. Pi continues to use the provider and model that you saved in Pi.
 
@@ -111,12 +113,13 @@ Kale is git-aware. If your Markdown file is inside a git repo, you can:
 
 ### Keyboard Shortcuts
 
-| Shortcut                   | Action                   |
-| -------------------------- | ------------------------ |
-| `Cmd/Ctrl+B`               | Bold                     |
-| `Cmd/Ctrl+I`               | Italic                   |
-| `Cmd/Ctrl+Option/Alt+1..6` | Heading level 1–6        |
-| `Cmd/Ctrl+Enter`           | Finish editing a comment |
+| Shortcut                   | Action                         |
+| -------------------------- | ------------------------------ |
+| `Cmd/Ctrl+B`               | Bold                           |
+| `Cmd/Ctrl+I`               | Italic                         |
+| `Cmd/Ctrl+Option/Alt+1..6` | Heading level 1–6              |
+| `Cmd/Ctrl+Enter`           | Finish editing a comment       |
+| `Esc`                      | Delete a focused empty comment |
 
 ## Building Distributables
 

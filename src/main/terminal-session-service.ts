@@ -17,6 +17,10 @@ import {
   type ResolvedAgentLaunchCommand,
 } from './agent-launch-command';
 import {
+  createCodexAutomaticIdeInputController,
+  type CodexAutomaticIdeInputController,
+} from './codex-automatic-ide-input';
+import {
   resolveTerminalLaunchProfileFromEnvironment,
   type TerminalLaunchProfile,
 } from './terminal-launch-profile';
@@ -92,6 +96,10 @@ export const createTerminalSessionService = (
   let bundledAgentSystemPromptMarkdownText: string | null = null;
   let resolvedTerminalLaunchProfile: TerminalLaunchProfile | null = null;
   const terminalSessionsById = new Map<string, nodePty.IPty>();
+  const automaticInputControllersBySessionId = new Map<
+    string,
+    CodexAutomaticIdeInputController
+  >();
   const terminalRuntimeEnvironmentVariables =
     buildTerminalRuntimeEnvironmentVariables();
 
@@ -377,6 +385,7 @@ export const createTerminalSessionService = (
       command,
       args,
       usesClaudeCodeShiftEnterRemap,
+      automaticInputAfterStartup,
       additionalEnvironmentVariables,
     } = await resolveTerminalLaunchCommand(request);
     const sessionId = createTerminalSessionId();
@@ -399,6 +408,19 @@ export const createTerminalSessionService = (
       });
 
       terminalSessionsById.set(sessionId, terminalProcess);
+      if (automaticInputAfterStartup) {
+        automaticInputControllersBySessionId.set(
+          sessionId,
+          createCodexAutomaticIdeInputController({
+            automaticInput: automaticInputAfterStartup,
+            writeAutomaticInput: (automaticInput) => {
+              if (terminalSessionsById.has(sessionId)) {
+                terminalProcess.write(automaticInput);
+              }
+            },
+          }),
+        );
+      }
 
       const sendChunkToRenderers = (chunkText: string) => {
         // TODO(terminal-prototype): We intentionally broadcast terminal events to
@@ -417,9 +439,15 @@ export const createTerminalSessionService = (
 
       terminalProcess.onData((chunkText) => {
         sendChunkToRenderers(chunkText);
+
+        automaticInputControllersBySessionId
+          .get(sessionId)
+          ?.handleTerminalOutput(chunkText);
       });
 
       terminalProcess.onExit(({ exitCode, signal }) => {
+        automaticInputControllersBySessionId.get(sessionId)?.cancel();
+        automaticInputControllersBySessionId.delete(sessionId);
         terminalSessionsById.delete(sessionId);
         const exitEvent: TerminalProcessExitEvent = {
           sessionId,
@@ -559,6 +587,10 @@ export const createTerminalSessionService = (
   // App shutdown kills any surviving PTYs so child processes do not outlive the
   // Electron main process and stale session IDs cannot be reused after restart.
   const shutdown = async () => {
+    for (const automaticInputController of automaticInputControllersBySessionId.values()) {
+      automaticInputController.cancel();
+    }
+    automaticInputControllersBySessionId.clear();
     for (const terminalSession of terminalSessionsById.values()) {
       terminalSession.kill('SIGTERM');
     }

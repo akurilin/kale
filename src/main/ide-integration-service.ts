@@ -1,5 +1,10 @@
 import type { IpcMain } from 'electron';
 
+import {
+  buildCodexIdeContext,
+  startCodexIdeServer,
+  type CodexIdeServerHandle,
+} from '../codex-ide-server';
 import { startIdeServer } from '../ide-server';
 import type { IdeServerHandle } from '../ide-server';
 import {
@@ -62,6 +67,7 @@ export const createIdeIntegrationService = (
   dependencies: IdeIntegrationServiceDependencies,
 ) => {
   let claudeIdeServer: IdeServerHandle | null = null;
+  let codexIdeServer: CodexIdeServerHandle | null = null;
   let piIdeServer: PiIdeServerHandle | null = null;
   let activeWorkspaceFolders: string[] = [];
   let pendingWorkspaceFolderUpdatePromise: Promise<void> = Promise.resolve();
@@ -109,6 +115,7 @@ export const createIdeIntegrationService = (
 
     if (
       claudeIdeServer &&
+      codexIdeServer &&
       piIdeServer &&
       areWorkspaceFoldersEqual(
         activeWorkspaceFolders,
@@ -118,8 +125,8 @@ export const createIdeIntegrationService = (
       return;
     }
 
-    // Pi reads this live callback when it needs the current editor state, so
-    // keep the active workspace and cached selection available to the server.
+    // Codex reads these live callbacks only when a prompt is submitted. The
+    // cached cursor range is filtered here unless it contains selected text.
     activeWorkspaceFolders = normalizedWorkspaceFolders;
     if (!piIdeServer) {
       piIdeServer = await startPiIdeServer({
@@ -128,6 +135,18 @@ export const createIdeIntegrationService = (
             dependencies.getCurrentMarkdownFilePath(),
             cachedEditorSelection,
           ),
+      });
+    }
+
+    if (!codexIdeServer) {
+      codexIdeServer = await startCodexIdeServer({
+        getWorkspaceFolders: () => activeWorkspaceFolders,
+        getIdeContext: () =>
+          buildCodexIdeContext({
+            activeFilePath: dependencies.getCurrentMarkdownFilePath(),
+            workspaceFolders: activeWorkspaceFolders,
+            editorSelection: cachedEditorSelection,
+          }),
       });
     }
 
@@ -239,6 +258,10 @@ export const createIdeIntegrationService = (
     }
 
     await shutdownClaudeIdeServerIfRunning();
+    if (codexIdeServer) {
+      await codexIdeServer.shutdown();
+      codexIdeServer = null;
+    }
     if (piIdeServer) {
       await piIdeServer.shutdown();
       piIdeServer = null;

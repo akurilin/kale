@@ -105,8 +105,8 @@ const startApplication = async () => {
     }
   }
 
-  // Start IDE context providers before the renderer can launch an agent.
-  // This makes the Pi endpoint available before its terminal can start.
+  // Start both IDE context providers before the renderer can launch an agent.
+  // This prevents Codex from enabling IDE context before Kale joins its router.
   // Integration failures stay non-fatal through the service's guarded queue.
   await syncIdeWorkspaceFoldersToCurrentMarkdownFileContext();
 

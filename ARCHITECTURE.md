@@ -12,7 +12,7 @@ It combines:
 - A git-rooted repository file explorer for markdown documents.
 - Git-aware file actions (`Reset`, single-file commit save).
 - A PTY-backed agent terminal pane for Claude Code, Codex, or Pi.
-- Local IDE context adapters for Claude Code and Pi.
+- Local IDE context adapters for Claude Code, Codex, and Pi.
 
 ## Runtime Architecture
 
@@ -113,6 +113,7 @@ Owns PTY spawn/IO/resize/kill and selected-agent startup prerequisites.
   - `claude --permission-mode default --tools "" --append-system-prompt <resolved prompt>`
 - Builds the Codex command as:
   - `codex --sandbox workspace-write --ask-for-approval on-request --no-alt-screen -c developer_instructions=<resolved prompt>`
+- Sends `/ide on` after the Codex TUI starts, so request-time IDE context is automatic.
 - Builds the Pi command without provider or model flags:
   - `pi --append-system-prompt <resolved prompt> --extension <bundled Kale extension>`
 - Passes the authenticated Pi context endpoint only in the Pi child process environment.
@@ -131,11 +132,14 @@ runs in the preload via `webFrame.isWordMisspelled` / `getWordSuggestions`.
 
 Coordinates renderer selection events with all IDE context adapters.
 
+- Starts and stops the Codex IDE provider.
 - Starts and stops the Pi loopback context server.
 - Starts, stops, and restarts the Claude IDE server when workspace folders change.
 - Caches latest editor selection.
 - Broadcasts debounced (`50ms`) `selection_changed` notifications to Claude clients.
+- Builds Codex context only when Codex requests it for a submitted prompt.
 - Gives Pi an authenticated endpoint that returns the active file and cached selection on each request.
+- Omits Codex `activeFile` when no text is selected because Codex requires a range on that field. The file stays in `openTabs` and in Kale's agent prompt.
 - Serializes workspace-folder updates to avoid racey restarts.
 
 ## IDE MCP Server (`src/ide-server/*`)
@@ -159,6 +163,20 @@ Implements MCP-over-WebSocket for Claude Code IDE integration.
   - `getLatestSelection`
   - `getOpenEditors`
   - `getDiagnostics` (currently returns empty from provider)
+
+## Codex IDE Context Provider (`src/codex-ide-server/*`)
+
+Implements the local IDE IPC contract used by the Codex CLI `/ide` command.
+
+- Connects to the existing user-scoped Codex IPC router when one is active.
+- Starts a local router when no OpenAI application owns an IPC endpoint.
+- Uses four-byte unsigned little-endian JSON frame lengths.
+- Registers Kale as an IDE provider and claims only matching workspace roots.
+- Returns the active file and the latest non-empty CodeMirror selection at request time.
+- Does not return a cursor-only range. With no selection, it returns the file only as an open tab.
+- Uses owner-only directory and socket permissions on Unix systems.
+
+This adapter depends on a Codex IDE IPC contract that is not a public extension API. Protocol tests and a developer-local Codex test reduce the compatibility risk, but a future Codex CLI release can require an adapter update.
 
 ## Pi IDE Context Provider (`src/pi-ide-server/*`, `integrations/pi/*`)
 

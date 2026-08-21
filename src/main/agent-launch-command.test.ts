@@ -43,6 +43,7 @@ describe('buildAgentLaunchCommand', () => {
         'developer_instructions="System\\nprompt"',
       ],
       usesClaudeCodeShiftEnterRemap: false,
+      automaticInputAfterStartup: '/ide on',
     });
   });
 

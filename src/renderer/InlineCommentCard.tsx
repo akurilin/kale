@@ -161,12 +161,21 @@ export const InlineCommentCard = ({
   };
 
   /**
-   * Why: completing comment editing should blur the textarea and clear active
-   * state without inserting newlines when users press Cmd/Ctrl+Enter.
+   * Why: keyboard comment editing needs one handler to discard a new empty
+   * comment with Escape or finish a written comment with Cmd/Ctrl+Enter.
    */
   const handleCommentInputKeyDown = (
     keyboardEvent: ReactKeyboardEvent<HTMLTextAreaElement>,
   ): void => {
+    if (
+      keyboardEvent.key === 'Escape' &&
+      keyboardEvent.currentTarget.value.trim().length === 0
+    ) {
+      keyboardEvent.preventDefault();
+      onDeleteComment(comment.id);
+      return;
+    }
+
     if (!isCommentEditingCompleteShortcut(keyboardEvent)) {
       return;
     }

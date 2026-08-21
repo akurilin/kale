@@ -20,6 +20,9 @@ const {
   runInlineCommentEndBoundaryClickFocusScenario,
 } = require('./scenarios/inline-comment-end-boundary-click-focus.scenario');
 const {
+  runInlineCommentEmptyEscapeDeleteScenario,
+} = require('./scenarios/inline-comment-empty-escape-delete.scenario');
+const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
 const {
@@ -42,6 +45,7 @@ const ciScenarioDefinitions = [
   runInlineCommentDeleteScrollStabilityScenario,
   runInlineCommentActiveFocusSyncScenario,
   runInlineCommentEndBoundaryClickFocusScenario,
+  runInlineCommentEmptyEscapeDeleteScenario,
   runTerminalPaneCollapseExpandScenario,
   runRepositoryFileExplorerPaneScenario,
   runRepositoryFileExplorerNonGitScenario,
