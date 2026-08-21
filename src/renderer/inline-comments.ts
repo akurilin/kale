@@ -3,9 +3,8 @@
 // command logic, comment list UI, and decoration rendering stay in sync.
 //
 
-export type InlineComment = {
+type InlineCommentSourceRange = {
   id: string;
-  text: string;
   contentFrom: number;
   contentTo: number;
   startMarkerFrom: number;
@@ -14,13 +13,46 @@ export type InlineComment = {
   endMarkerTo: number;
 };
 
+export type InlineTextComment = InlineCommentSourceRange & {
+  kind: 'comment';
+  text: string;
+};
+
+export type InlineSuggestion = InlineCommentSourceRange & {
+  kind: 'suggestion';
+  explanation: string;
+  originalText: string;
+  replacementText: string;
+  isStale: boolean;
+};
+
+export type InlineComment = InlineTextComment | InlineSuggestion;
+
+export type InlineSuggestionMarkerFields = {
+  explanation: string;
+  originalText: string;
+  replacementText: string;
+};
+
+type InlineSuggestionMarkerPayload = InlineSuggestionMarkerFields & {
+  version: 1;
+  kind: 'suggestion';
+};
+
+type InlineCommentMarkerPayload =
+  | {
+      kind: 'comment';
+      text: string;
+    }
+  | InlineSuggestionMarkerPayload;
+
 type ParsedStartMarker = {
   id: string;
   fullFrom: number;
   fullTo: number;
   payloadFrom: number;
   payloadTo: number;
-  text: string;
+  payload: InlineCommentMarkerPayload;
 };
 
 type ParsedEndMarker = {
@@ -49,23 +81,69 @@ export const createInlineCommentId = (): string => {
 };
 
 /**
+ * Why: all marker payloads live inside HTML comments, so one encoder must make
+ * both legacy text and structured suggestion data safe for the same container.
+ */
+const encodeInlineCommentMarkerPayload = (payload: unknown): string => {
+  return JSON.stringify(payload).replaceAll('--', '\\u002d\\u002d');
+};
+
+/**
  * Why: comment text lives inside an HTML comment marker, so we encode it as a
  * JSON string literal and neutralize "--" to reduce accidental marker breakage.
  */
 export const encodeInlineCommentTextForMarker = (text: string): string => {
-  return JSON.stringify(text).replaceAll('--', '\\u002d\\u002d');
+  return encodeInlineCommentMarkerPayload(text);
 };
 
 /**
- * Why: the parser needs one canonical decode path so marker payload handling
- * remains consistent between editor commands, decorations, and the sidebar UI.
+ * Why: runtime validation prevents malformed agent-written objects from
+ * reaching React as if they were trusted suggestion payloads.
  */
-const decodeInlineCommentTextFromMarkerPayload = (payload: string): string => {
-  try {
-    return JSON.parse(payload) as string;
-  } catch {
-    return payload.trim().replace(/^"|"$/g, '');
+const isInlineSuggestionMarkerPayload = (
+  parsedPayload: unknown,
+): parsedPayload is InlineSuggestionMarkerPayload => {
+  if (
+    typeof parsedPayload !== 'object' ||
+    parsedPayload === null ||
+    Array.isArray(parsedPayload)
+  ) {
+    return false;
   }
+
+  const possibleSuggestion = parsedPayload as Record<string, unknown>;
+  return (
+    possibleSuggestion.version === 1 &&
+    possibleSuggestion.kind === 'suggestion' &&
+    typeof possibleSuggestion.explanation === 'string' &&
+    typeof possibleSuggestion.originalText === 'string' &&
+    typeof possibleSuggestion.replacementText === 'string'
+  );
+};
+
+/**
+ * Why: the parser needs one canonical decode path so legacy comments and new
+ * suggestion payloads can share marker pairing and source-range behavior.
+ */
+const decodeInlineCommentMarkerPayload = (
+  payload: string,
+): InlineCommentMarkerPayload => {
+  try {
+    const parsedPayload: unknown = JSON.parse(payload);
+    if (typeof parsedPayload === 'string') {
+      return { kind: 'comment', text: parsedPayload };
+    }
+    if (isInlineSuggestionMarkerPayload(parsedPayload)) {
+      return parsedPayload;
+    }
+  } catch {
+    // The fallback below preserves support for older hand-written payloads.
+  }
+
+  return {
+    kind: 'comment',
+    text: payload.trim().replace(/^"|"$/g, ''),
+  };
 };
 
 /**
@@ -99,7 +177,7 @@ const parseInlineCommentMarkerTokens = (
         fullTo: markerTo,
         payloadFrom,
         payloadTo,
-        text: decodeInlineCommentTextFromMarkerPayload(markerPayload),
+        payload: decodeInlineCommentMarkerPayload(markerPayload),
       });
       continue;
     }
@@ -142,15 +220,38 @@ export const parseInlineCommentsFromMarkdown = (
       continue;
     }
 
-    parsedComments.push({
+    const sharedCommentFields: InlineCommentSourceRange = {
       id: token.id,
-      text: matchingStartMarker.text,
       contentFrom: matchingStartMarker.fullTo,
       contentTo: token.fullFrom,
       startMarkerFrom: matchingStartMarker.fullFrom,
       startMarkerTo: matchingStartMarker.fullTo,
       endMarkerFrom: token.fullFrom,
       endMarkerTo: token.fullTo,
+    };
+
+    if (matchingStartMarker.payload.kind === 'suggestion') {
+      const { explanation, originalText, replacementText } =
+        matchingStartMarker.payload;
+      const anchoredText = markdownContent.slice(
+        sharedCommentFields.contentFrom,
+        sharedCommentFields.contentTo,
+      );
+      parsedComments.push({
+        ...sharedCommentFields,
+        kind: 'suggestion',
+        explanation,
+        originalText,
+        replacementText,
+        isStale: anchoredText !== originalText,
+      });
+      continue;
+    }
+
+    parsedComments.push({
+      ...sharedCommentFields,
+      kind: 'comment',
+      text: matchingStartMarker.payload.text,
     });
   }
 
@@ -215,6 +316,22 @@ export const createInlineCommentStartMarker = (
 };
 
 /**
+ * Why: agents and tests need one versioned suggestion serializer so marker
+ * syntax does not drift across direct file edits and editor-created fixtures.
+ */
+export const createInlineSuggestionStartMarker = (
+  commentId: string,
+  suggestionFields: InlineSuggestionMarkerFields,
+): string => {
+  const suggestionPayload: InlineSuggestionMarkerPayload = {
+    version: 1,
+    kind: 'suggestion',
+    ...suggestionFields,
+  };
+  return `<!-- @comment:${commentId} start | ${encodeInlineCommentMarkerPayload(suggestionPayload)} -->`;
+};
+
+/**
  * Why: end-marker formatting must remain exact for parser compatibility and
  * string replacement operations that depend on stable marker shapes.
  */
@@ -270,6 +387,13 @@ export const updateInlineCommentTextInMarkdown = (
   commentId: string,
   nextCommentText: string,
 ): string | null => {
+  const targetComment = parseInlineCommentsFromMarkdown(markdownContent).find(
+    (comment) => comment.id === commentId,
+  );
+  if (!targetComment || targetComment.kind !== 'comment') {
+    return null;
+  }
+
   const targetPayloadRange = findInlineCommentTextPayloadRangeInMarkdown(
     markdownContent,
     commentId,
@@ -284,6 +408,33 @@ export const updateInlineCommentTextInMarkdown = (
     markdownContent.slice(0, targetPayloadRange.payloadFrom) +
     encodedCommentText +
     markdownContent.slice(targetPayloadRange.payloadTo)
+  );
+};
+
+/**
+ * Why: accepting must remove both metadata markers and the original anchor in
+ * one replacement while refusing stale or non-suggestion targets.
+ */
+export const acceptInlineSuggestionInMarkdown = (
+  markdownContent: string,
+  commentId: string,
+): string | null => {
+  const targetSuggestion = parseInlineCommentsFromMarkdown(
+    markdownContent,
+  ).find((comment) => {
+    return comment.id === commentId && comment.kind === 'suggestion';
+  });
+  if (!targetSuggestion || targetSuggestion.kind !== 'suggestion') {
+    return null;
+  }
+  if (targetSuggestion.isStale) {
+    return null;
+  }
+
+  return (
+    markdownContent.slice(0, targetSuggestion.startMarkerFrom) +
+    targetSuggestion.replacementText +
+    markdownContent.slice(targetSuggestion.endMarkerTo)
   );
 };
 

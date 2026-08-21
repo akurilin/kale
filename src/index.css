@@ -643,6 +643,20 @@ body {
     0 0 14px rgba(216, 163, 32, 0.32);
 }
 
+.editor .cm-inline-comment-range.cm-inline-suggestion-range {
+  background: rgba(231, 153, 139, 0.22);
+  box-shadow: inset 0 -1px 0 rgba(174, 77, 59, 0.35);
+}
+
+.editor
+  .cm-inline-comment-range.cm-inline-suggestion-range.cm-inline-comment-range--active {
+  background: rgba(231, 153, 139, 0.35);
+  box-shadow:
+    inset 0 -1px 0 rgba(174, 77, 59, 0.5),
+    0 0 0 1px rgba(174, 77, 59, 0.2),
+    0 0 14px rgba(174, 77, 59, 0.18);
+}
+
 .inline-comments-sidebar {
   min-width: 0;
   min-height: 0;
@@ -815,11 +829,179 @@ body {
   background: rgb(235, 240, 249);
 }
 
+.inline-suggestion-card {
+  padding: 12px;
+  border: 1px solid #d6cebf;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow:
+    0 7px 18px rgba(31, 27, 20, 0.06),
+    0 1px 3px rgba(31, 27, 20, 0.05);
+}
+
+.inline-comment-card--active.inline-suggestion-card {
+  border-color: #c6b792;
+  box-shadow:
+    0 12px 28px rgba(31, 27, 20, 0.1),
+    0 3px 8px rgba(31, 27, 20, 0.08);
+}
+
+.inline-suggestion-explanation {
+  margin: 0 0 10px;
+  color: #3c372f;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.inline-suggestion-diff {
+  display: grid;
+  gap: 7px;
+}
+
+.inline-suggestion-diff-section {
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 8px 9px;
+}
+
+.inline-suggestion-diff-section--before {
+  border: 1px solid #ead1ca;
+  background: #fff5f2;
+}
+
+.inline-suggestion-diff-section--after {
+  border: 1px solid #cde1cf;
+  background: #f2faf2;
+}
+
+.inline-suggestion-diff-label {
+  display: block;
+  margin-bottom: 4px;
+  color: #756d62;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inline-suggestion-diff-text {
+  max-height: 104px;
+  margin: 0;
+  overflow: auto;
+  color: #3b3731;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.inline-suggestion-diff-section--before .inline-suggestion-diff-text {
+  color: #7a3a31;
+  text-decoration-color: rgba(122, 58, 49, 0.5);
+}
+
+.inline-suggestion-diff-section--after .inline-suggestion-diff-text {
+  color: #285b31;
+}
+
+.inline-suggestion-stale-message {
+  margin: 9px 0 0;
+  color: #8a4a1f;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.inline-suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.inline-suggestion-action {
+  width: 34px;
+  height: 30px;
+  border: 1px solid;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.inline-suggestion-action--reject {
+  border-color: #dfc1b8;
+  background: #fff5f2;
+  color: #8a2f1f;
+}
+
+.inline-suggestion-action--reject:hover {
+  background: #ffe9e3;
+}
+
+.inline-suggestion-action--accept {
+  border-color: #bad5bd;
+  background: #eff9f0;
+  color: #22632c;
+}
+
+.inline-suggestion-action--accept:hover:not(:disabled) {
+  background: #ddf2df;
+}
+
+.inline-suggestion-action:focus-visible,
+.inline-suggestion-resolution-notice button:focus-visible {
+  outline: 2px solid rgba(201, 141, 22, 0.25);
+  outline-offset: 2px;
+}
+
+.inline-suggestion-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.inline-suggestion-resolution-notice {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 10px 9px 14px;
+  transform: translateX(-50%);
+  border: 1px solid #d6cebf;
+  border-radius: 10px;
+  background: rgba(255, 253, 249, 0.98);
+  box-shadow:
+    0 12px 30px rgba(31, 27, 20, 0.14),
+    0 2px 7px rgba(31, 27, 20, 0.08);
+  color: #3b3731;
+  font-size: 12px;
+}
+
+.inline-suggestion-resolution-notice button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: transparent;
+  color: #805c13;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inline-suggestion-resolution-notice button:hover {
+  background: #f4eee2;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .editor .cm-inline-comment-range,
   .inline-comment-floating-slot,
   .inline-comment-card,
-  .inline-comment-card-input {
+  .inline-comment-card-input,
+  .inline-suggestion-action {
     transition: none;
   }
 }

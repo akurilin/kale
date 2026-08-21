@@ -14,10 +14,10 @@ import {
   type RefObject,
 } from 'react';
 
-import type { InlineComment } from './inline-comments';
+import type { InlineTextComment } from './inline-comments';
 
 type InlineCommentCardProps = {
-  comment: InlineComment;
+  comment: InlineTextComment;
   onChangeCommentText: (commentId: string, nextCommentText: string) => void;
   onDeleteComment: (commentId: string) => void;
   isActive?: boolean;

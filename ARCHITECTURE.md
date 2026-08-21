@@ -8,7 +8,7 @@ Keep architecture updates here instead of expanding architecture details in `REA
 Kale is a desktop markdown writing tool built on Electron + React + CodeMirror.
 It combines:
 
-- A prose-first markdown editor with inline comments persisted directly in markdown.
+- A prose-first markdown editor with inline comments and accept/reject text suggestions persisted directly in markdown.
 - A git-rooted repository file explorer for markdown documents.
 - Git-aware file actions (`Reset`, single-file commit save).
 - A PTY-backed agent terminal pane for Claude Code, Codex, or Pi.
@@ -257,13 +257,16 @@ Owns document lifecycle and top-level UI orchestration:
 
 - Composes `MarkdownEditorPane` + floating `InlineCommentsSidebar`.
 - Parses inline comments from markdown as source of truth.
+- Treats legacy text payloads as editable comments and versioned structured payloads as text suggestions.
 - Positions comment cards by anchor geometry with overlap-avoidance packing.
 - Owns comment create/update/delete interactions via editor imperative API.
+- Owns suggestion accept/reject interactions and a short-lived undo notice.
 - Owns one active-comment ID (`0..1`) synchronized across editor highlight and sidebar card focus.
 - Routes bidirectional activation:
   - clicking highlighted text focuses the corresponding comment card
   - focusing/clicking a comment card activates the referenced editor highlight
 - Reports the complete decoded comment text as IDE selection context when a comment input gets focus or its text changes.
+- Reports a readable explanation plus before-and-after text when a suggestion card gets focus.
 - Uses the encoded comment payload inside the Markdown start marker as the focused comment's source range.
 - Clears active comment state on any pointer interaction outside the current active comment card/range.
 - Handles comment-edit completion shortcut (`Cmd/Ctrl+Enter`) to defocus active comment state.
@@ -278,6 +281,9 @@ Owns one long-lived `EditorView` instance and exposes an imperative handle.
   - create from selection
   - update marker payload in place
   - delete marker pair in place
+  - accept a suggestion by replacing its complete marker range
+  - reject a suggestion by removing only its marker pair
+  - undo the last document change after a sidebar resolution action
 
 ### Spellcheck Extension (`src/renderer/spellcheck-extension.ts`)
 

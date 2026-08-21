@@ -20,7 +20,13 @@ import {
   closeBracketsKeymap,
   completionKeymap,
 } from '@codemirror/autocomplete';
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  isolateHistory,
+  undo,
+} from '@codemirror/commands';
 import {
   HighlightStyle,
   bracketMatching,
@@ -63,6 +69,7 @@ import {
   findInlineCommentIdForDocumentClick,
   findInlineCommentTextPayloadRangeInMarkdown,
   parseInlineCommentsFromMarkdown,
+  type InlineComment,
 } from './inline-comments';
 
 /**
@@ -103,6 +110,62 @@ const dispatchFullDocumentReplacementPreservingCursor = (
 
   // Restore scroll position so the viewport doesn't jump.
   editorView.scrollDOM.scrollTop = prevScrollTop;
+};
+
+/**
+ * Why: annotation resolution removes hidden source ranges that can cause a late
+ * CodeMirror scroll correction, so the viewport must return to its prior place.
+ */
+const restoreEditorScrollTopAfterAnnotationResolution = (
+  editorView: EditorView,
+  scrollTopBeforeResolution: number,
+): void => {
+  requestAnimationFrame(() => {
+    if (editorView.dom.isConnected) {
+      editorView.scrollDOM.scrollTop = scrollTopBeforeResolution;
+    }
+  });
+};
+
+/**
+ * Why: comment deletion and suggestion rejection perform the same safe marker
+ * removal and must remain one undoable CodeMirror transaction.
+ */
+const dispatchInlineCommentMarkerRemoval = (
+  editorView: EditorView,
+  inlineComment: InlineComment,
+): boolean => {
+  const scrollTopBeforeResolution = editorView.scrollDOM.scrollTop;
+  editorView.dispatch({
+    changes: [
+      {
+        from: inlineComment.endMarkerFrom,
+        to: inlineComment.endMarkerTo,
+        insert: '',
+      },
+      {
+        from: inlineComment.startMarkerFrom,
+        to: inlineComment.startMarkerTo,
+        insert: '',
+      },
+    ],
+    selection: {
+      anchor:
+        inlineComment.startMarkerFrom +
+        (inlineComment.contentTo - inlineComment.contentFrom),
+    },
+    scrollIntoView: false,
+    userEvent: 'input',
+    annotations: isolateHistory.of('full'),
+  });
+  restoreEditorScrollTopAfterAnnotationResolution(
+    editorView,
+    scrollTopBeforeResolution,
+  );
+
+  return parseInlineCommentsFromMarkdown(editorView.state.doc.toString()).every(
+    (comment) => comment.id !== inlineComment.id,
+  );
 };
 
 // CodeMirror recommends copying basicSetup when you need customization. This
@@ -229,6 +292,12 @@ export type MarkdownEditorPaneHandle = {
     nextCommentText: string,
   ) => boolean;
   deleteInlineCommentById: (commentId: string) => boolean;
+  acceptInlineSuggestionById: (commentId: string) => {
+    ok: boolean;
+    errorMessage?: string;
+  };
+  rejectInlineSuggestionById: (commentId: string) => boolean;
+  undoLastDocumentChange: () => boolean;
   setActiveInlineCommentById: (commentId: string | null) => void;
 };
 
@@ -271,13 +340,16 @@ const MarkdownEditorPaneImpl = (
   );
 
   /**
-   * Why: floating comment cards and the selection action both need the same
-   * coordinate translation from CodeMirror viewport space into editor-local UI.
+   * Why: floating comment cards and the selection action use different range
+   * edges, but both need the same translation from CodeMirror viewport space
+   * into editor-local UI.
    */
   const getEditorLocalAnchorPositionForDocumentRange = (
     editorView: EditorView,
     rangeFrom: number,
     rangeTo: number,
+    verticalAnchorEdge: 'top' | 'bottom' = 'top',
+    rangeEndSide?: -1 | 1,
   ): { top: number; left: number } | null => {
     const clampedRangeFrom = Math.max(0, Math.min(rangeFrom, rangeTo));
     const clampedRangeTo = Math.min(
@@ -285,7 +357,7 @@ const MarkdownEditorPaneImpl = (
       Math.max(rangeFrom, rangeTo),
     );
     const rangeAnchorCoordinates =
-      editorView.coordsAtPos(clampedRangeTo) ??
+      editorView.coordsAtPos(clampedRangeTo, rangeEndSide) ??
       editorView.coordsAtPos(clampedRangeFrom);
     const editorContainerElement = editorContainerElementRef.current;
     if (!rangeAnchorCoordinates || !editorContainerElement) {
@@ -295,15 +367,16 @@ const MarkdownEditorPaneImpl = (
     const editorContainerBounds =
       editorContainerElement.getBoundingClientRect();
     return {
-      top: rangeAnchorCoordinates.top - editorContainerBounds.top,
+      top:
+        rangeAnchorCoordinates[verticalAnchorEdge] - editorContainerBounds.top,
       left: rangeAnchorCoordinates.right - editorContainerBounds.left,
     };
   };
 
   /**
-   * Why: the floating comment action belongs next to the current text
-   * selection, so we translate CodeMirror's viewport coordinates into
-   * editor-local coordinates that React can position against.
+   * Why: the floating comment action belongs below the final selected line, so
+   * its anchor uses that line's bottom edge. The negative side keeps an
+   * end-exclusive selection attached to the character before its end.
    */
   const emitInlineCommentCreationAnchorPosition = (editorView: EditorView) => {
     const anchorCallback = onInlineCommentCreationAnchorChangedRef.current;
@@ -330,6 +403,8 @@ const MarkdownEditorPaneImpl = (
         editorView,
         selectionFrom,
         selectionTo,
+        'bottom',
+        -1,
       ),
     );
   };
@@ -482,41 +557,88 @@ const MarkdownEditorPaneImpl = (
           return false;
         }
 
-        const scrollTopBeforeInlineCommentDelete =
-          editorView.scrollDOM.scrollTop;
-        editorView.dispatch({
-          changes: [
-            {
-              from: targetInlineComment.endMarkerFrom,
-              to: targetInlineComment.endMarkerTo,
-              insert: '',
-            },
-            {
-              from: targetInlineComment.startMarkerFrom,
-              to: targetInlineComment.startMarkerTo,
-              insert: '',
-            },
-          ],
-          scrollIntoView: false,
-        });
+        return dispatchInlineCommentMarkerRemoval(
+          editorView,
+          targetInlineComment,
+        );
+      },
+      acceptInlineSuggestionById: (commentId: string) => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return { ok: false, errorMessage: 'Editor is not ready.' };
+        }
 
-        // Deleting hidden marker spans can still trigger a late viewport
-        // adjustment after dispatch; restoring the prior scrollTop on the next
-        // frame keeps mid-document deletion visually stable.
-        requestAnimationFrame(() => {
-          if (editorViewRef.current === editorView) {
-            editorView.scrollDOM.scrollTop = scrollTopBeforeInlineCommentDelete;
-          }
-        });
-
-        const didDeleteInlineComment = parseInlineCommentsFromMarkdown(
+        const targetSuggestion = parseInlineCommentsFromMarkdown(
           editorView.state.doc.toString(),
-        ).every((comment) => comment.id !== commentId);
-        if (!didDeleteInlineComment) {
+        ).find((comment) => comment.id === commentId);
+        if (!targetSuggestion || targetSuggestion.kind !== 'suggestion') {
+          return {
+            ok: false,
+            errorMessage: 'The suggestion markers are missing or malformed.',
+          };
+        }
+        if (targetSuggestion.isStale) {
+          return {
+            ok: false,
+            errorMessage:
+              'The selected text changed after this suggestion was created.',
+          };
+        }
+
+        const scrollTopBeforeResolution = editorView.scrollDOM.scrollTop;
+        editorView.dispatch({
+          changes: {
+            from: targetSuggestion.startMarkerFrom,
+            to: targetSuggestion.endMarkerTo,
+            insert: targetSuggestion.replacementText,
+          },
+          selection: {
+            anchor:
+              targetSuggestion.startMarkerFrom +
+              targetSuggestion.replacementText.length,
+          },
+          scrollIntoView: false,
+          userEvent: 'input',
+          annotations: isolateHistory.of('full'),
+        });
+        editorView.focus();
+        restoreEditorScrollTopAfterAnnotationResolution(
+          editorView,
+          scrollTopBeforeResolution,
+        );
+
+        return { ok: true };
+      },
+      rejectInlineSuggestionById: (commentId: string) => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
           return false;
         }
 
-        return true;
+        const targetSuggestion = parseInlineCommentsFromMarkdown(
+          editorView.state.doc.toString(),
+        ).find((comment) => comment.id === commentId);
+        if (!targetSuggestion || targetSuggestion.kind !== 'suggestion') {
+          return false;
+        }
+
+        const didRejectSuggestion = dispatchInlineCommentMarkerRemoval(
+          editorView,
+          targetSuggestion,
+        );
+        if (didRejectSuggestion) {
+          editorView.focus();
+        }
+        return didRejectSuggestion;
+      },
+      undoLastDocumentChange: () => {
+        const editorView = editorViewRef.current;
+        if (!editorView) {
+          return false;
+        }
+
+        editorView.focus();
+        return undo(editorView);
       },
       setActiveInlineCommentById: (commentId: string | null) => {
         const editorView = editorViewRef.current;

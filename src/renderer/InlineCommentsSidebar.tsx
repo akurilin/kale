@@ -5,6 +5,7 @@
 
 import type { InlineComment } from './inline-comments';
 import { InlineCommentCard } from './InlineCommentCard';
+import { InlineSuggestionCard } from './InlineSuggestionCard';
 
 type InlineCommentsSidebarProps = {
   comments: InlineComment[];
@@ -12,6 +13,8 @@ type InlineCommentsSidebarProps = {
   hiddenCommentIds: ReadonlySet<string>;
   onChangeCommentText: (commentId: string, nextCommentText: string) => void;
   onDeleteComment: (commentId: string) => void;
+  onAcceptSuggestion: (suggestionId: string) => void;
+  onRejectSuggestion: (suggestionId: string) => void;
   activeCommentId: string | null;
   onActivateComment: (commentId: string) => void;
   onFocusCommentInput: (commentId: string) => void;
@@ -29,6 +32,8 @@ export const InlineCommentsSidebar = ({
   hiddenCommentIds,
   onChangeCommentText,
   onDeleteComment,
+  onAcceptSuggestion,
+  onRejectSuggestion,
   activeCommentId,
   onActivateComment,
   onFocusCommentInput,
@@ -48,8 +53,8 @@ export const InlineCommentsSidebar = ({
     >
       {comments.length === 0 ? (
         <div className="inline-comments-empty-state">
-          Select text and click the floating `Comment` button to create an
-          inline comment.
+          Select text and click the floating `Comment` button to create a
+          comment. Agent suggestions also appear here.
         </div>
       ) : visibleComments.length === 0 ? (
         <div className="inline-comments-empty-state">
@@ -66,18 +71,30 @@ export const InlineCommentsSidebar = ({
                 className="inline-comment-floating-slot"
                 style={{ top: commentTopOffset }}
               >
-                <InlineCommentCard
-                  comment={comment}
-                  onChangeCommentText={onChangeCommentText}
-                  onDeleteComment={onDeleteComment}
-                  isActive={activeCommentId === comment.id}
-                  onActivateComment={onActivateComment}
-                  onFocusCommentInput={onFocusCommentInput}
-                  onCompleteCommentEditing={onCompleteCommentEditing}
-                  shouldAutoFocusInput={autoFocusCommentId === comment.id}
-                  onAutoFocusHandled={onAutoFocusCommentHandled}
-                  onCardHeightChanged={onCommentCardHeightChanged}
-                />
+                {comment.kind === 'suggestion' ? (
+                  <InlineSuggestionCard
+                    suggestion={comment}
+                    isActive={activeCommentId === comment.id}
+                    onActivateSuggestion={onActivateComment}
+                    onFocusSuggestion={onFocusCommentInput}
+                    onAcceptSuggestion={onAcceptSuggestion}
+                    onRejectSuggestion={onRejectSuggestion}
+                    onCardHeightChanged={onCommentCardHeightChanged}
+                  />
+                ) : (
+                  <InlineCommentCard
+                    comment={comment}
+                    onChangeCommentText={onChangeCommentText}
+                    onDeleteComment={onDeleteComment}
+                    isActive={activeCommentId === comment.id}
+                    onActivateComment={onActivateComment}
+                    onFocusCommentInput={onFocusCommentInput}
+                    onCompleteCommentEditing={onCompleteCommentEditing}
+                    shouldAutoFocusInput={autoFocusCommentId === comment.id}
+                    onAutoFocusHandled={onAutoFocusCommentHandled}
+                    onCardHeightChanged={onCommentCardHeightChanged}
+                  />
+                )}
               </div>
             );
           })}

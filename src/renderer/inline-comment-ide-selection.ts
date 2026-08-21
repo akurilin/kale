@@ -26,6 +26,28 @@ const convertDocumentOffsetToLineAndCharacter = (
 };
 
 /**
+ * Why: focused suggestion context must tell the agent what is proposed without
+ * exposing only the encoded JSON marker payload.
+ */
+const buildInlineCommentSelectionText = (
+  inlineComment: ReturnType<typeof parseInlineCommentsFromMarkdown>[number],
+): string => {
+  if (inlineComment.kind === 'comment') {
+    return inlineComment.text;
+  }
+
+  return [
+    `Suggested change: ${inlineComment.explanation}`,
+    '',
+    'Before:',
+    inlineComment.originalText,
+    '',
+    'After:',
+    inlineComment.replacementText,
+  ].join('\n');
+};
+
+/**
  * Why: focusing a comment must give agents the complete decoded comment text
  * through the same source-based selection contract used for selected prose.
  */
@@ -45,7 +67,7 @@ export const buildInlineCommentIdeSelectionDetails = (
   }
 
   return {
-    selectedText: targetComment.text,
+    selectedText: buildInlineCommentSelectionText(targetComment),
     range: {
       start: convertDocumentOffsetToLineAndCharacter(
         markdownContent,

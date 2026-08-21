@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createInlineCommentEndMarker,
   createInlineCommentStartMarker,
+  createInlineSuggestionStartMarker,
   encodeInlineCommentTextForMarker,
 } from './inline-comments';
 import { buildInlineCommentIdeSelectionDetails } from './inline-comment-ide-selection';
@@ -67,5 +68,38 @@ describe('buildInlineCommentIdeSelectionDetails', () => {
     expect(
       buildInlineCommentIdeSelectionDetails(markdownContent, 'c_missing'),
     ).toBeNull();
+  });
+
+  it('gives agents a readable before-and-after summary for a focused suggestion', () => {
+    const suggestionId = 'c_agent_suggestion';
+    const originalText = 'Wordy original text.';
+    const replacementText = 'Concise text.';
+    const startMarker = createInlineSuggestionStartMarker(suggestionId, {
+      explanation: 'Make this concise.',
+      originalText,
+      replacementText,
+    });
+    const markdownContent = `${startMarker}${originalText}${createInlineCommentEndMarker(suggestionId)}`;
+
+    expect(
+      buildInlineCommentIdeSelectionDetails(markdownContent, suggestionId),
+    ).toEqual({
+      selectedText: [
+        'Suggested change: Make this concise.',
+        '',
+        'Before:',
+        originalText,
+        '',
+        'After:',
+        replacementText,
+      ].join('\n'),
+      range: {
+        start: { line: 0, character: startMarker.indexOf('{') },
+        end: {
+          line: 0,
+          character: startMarker.lastIndexOf('}') + 1,
+        },
+      },
+    });
   });
 });

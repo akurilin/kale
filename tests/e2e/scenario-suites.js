@@ -11,6 +11,9 @@ const {
   runInlineCommentTypingScrollStabilityScenario,
 } = require('./scenarios/inline-comment-typing-scroll-stability.scenario');
 const {
+  runInlineCommentSelectionActionPositionScenario,
+} = require('./scenarios/inline-comment-selection-action-position.scenario');
+const {
   runInlineCommentDeleteScrollStabilityScenario,
 } = require('./scenarios/inline-comment-delete-scroll-stability.scenario');
 const {
@@ -28,6 +31,9 @@ const {
 const {
   runInlineCommentIdeSelectionContextScenario,
 } = require('./scenarios/inline-comment-ide-selection-context.scenario');
+const {
+  runInlineSuggestionResolutionScenario,
+} = require('./scenarios/inline-suggestion-resolution.scenario');
 const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
@@ -48,12 +54,14 @@ const ciScenarioDefinitions = [
   runHappyPathScenario,
   runInlineCommentBoundaryWhitespaceScenario,
   runInlineCommentTypingScrollStabilityScenario,
+  runInlineCommentSelectionActionPositionScenario,
   runInlineCommentDeleteScrollStabilityScenario,
   runInlineCommentActiveFocusSyncScenario,
   runInlineCommentEndBoundaryClickFocusScenario,
   runInlineCommentEmptyEscapeDeleteScenario,
   runInlineCommentSelectedParagraphDeleteScenario,
   runInlineCommentIdeSelectionContextScenario,
+  runInlineSuggestionResolutionScenario,
   runTerminalPaneCollapseExpandScenario,
   runRepositoryFileExplorerPaneScenario,
   runRepositoryFileExplorerNonGitScenario,

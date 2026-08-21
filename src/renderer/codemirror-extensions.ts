@@ -701,6 +701,7 @@ export const quoteLineDecorationExtension = (): Extension =>
 // Marker ranges are replaced so users interact with highlighted prose while
 // the raw comment syntax remains persisted in the document source.
 const inlineCommentRangeCssClassName = 'cm-inline-comment-range';
+const inlineSuggestionRangeCssClassName = 'cm-inline-suggestion-range';
 const activeInlineCommentRangeCssClassName = 'cm-inline-comment-range--active';
 
 /**
@@ -788,10 +789,19 @@ const buildInlineCommentDecorations = (
     );
 
     if (comment.contentFrom < comment.contentTo) {
-      const inlineCommentRangeClassName =
+      const annotationKindClassName =
+        comment.kind === 'suggestion' ? inlineSuggestionRangeCssClassName : '';
+      const activeClassName =
         comment.id === activeInlineCommentId
-          ? `${inlineCommentRangeCssClassName} ${activeInlineCommentRangeCssClassName}`
-          : inlineCommentRangeCssClassName;
+          ? activeInlineCommentRangeCssClassName
+          : '';
+      const inlineCommentRangeClassName = [
+        inlineCommentRangeCssClassName,
+        annotationKindClassName,
+        activeClassName,
+      ]
+        .filter(Boolean)
+        .join(' ');
       decorations.push(
         Decoration.mark({
           class: inlineCommentRangeClassName,

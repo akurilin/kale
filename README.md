@@ -65,11 +65,19 @@ Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is 
 
 Select text and add a comment to annotate your draft. Comments are stored directly in the Markdown file as HTML comment markers, so they travel with the file and work with git diffs. On wide windows, comment cards stay beside the prose column instead of drifting to the far edge of the pane.
 
+The floating **Comment** button appears below the final selected line, so it does not cover the selected text.
+
 When you delete all text for one inline comment, Kale also removes that comment. When you delete only part of the text, Kale keeps the comment on the text that remains.
 
 Use comments to leave instructions for the agent ("find a citation for this", "rewrite this paragraph") or as personal notes.
 
+Agents can turn a text-edit comment into a suggestion instead of changing the prose immediately. A suggestion card shows the current text and the proposed replacement. Select the check mark to accept the change, or select the X to reject it. Both actions remove the suggestion card and its hidden markers. Use the on-screen **Undo** action or the standard editor undo shortcut to restore the suggestion.
+
+Kale checks that the suggested original text still matches the document. If the text changed after the agent created the suggestion, Kale disables acceptance and asks you to reject or replace the stale suggestion.
+
 When a comment input has focus, Kale treats the complete comment text as the current agent selection. The caret position or a partial textarea selection does not limit this context. You can focus a comment, move to the terminal, and use that comment as the subject of your next prompt.
+
+When a suggestion card has focus, Kale gives the agent its explanation and complete before-and-after text as the current selection context.
 
 ### Agent Terminal
 

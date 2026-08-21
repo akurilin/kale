@@ -28,7 +28,6 @@ import {
 import { buildInlineCommentIdeSelectionDetails } from './inline-comment-ide-selection';
 
 const INLINE_COMMENT_SELECTION_BUTTON_WIDTH = 92;
-const INLINE_COMMENT_SELECTION_BUTTON_HEIGHT = 34;
 const INLINE_COMMENT_SELECTION_BUTTON_MARGIN = 8;
 const FLOATING_COMMENT_CARD_GAP = 10;
 const DEFAULT_FLOATING_COMMENT_CARD_HEIGHT = 64;
@@ -51,6 +50,10 @@ type FloatingCommentAnchor = {
   commentId: string;
   desiredTop: number;
   cardHeight: number;
+};
+
+type InlineSuggestionResolutionNotice = {
+  message: string;
 };
 
 /**
@@ -121,6 +124,10 @@ const DocumentCommentsPaneImpl = (
   >(new Set());
   const [inlineCommentCardHeightsById, setInlineCommentCardHeightsById] =
     useState<Record<string, number>>({});
+  const [
+    inlineSuggestionResolutionNotice,
+    setInlineSuggestionResolutionNotice,
+  ] = useState<InlineSuggestionResolutionNotice | null>(null);
 
   const markdownEditorPaneRef = useRef<MarkdownEditorPaneHandle | null>(null);
   const documentCommentsLayoutElementRef = useRef<HTMLDivElement | null>(null);
@@ -143,6 +150,7 @@ const DocumentCommentsPaneImpl = (
    * so the comment list must resync from loaded markdown props here.
    */
   useEffect(() => {
+    setInlineSuggestionResolutionNotice(null);
     if (loadedDocumentContent === null) {
       setInlineComments([]);
       setInlineCommentSelectionAnchor(null);
@@ -387,6 +395,61 @@ const DocumentCommentsPaneImpl = (
   };
 
   /**
+   * Why: accepting delegates the atomic replacement to CodeMirror, then keeps
+   * only a short-lived undo affordance in React instead of duplicate document
+   * state.
+   */
+  const acceptInlineSuggestion = (suggestionId: string): void => {
+    const acceptResult =
+      markdownEditorPaneRef.current?.acceptInlineSuggestionById(suggestionId);
+    if (!acceptResult?.ok) {
+      window.alert(
+        acceptResult?.errorMessage ?? 'Could not accept this suggestion.',
+      );
+      return;
+    }
+
+    setActiveInlineCommentId(null);
+    setAutoFocusInlineCommentId(null);
+    setInlineSuggestionResolutionNotice({
+      message: 'Suggestion accepted.',
+    });
+  };
+
+  /**
+   * Why: rejection preserves the anchored prose and removes only the proposal
+   * markers while exposing the same undo path as acceptance.
+   */
+  const rejectInlineSuggestion = (suggestionId: string): void => {
+    const didRejectSuggestion =
+      markdownEditorPaneRef.current?.rejectInlineSuggestionById(suggestionId) ??
+      false;
+    if (!didRejectSuggestion) {
+      window.alert('Could not reject this suggestion.');
+      return;
+    }
+
+    setActiveInlineCommentId(null);
+    setAutoFocusInlineCommentId(null);
+    setInlineSuggestionResolutionNotice({
+      message: 'Suggestion rejected.',
+    });
+  };
+
+  /**
+   * Why: the notice button must call the editor history directly because the
+   * suggestion control that owned focus no longer exists after resolution.
+   */
+  const undoInlineSuggestionResolution = (): void => {
+    const didUndo =
+      markdownEditorPaneRef.current?.undoLastDocumentChange() ?? false;
+    setInlineSuggestionResolutionNotice(null);
+    if (!didUndo) {
+      window.alert('There is no document change to undo.');
+    }
+  };
+
+  /**
    * Why: comment cards and highlighted text both represent the same comment
    * entity, so interaction from either surface must drive one active-comment ID.
    */
@@ -473,6 +536,7 @@ const DocumentCommentsPaneImpl = (
    * state so App only handles save scheduling and document lifecycle concerns.
    */
   const handleUserEditedDocument = (content: string) => {
+    setInlineSuggestionResolutionNotice(null);
     setInlineComments(parseInlineCommentsFromMarkdown(content));
     onUserEditedDocument(content);
   };
@@ -561,8 +625,7 @@ const DocumentCommentsPaneImpl = (
                 ),
                 top: Math.max(
                   INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
-                  inlineCommentSelectionAnchor.top -
-                    INLINE_COMMENT_SELECTION_BUTTON_HEIGHT -
+                  inlineCommentSelectionAnchor.top +
                     INLINE_COMMENT_SELECTION_BUTTON_MARGIN,
                 ),
               } as CSSProperties
@@ -577,6 +640,8 @@ const DocumentCommentsPaneImpl = (
           hiddenCommentIds={hiddenInlineCommentIds}
           onChangeCommentText={updateInlineCommentText}
           onDeleteComment={deleteInlineComment}
+          onAcceptSuggestion={acceptInlineSuggestion}
+          onRejectSuggestion={rejectInlineSuggestion}
           activeCommentId={activeInlineCommentId}
           onActivateComment={handleCommentCardActivated}
           onFocusCommentInput={handleCommentInputFocused}
@@ -586,6 +651,18 @@ const DocumentCommentsPaneImpl = (
           onCommentCardHeightChanged={handleInlineCommentCardHeightChanged}
         />
       </div>
+      {inlineSuggestionResolutionNotice ? (
+        <div
+          className="inline-suggestion-resolution-notice"
+          role="status"
+          aria-live="polite"
+        >
+          <span>{inlineSuggestionResolutionNotice.message}</span>
+          <button type="button" onClick={undoInlineSuggestionResolution}>
+            Undo
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 };
