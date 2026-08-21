@@ -23,6 +23,9 @@ const {
   runInlineCommentEmptyEscapeDeleteScenario,
 } = require('./scenarios/inline-comment-empty-escape-delete.scenario');
 const {
+  runInlineCommentSelectedParagraphDeleteScenario,
+} = require('./scenarios/inline-comment-selected-paragraph-delete.scenario');
+const {
   runTerminalPaneCollapseExpandScenario,
 } = require('./scenarios/terminal-pane-collapse-expand.scenario');
 const {
@@ -46,6 +49,7 @@ const ciScenarioDefinitions = [
   runInlineCommentActiveFocusSyncScenario,
   runInlineCommentEndBoundaryClickFocusScenario,
   runInlineCommentEmptyEscapeDeleteScenario,
+  runInlineCommentSelectedParagraphDeleteScenario,
   runTerminalPaneCollapseExpandScenario,
   runRepositoryFileExplorerPaneScenario,
   runRepositoryFileExplorerNonGitScenario,

@@ -3,10 +3,16 @@ import { markdown } from '@codemirror/lang-markdown';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildInlineCommentAwareSelectionDeletionUpdateForState,
   buildMarkdownHeadingShortcutChangesForState,
   buildLivePreviewDecorationInstructionsForState,
   buildMarkdownFormattingToggleSelectionUpdate,
 } from './codemirror-extensions';
+import {
+  createInlineCommentEndMarker,
+  createInlineCommentStartMarker,
+  parseInlineCommentsFromMarkdown,
+} from './inline-comments';
 
 const markdownStrongFormattingMarker = '**';
 const markdownEmphasisFormattingMarker = '*';
@@ -33,6 +39,19 @@ const applyMarkdownHeadingShortcutToState = (
       headingLevel,
     ),
   }).state;
+
+/**
+ * Why: comment-selection tests should exercise the same transaction update
+ * that the Backspace and Delete key handlers dispatch in the editor.
+ */
+const applyInlineCommentAwareSelectionDeletionToState = (
+  initialState: EditorState,
+): EditorState => {
+  const deletionUpdate =
+    buildInlineCommentAwareSelectionDeletionUpdateForState(initialState);
+  expect(deletionUpdate).not.toBeNull();
+  return initialState.update(deletionUpdate ?? {}).state;
+};
 
 // Selection assertions are easier to read when each test can ask for the
 // selected text directly from the final state.
@@ -110,6 +129,218 @@ const listLivePreviewLinkLabelMarkRanges = (
         instruction.className === 'cm-live-link-label',
     )
     .map((instruction) => ({ from: instruction.from, to: instruction.to }));
+
+describe('buildInlineCommentAwareSelectionDeletionUpdateForState', () => {
+  const commentId = 'c_selection_delete';
+  const commentText = 'The comment must follow its anchor.';
+  const anchoredText = 'Delete this paragraph';
+  const startMarker = createInlineCommentStartMarker(commentId, commentText);
+  const endMarker = createInlineCommentEndMarker(commentId);
+  const markdownContent = `Before\n\n${startMarker}${anchoredText}${endMarker}\n\nAfter`;
+
+  /**
+   * Why: each case needs source coordinates from the production parser so the
+   * tests remain correct if the marker format changes.
+   */
+  const buildSelectionState = (
+    selectionFrom: number,
+    selectionTo: number,
+  ): EditorState =>
+    EditorState.create({
+      doc: markdownContent,
+      selection: EditorSelection.range(selectionFrom, selectionTo),
+    });
+
+  it('removes both markers when the selection covers all anchored text', () => {
+    const [inlineComment] = parseInlineCommentsFromMarkdown(markdownContent);
+    const nextState = applyInlineCommentAwareSelectionDeletionToState(
+      buildSelectionState(inlineComment.contentFrom, inlineComment.contentTo),
+    );
+
+    expect(nextState.doc.toString()).toBe('Before\n\n\n\nAfter');
+    expect(parseInlineCommentsFromMarkdown(nextState.doc.toString())).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    {
+      selectedMarker: 'start',
+      getSelection: (
+        inlineComment: ReturnType<
+          typeof parseInlineCommentsFromMarkdown
+        >[number],
+      ) => ({
+        from: inlineComment.startMarkerFrom,
+        to: inlineComment.contentTo,
+      }),
+    },
+    {
+      selectedMarker: 'end',
+      getSelection: (
+        inlineComment: ReturnType<
+          typeof parseInlineCommentsFromMarkdown
+        >[number],
+      ) => ({
+        from: inlineComment.contentFrom,
+        to: inlineComment.endMarkerTo,
+      }),
+    },
+  ])(
+    'removes the complete pair when the full anchor and $selectedMarker marker are selected',
+    ({ getSelection }) => {
+      const [inlineComment] = parseInlineCommentsFromMarkdown(markdownContent);
+      const selection = getSelection(inlineComment);
+      const nextState = applyInlineCommentAwareSelectionDeletionToState(
+        buildSelectionState(selection.from, selection.to),
+      );
+
+      expect(nextState.doc.toString()).toBe('Before\n\n\n\nAfter');
+      expect(parseInlineCommentsFromMarkdown(nextState.doc.toString())).toEqual(
+        [],
+      );
+    },
+  );
+
+  it.each([
+    {
+      selectedMarker: 'start',
+      getSelection: (
+        inlineComment: ReturnType<
+          typeof parseInlineCommentsFromMarkdown
+        >[number],
+      ) => ({
+        from: inlineComment.startMarkerFrom + 1,
+        to: inlineComment.startMarkerTo - 1,
+        expectedCursor: inlineComment.startMarkerFrom,
+      }),
+    },
+    {
+      selectedMarker: 'end',
+      getSelection: (
+        inlineComment: ReturnType<
+          typeof parseInlineCommentsFromMarkdown
+        >[number],
+      ) => ({
+        from: inlineComment.endMarkerFrom + 1,
+        to: inlineComment.endMarkerTo - 1,
+        expectedCursor: inlineComment.endMarkerFrom,
+      }),
+    },
+  ])(
+    'consumes a $selectedMarker marker-only selection without changing the document',
+    ({ getSelection }) => {
+      const [inlineComment] = parseInlineCommentsFromMarkdown(markdownContent);
+      const selection = getSelection(inlineComment);
+      const nextState = applyInlineCommentAwareSelectionDeletionToState(
+        buildSelectionState(selection.from, selection.to),
+      );
+
+      expect(nextState.doc.toString()).toBe(markdownContent);
+      expect(nextState.selection.main.empty).toBe(true);
+      expect(nextState.selection.main.from).toBe(selection.expectedCursor);
+      expect(parseInlineCommentsFromMarkdown(nextState.doc.toString())).toEqual(
+        [inlineComment],
+      );
+    },
+  );
+
+  it('protects a marker-only selection when the comment anchor is empty', () => {
+    const emptyAnchorMarkdownContent = `${startMarker}${endMarker}`;
+    const [emptyInlineComment] = parseInlineCommentsFromMarkdown(
+      emptyAnchorMarkdownContent,
+    );
+    const initialState = EditorState.create({
+      doc: emptyAnchorMarkdownContent,
+      selection: EditorSelection.range(
+        emptyInlineComment.startMarkerFrom + 1,
+        emptyInlineComment.startMarkerTo - 1,
+      ),
+    });
+    const nextState =
+      applyInlineCommentAwareSelectionDeletionToState(initialState);
+
+    expect(nextState.doc.toString()).toBe(emptyAnchorMarkdownContent);
+    expect(nextState.selection.main.from).toBe(
+      emptyInlineComment.startMarkerFrom,
+    );
+    expect(parseInlineCommentsFromMarkdown(nextState.doc.toString())).toEqual([
+      emptyInlineComment,
+    ]);
+  });
+
+  it('preserves both markers when only part of the anchor is selected', () => {
+    const [inlineComment] = parseInlineCommentsFromMarkdown(markdownContent);
+    const nextState = applyInlineCommentAwareSelectionDeletionToState(
+      buildSelectionState(
+        inlineComment.contentFrom,
+        inlineComment.contentFrom + 'Delete '.length,
+      ),
+    );
+
+    const [remainingComment] = parseInlineCommentsFromMarkdown(
+      nextState.doc.toString(),
+    );
+    expect(nextState.doc.toString()).toContain(startMarker);
+    expect(nextState.doc.toString()).toContain(endMarker);
+    expect(
+      nextState.sliceDoc(
+        remainingComment.contentFrom,
+        remainingComment.contentTo,
+      ),
+    ).toBe('this paragraph');
+    expect(nextState.selection.main.from).toBe(inlineComment.contentFrom);
+    expect(nextState.selection.main.empty).toBe(true);
+  });
+
+  it.each([
+    {
+      selectedMarker: 'start',
+      getSelection: (
+        inlineComment: ReturnType<
+          typeof parseInlineCommentsFromMarkdown
+        >[number],
+      ) => ({
+        from: inlineComment.startMarkerFrom,
+        to: inlineComment.contentFrom + 'Delete '.length,
+      }),
+      expectedAnchor: 'this paragraph',
+    },
+    {
+      selectedMarker: 'end',
+      getSelection: (
+        inlineComment: ReturnType<
+          typeof parseInlineCommentsFromMarkdown
+        >[number],
+      ) => ({
+        from: inlineComment.contentFrom + 'Delete '.length,
+        to: inlineComment.endMarkerTo,
+      }),
+      expectedAnchor: 'Delete ',
+    },
+  ])(
+    'preserves the $selectedMarker marker when only part of the anchor is selected',
+    ({ getSelection, expectedAnchor }) => {
+      const [inlineComment] = parseInlineCommentsFromMarkdown(markdownContent);
+      const selection = getSelection(inlineComment);
+      const nextState = applyInlineCommentAwareSelectionDeletionToState(
+        buildSelectionState(selection.from, selection.to),
+      );
+
+      const [remainingComment] = parseInlineCommentsFromMarkdown(
+        nextState.doc.toString(),
+      );
+      expect(nextState.doc.toString()).toContain(startMarker);
+      expect(nextState.doc.toString()).toContain(endMarker);
+      expect(
+        nextState.sliceDoc(
+          remainingComment.contentFrom,
+          remainingComment.contentTo,
+        ),
+      ).toBe(expectedAnchor);
+    },
+  );
+});
 
 describe('buildMarkdownFormattingToggleSelectionUpdate', () => {
   it('wraps a non-empty selection with strong markdown markers', () => {

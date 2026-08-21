@@ -15,6 +15,7 @@ import {
   type EditorState,
   type SelectionRange,
   type Transaction,
+  type TransactionSpec,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -870,6 +871,248 @@ const findContainingMarkerRange = (
   return null;
 };
 
+type DocumentRange = {
+  from: number;
+  to: number;
+};
+
+/**
+ * Why: marker cleanup is correct only when one selection removes every source
+ * character in the comment anchor, including selections that also contain a
+ * hidden marker.
+ */
+const selectionRemovesAllInlineCommentContent = (
+  selectionRange: SelectionRange,
+  inlineComment: InlineComment,
+): boolean => {
+  return (
+    !selectionRange.empty &&
+    inlineComment.contentFrom < inlineComment.contentTo &&
+    selectionRange.from <= inlineComment.contentFrom &&
+    selectionRange.to >= inlineComment.contentTo
+  );
+};
+
+/**
+ * Why: CodeMirror change arrays cannot contain overlapping deletion ranges,
+ * so selected spans and expanded full-comment spans need one normalized list.
+ */
+const mergeDocumentRanges = (
+  documentRanges: DocumentRange[],
+): DocumentRange[] => {
+  const sortedDocumentRanges = documentRanges
+    .filter((documentRange) => documentRange.from < documentRange.to)
+    .sort((leftRange, rightRange) => leftRange.from - rightRange.from);
+  const mergedDocumentRanges: DocumentRange[] = [];
+
+  for (const documentRange of sortedDocumentRanges) {
+    const previousMergedRange = mergedDocumentRanges.at(-1);
+    if (!previousMergedRange || documentRange.from > previousMergedRange.to) {
+      mergedDocumentRanges.push({ ...documentRange });
+      continue;
+    }
+
+    previousMergedRange.to = Math.max(previousMergedRange.to, documentRange.to);
+  }
+
+  return mergedDocumentRanges;
+};
+
+/**
+ * Why: partial selection deletion must skip hidden markers even when native
+ * line-selection commands include one marker in the source selection.
+ */
+const subtractProtectedMarkerRanges = (
+  deletionRange: DocumentRange,
+  protectedMarkerRanges: DocumentRange[],
+): DocumentRange[] => {
+  const remainingDeletionRanges: DocumentRange[] = [];
+  let nextDeletionFrom = deletionRange.from;
+
+  for (const protectedMarkerRange of protectedMarkerRanges) {
+    if (protectedMarkerRange.to <= nextDeletionFrom) {
+      continue;
+    }
+    if (protectedMarkerRange.from >= deletionRange.to) {
+      break;
+    }
+
+    if (nextDeletionFrom < protectedMarkerRange.from) {
+      remainingDeletionRanges.push({
+        from: nextDeletionFrom,
+        to: Math.min(protectedMarkerRange.from, deletionRange.to),
+      });
+    }
+    nextDeletionFrom = Math.max(nextDeletionFrom, protectedMarkerRange.to);
+    if (nextDeletionFrom >= deletionRange.to) {
+      break;
+    }
+  }
+
+  if (nextDeletionFrom < deletionRange.to) {
+    remainingDeletionRanges.push({
+      from: nextDeletionFrom,
+      to: deletionRange.to,
+    });
+  }
+
+  return remainingDeletionRanges;
+};
+
+/**
+ * Why: a marker-only selection can start inside hidden source text, so the
+ * consumed selection must collapse to a visible boundary outside that marker.
+ */
+const findMarkerSafeSelectionCollapsePosition = (
+  selectionRange: SelectionRange,
+  protectedMarkerRanges: DocumentRange[],
+): number => {
+  const selectedProtectedMarkerRange = protectedMarkerRanges.find(
+    (protectedMarkerRange) =>
+      overlaps(
+        selectionRange.from,
+        selectionRange.to,
+        protectedMarkerRange.from,
+        protectedMarkerRange.to,
+      ),
+  );
+  if (!selectedProtectedMarkerRange) {
+    return selectionRange.from;
+  }
+
+  return selectedProtectedMarkerRange.from;
+};
+
+/**
+ * Why: Backspace and Delete must apply anchor text removal and marker cleanup
+ * in one transaction so the document never contains a broken marker pair.
+ */
+export const buildInlineCommentAwareSelectionDeletionUpdateForState = (
+  editorState: EditorState,
+): TransactionSpec | null => {
+  const nonEmptySelectionRanges = editorState.selection.ranges.filter(
+    (selectionRange) => !selectionRange.empty,
+  );
+  if (nonEmptySelectionRanges.length === 0) {
+    return null;
+  }
+
+  const inlineComments = parseInlineCommentsFromMarkdown(
+    editorState.doc.toString(),
+  );
+  if (inlineComments.length === 0) {
+    return null;
+  }
+
+  const removedInlineComments = new Set<InlineComment>();
+  for (const selectionRange of nonEmptySelectionRanges) {
+    for (const inlineComment of inlineComments) {
+      if (
+        selectionRemovesAllInlineCommentContent(selectionRange, inlineComment)
+      ) {
+        removedInlineComments.add(inlineComment);
+      }
+    }
+  }
+
+  const protectedMarkerRanges = mergeDocumentRanges(
+    inlineComments.flatMap((inlineComment) => {
+      if (removedInlineComments.has(inlineComment)) {
+        return [];
+      }
+
+      return [
+        {
+          from: inlineComment.startMarkerFrom,
+          to: inlineComment.startMarkerTo,
+        },
+        {
+          from: inlineComment.endMarkerFrom,
+          to: inlineComment.endMarkerTo,
+        },
+      ];
+    }),
+  );
+
+  const deletionRangesBySelection = editorState.selection.ranges.map(
+    (selectionRange): DocumentRange[] => {
+      if (selectionRange.empty) {
+        return [];
+      }
+
+      const requestedDeletionRanges: DocumentRange[] = [
+        { from: selectionRange.from, to: selectionRange.to },
+      ];
+      for (const inlineComment of inlineComments) {
+        if (
+          selectionRemovesAllInlineCommentContent(selectionRange, inlineComment)
+        ) {
+          requestedDeletionRanges.push({
+            from: inlineComment.startMarkerFrom,
+            to: inlineComment.endMarkerTo,
+          });
+        }
+      }
+
+      return mergeDocumentRanges(requestedDeletionRanges).flatMap(
+        (requestedDeletionRange) =>
+          subtractProtectedMarkerRanges(
+            requestedDeletionRange,
+            protectedMarkerRanges,
+          ),
+      );
+    },
+  );
+  const mergedDeletionRanges = mergeDocumentRanges(
+    deletionRangesBySelection.flat(),
+  );
+  const deletionChanges: ChangeSpec[] = mergedDeletionRanges.map(
+    (deletionRange) => ({
+      from: deletionRange.from,
+      to: deletionRange.to,
+    }),
+  );
+  const deletionChangeSet = editorState.changes(deletionChanges);
+  const nextSelection = EditorSelection.create(
+    editorState.selection.ranges.map((selectionRange, selectionIndex) => {
+      const firstDeletionRange = deletionRangesBySelection[selectionIndex][0];
+      const cursorPositionBeforeDeletion =
+        firstDeletionRange?.from ??
+        findMarkerSafeSelectionCollapsePosition(
+          selectionRange,
+          protectedMarkerRanges,
+        );
+      return EditorSelection.cursor(
+        deletionChangeSet.mapPos(cursorPositionBeforeDeletion, -1),
+      );
+    }),
+    editorState.selection.mainIndex,
+  );
+
+  return {
+    changes: deletionChanges,
+    selection: nextSelection,
+    scrollIntoView: true,
+    userEvent: 'delete.selection',
+  };
+};
+
+/**
+ * Why: both deletion keys need the same selection policy, so one dispatcher
+ * prevents Backspace and Delete from diverging on comment marker cleanup.
+ */
+const deleteInlineCommentAwareSelection = (view: EditorView): boolean => {
+  const deletionUpdate = buildInlineCommentAwareSelectionDeletionUpdateForState(
+    view.state,
+  );
+  if (!deletionUpdate) {
+    return false;
+  }
+
+  view.dispatch(deletionUpdate);
+  return true;
+};
+
 // Find whether a collapsed cursor sits exactly on an inline comment boundary.
 // Returning the outside insertion position lets edge typing keep ranges stable
 // while preserving the same visible caret behavior.
@@ -940,8 +1183,11 @@ const markerAwareBackspace = (view: EditorView): boolean => {
   const { state } = view;
   const { main } = state.selection;
 
-  // Only handle collapsed cursors – selection-based deletion is fine as-is.
-  if (!main.empty || main.head === 0) {
+  if (state.selection.ranges.some((selectionRange) => !selectionRange.empty)) {
+    return deleteInlineCommentAwareSelection(view);
+  }
+
+  if (main.head === 0) {
     return false;
   }
 
@@ -969,7 +1215,11 @@ const markerAwareDelete = (view: EditorView): boolean => {
   const { state } = view;
   const { main } = state.selection;
 
-  if (!main.empty || main.head >= state.doc.length) {
+  if (state.selection.ranges.some((selectionRange) => !selectionRange.empty)) {
+    return deleteInlineCommentAwareSelection(view);
+  }
+
+  if (main.head >= state.doc.length) {
     return false;
   }
 

@@ -65,6 +65,8 @@ Kale is a Markdown editor. Open any `.md` file and start writing. Formatting is 
 
 Select text and add a comment to annotate your draft. Comments are stored directly in the Markdown file as HTML comment markers, so they travel with the file and work with git diffs. On wide windows, comment cards stay beside the prose column instead of drifting to the far edge of the pane.
 
+When you delete all text for one inline comment, Kale also removes that comment. When you delete only part of the text, Kale keeps the comment on the text that remains.
+
 Use comments to leave instructions for the agent ("find a citation for this", "rewrite this paragraph") or as personal notes.
 
 ### Agent Terminal
