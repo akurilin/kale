@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-const SUPPORTED_AGENT_NAMES = new Set(['claude', 'codex']);
-const SUPPORTED_AGENT_NAMES_TEXT = 'claude, codex';
+const SUPPORTED_AGENT_NAMES = new Set(['claude', 'codex', 'pi']);
+const SUPPORTED_AGENT_NAMES_TEXT = 'claude, codex, pi';
 
 /**
  * Why: npm must consume Kale's agent option before Electron Forge receives the

@@ -9,6 +9,7 @@
     "start": "node scripts/start-kale.mjs",
     "start:claude": "node scripts/start-kale.mjs --agent claude",
     "start:codex": "node scripts/start-kale.mjs --agent codex",
+    "start:pi": "node scripts/start-kale.mjs --agent pi",
     "package": "electron-forge package",
     "make": "electron-forge make",
     "publish": "electron-forge publish",

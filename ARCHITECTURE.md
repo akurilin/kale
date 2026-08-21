@@ -11,8 +11,8 @@ It combines:
 - A prose-first markdown editor with inline comments persisted directly in markdown.
 - A git-rooted repository file explorer for markdown documents.
 - Git-aware file actions (`Reset`, single-file commit save).
-- A PTY-backed agent terminal pane for Claude Code or Codex.
-- A local IDE MCP WebSocket server so Claude Code can query live editor selection/context.
+- A PTY-backed agent terminal pane for Claude Code, Codex, or Pi.
+- Local IDE context adapters for Claude Code and Pi.
 
 ## Runtime Architecture
 
@@ -22,7 +22,7 @@ Kale has three process layers:
    - Electron lifecycle orchestration.
    - File I/O, git subprocesses, file watching.
    - PTY lifecycle management.
-   - IDE MCP server lifecycle.
+   - IDE context adapter lifecycle.
 2. **Preload bridge (`src/preload.ts`)**
    - Narrow typed IPC boundary via `contextBridge`.
 3. **Renderer (`src/renderer/*`)**
@@ -30,7 +30,7 @@ Kale has three process layers:
 
 ### Startup Sequence
 
-1. For development starts, `scripts/start-kale.mjs` consumes `--agent claude|codex`, sets the terminal profile, and forwards all other arguments to Electron Forge. Claude is the default. The `start:claude` and `start:codex` npm scripts provide short aliases.
+1. For development starts, `scripts/start-kale.mjs` consumes `--agent claude|codex|pi`, sets the terminal profile, and forwards all other arguments to Electron Forge. Claude is the default. The `start:claude`, `start:codex`, and `start:pi` npm scripts provide short aliases.
 2. `app.setName('kale')` normalizes `userData` path across launch methods.
 3. Optional `KALE_USER_DATA_DIR` override is applied early (used by E2E isolation).
 4. Services are created:
@@ -40,8 +40,8 @@ Kale has three process layers:
 5. IPC handlers are registered for markdown/terminal/IDE/spellcheck/window APIs.
 6. On `ready`:
    - Terminal runtime validation runs unless `KALE_SKIP_TERMINAL_VALIDATION=1`.
+   - IDE context adapters start before the renderer can launch an agent.
    - Main window is created.
-   - IDE server startup is attempted (non-fatal if it fails).
 7. On `window-all-closed`, services shut down before quit (except standard macOS behavior).
 
 ## Main Process Services
@@ -96,14 +96,15 @@ Owns active-file state, settings persistence, file watcher lifecycle, and git fi
 
 Owns PTY spawn/IO/resize/kill and selected-agent startup prerequisites.
 
-- Defaults to Claude. `npm start -- --agent claude|codex` selects the user-facing agent.
+- Defaults to Claude. `npm start -- --agent claude|codex|pi` selects the user-facing agent.
 - QA can override the profile with:
   - `KALE_TERMINAL_PROFILE=claude-safe`
   - `KALE_TERMINAL_PROFILE=codex`
+  - `KALE_TERMINAL_PROFILE=pi`
   - `KALE_TERMINAL_PROFILE=shell`
   - `KALE_TERMINAL_COMMAND=<command>`
   - `KALE_TERMINAL_ARGS_JSON='["arg1","arg2"]'`
-- Validates only the selected agent with `claude --version` or `codex --version`.
+- Validates only the selected agent with `claude --version`, `codex --version`, or `pi --version`.
 - Preloads the provider-neutral `prompts/agent-system-prompt.md` for agent profiles.
 - Resolves the active file path token in the prompt template (`@@KALE:ACTIVE_FILE_PATH@@`).
 - Builds the default launch command as:
@@ -112,7 +113,10 @@ Owns PTY spawn/IO/resize/kill and selected-agent startup prerequisites.
   - `claude --permission-mode default --tools "" --append-system-prompt <resolved prompt>`
 - Builds the Codex command as:
   - `codex --sandbox workspace-write --ask-for-approval on-request --no-alt-screen -c developer_instructions=<resolved prompt>`
-- Uses the Claude Shift+Enter keyboard remap only for Claude profiles. Codex handles multiline input directly.
+- Builds the Pi command without provider or model flags:
+  - `pi --append-system-prompt <resolved prompt> --extension <bundled Kale extension>`
+- Passes the authenticated Pi context endpoint only in the Pi child process environment.
+- Uses the Claude Shift+Enter keyboard remap only for Claude profiles. Codex and Pi handle multiline input directly.
 - Spawns PTY with renderer-provided initial rows/cols for correct first-frame full-screen CLI rendering.
 - Streams `terminal:process-data` and `terminal:process-exit` events to renderer.
 
@@ -125,11 +129,13 @@ runs in the preload via `webFrame.isWordMisspelled` / `getWordSuggestions`.
 
 ### IDE Integration Service (`src/main/ide-integration-service.ts`)
 
-Coordinates renderer selection events with the IDE MCP server.
+Coordinates renderer selection events with all IDE context adapters.
 
-- Starts/stops/restarts IDE server when workspace folders change.
+- Starts and stops the Pi loopback context server.
+- Starts, stops, and restarts the Claude IDE server when workspace folders change.
 - Caches latest editor selection.
 - Broadcasts debounced (`50ms`) `selection_changed` notifications to Claude clients.
+- Gives Pi an authenticated endpoint that returns the active file and cached selection on each request.
 - Serializes workspace-folder updates to avoid racey restarts.
 
 ## IDE MCP Server (`src/ide-server/*`)
@@ -153,6 +159,21 @@ Implements MCP-over-WebSocket for Claude Code IDE integration.
   - `getLatestSelection`
   - `getOpenEditors`
   - `getDiagnostics` (currently returns empty from provider)
+
+## Pi IDE Context Provider (`src/pi-ide-server/*`, `integrations/pi/*`)
+
+Implements prompt-time selection context through Pi's public extension API.
+
+- Starts an HTTP server on an operating-system-selected loopback port.
+- Requires a random per-process token in the `x-kale-ide-authorization` header.
+- Passes the URL and token only to the Pi PTY child process.
+- Polls the endpoint every 300 milliseconds to show the current selected line count in Pi's footer.
+- Requests a new snapshot during Pi's `before_agent_start` event.
+- Adds the active file, exact selected text, 0-based end-exclusive range, and selected line count only to the system prompt for the current turn.
+- Sends an explicit no-selection state when the selection is empty.
+- Does not set Pi provider or model flags, so Pi uses its saved configuration.
+
+The raw TypeScript extension is an external package resource because Pi runs outside Electron and cannot read files from `app.asar`.
 
 ## IPC Surface
 

@@ -30,7 +30,7 @@ const escapeRegExp = (value) => {
  * must mirror the CDP script and copy runtime folders into that location.
  */
 const copyRuntimeAssetsToBuildDir = () => {
-  for (const assetDir of ['prompts', 'data']) {
+  for (const assetDir of ['prompts', 'data', 'integrations']) {
     const src = path.join(PROJECT_ROOT, assetDir);
     const dest = path.join(BUILD_DIR, assetDir);
     fs.cpSync(src, dest, { recursive: true });

@@ -35,6 +35,19 @@ describe('resolveTerminalLaunchProfileFromEnvironment', () => {
     });
   });
 
+  it('uses the Pi profile when Pi is requested', () => {
+    expect(
+      resolveTerminalLaunchProfileFromEnvironment(
+        {
+          KALE_TERMINAL_PROFILE: 'pi',
+        },
+        'darwin',
+      ),
+    ).toEqual({
+      kind: 'pi',
+    });
+  });
+
   it('uses the current interactive shell when the shell profile is requested', () => {
     expect(
       resolveTerminalLaunchProfileFromEnvironment(
@@ -108,7 +121,7 @@ describe('resolveTerminalLaunchProfileFromEnvironment', () => {
         'darwin',
       ),
     ).toThrowError(
-      'Unsupported KALE_TERMINAL_PROFILE value "unknown-profile". Supported values: claude, claude-safe, codex, shell.',
+      'Unsupported KALE_TERMINAL_PROFILE value "unknown-profile". Supported values: claude, claude-safe, codex, pi, shell.',
     );
   });
 

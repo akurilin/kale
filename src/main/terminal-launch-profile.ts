@@ -9,6 +9,9 @@ export type TerminalLaunchProfile =
       kind: 'codex';
     }
   | {
+      kind: 'pi';
+    }
+  | {
       kind: 'shell';
       command: string;
       args: string[];
@@ -110,6 +113,10 @@ export const resolveTerminalLaunchProfileFromEnvironment = (
     return { kind: 'codex' };
   }
 
+  if (configuredProfileName === 'pi') {
+    return { kind: 'pi' };
+  }
+
   if (configuredProfileName === 'shell') {
     return {
       kind: 'shell',
@@ -122,6 +129,6 @@ export const resolveTerminalLaunchProfileFromEnvironment = (
   }
 
   throw new Error(
-    `Unsupported KALE_TERMINAL_PROFILE value "${configuredProfileName}". Supported values: claude, claude-safe, codex, shell.`,
+    `Unsupported KALE_TERMINAL_PROFILE value "${configuredProfileName}". Supported values: claude, claude-safe, codex, pi, shell.`,
   );
 };

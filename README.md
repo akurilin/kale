@@ -11,7 +11,7 @@ An agentic word processor for technical essay writers. Combines the aesthetics o
 
 Annotate your draft with comments — "find a link for this claim", "this paragraph reads clunky", "is this actually true?" — and your selected agent acts on them when you are ready. You can also ask the agent to add comments as an editor and writing coach.
 
-Kale supports Claude Code and Codex in its built-in terminal. Claude Code also connects to Kale through its IDE MCP server (activated with `/ide`), which gives Claude live editor selection context. Codex receives the active file path but does not have live selection context yet.
+Kale supports Claude Code, Codex, and Pi in its built-in terminal. Claude Code connects through Kale's IDE MCP server, and Pi uses Kale's bundled extension. Claude Code and Pi receive live editor selection context. Codex receives the active file path but does not have live selection context yet.
 
 Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into the tool I wished existed.
 
@@ -23,6 +23,7 @@ Born from the workflow behind [kuril.in](https://www.kuril.in/), packaged into t
 - At least one supported agent CLI:
   - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`)
   - [Codex CLI](https://learn.chatgpt.com/docs/codex/cli)
+  - [Pi](https://pi.dev) (`npm install -g --ignore-scripts @earendil-works/pi-coding-agent`)
 - [Git](https://git-scm.com/) — used for file history, branch switching, and single-file commits
 
 ## Getting Started
@@ -39,6 +40,7 @@ This starts Kale with Claude Code, which remains the default. Use these short co
 ```bash
 npm run start:claude
 npm run start:codex
+npm run start:pi
 ```
 
 The equivalent long form remains available when you need to pass the agent option directly:
@@ -46,6 +48,7 @@ The equivalent long form remains available when you need to pass the agent optio
 ```bash
 npm start -- --agent claude
 npm start -- --agent codex
+npm start -- --agent pi
 ```
 
 Use `--agent`, not `--harness`: the option selects the coding agent that runs in the terminal. A harness is the code that starts and controls an agent.
@@ -66,7 +69,9 @@ Use comments to leave instructions for the agent ("find a citation for this", "r
 
 ### Agent Terminal
 
-The right side of the window is an embedded terminal for Claude Code or Codex. Both agents receive Kale's writing rules and the absolute path of the active document. Claude can also see live selection context through the IDE MCP integration. Codex does not have this selection integration yet.
+The right side of the window is an embedded terminal for Claude Code, Codex, or Pi. All agents receive Kale's writing rules and the absolute path of the active document. Claude Code and Pi can also read the current text selection. Codex does not have live selection integration yet.
+
+Kale loads its own extension when it starts Pi. The Pi footer shows how many lines are selected. Before each Pi prompt, the extension gets a new snapshot with the exact selected text, its end-exclusive range, and the selected line count. It adds this snapshot only to the system prompt for that turn, so old selections do not remain in later turns. If no text is selected, Pi still receives the active file and a clear `No text is selected` state. Kale does not set Pi's provider or model. Pi continues to use the provider and model that you saved in Pi.
 
 Use the preset prompt buttons or type directly in the terminal to interact with the selected agent.
 
@@ -74,7 +79,7 @@ Collapsing or expanding the terminal only changes the workspace split inside Kal
 
 ### Terminal Overrides For QA
 
-Kale launches `claude` by default. Use `npm run start:codex` for the normal Codex path. QA and debug sessions can still replace the terminal profile or command without editing the app code:
+Kale launches `claude` by default. Use `npm run start:codex` or `npm run start:pi` to select another supported agent. QA and debug sessions can still replace the terminal profile or command without editing the app code:
 
 - `KALE_TERMINAL_PROFILE=claude-safe npm start` launches Claude without dangerous permission bypass and with tools disabled.
 - `KALE_TERMINAL_PROFILE=shell npm start` launches an interactive shell instead of Claude.

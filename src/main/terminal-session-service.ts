@@ -38,9 +38,12 @@ const COMMON_WINDOWS_EXECUTABLE_FILE_EXTENSIONS = [
 
 type TerminalSessionServiceDependencies = {
   ensureCurrentMarkdownFilePath: () => Promise<string>;
+  getPiTerminalEnvironmentVariables: () => Record<string, string>;
 };
 
-type ResolvedTerminalLaunchCommand = ResolvedAgentLaunchCommand;
+type ResolvedTerminalLaunchCommand = ResolvedAgentLaunchCommand & {
+  additionalEnvironmentVariables?: Record<string, string>;
+};
 
 // Finder-launched macOS apps inherit a limited PATH, so we append common
 // Homebrew/system locations and dedupe entries to keep CLI lookup reliable.
@@ -96,6 +99,18 @@ export const createTerminalSessionService = (
   // builds use the same logical path and startup fails consistently if missing.
   const getBundledAgentSystemPromptMarkdownFilePath = () =>
     path.resolve(app.getAppPath(), 'prompts', 'agent-system-prompt.md');
+
+  // Pi runs outside Electron and cannot read files inside app.asar, so packaged
+  // builds load the extension from the external resources directory.
+  const getBundledPiIdeContextExtensionFilePath = () =>
+    app.isPackaged
+      ? path.resolve(process.resourcesPath, 'pi', 'kale-ide-context.ts')
+      : path.resolve(
+          app.getAppPath(),
+          'integrations',
+          'pi',
+          'kale-ide-context.ts',
+        );
 
   // Agent launches depend on the bundled prompt template, so startup preloads
   // and validates it once instead of paying file I/O on every new session.
@@ -161,12 +176,36 @@ export const createTerminalSessionService = (
   const ensureAgentCliIsInstalledOrThrow = async (
     agentProfileKind: AgentTerminalLaunchProfileKind,
   ) => {
-    const isCodexAgent = agentProfileKind === 'codex';
-    const agentBinaryName = isCodexAgent ? 'codex' : 'claude';
-    const agentDisplayName = isCodexAgent ? 'Codex' : 'Claude Code';
-    const installationUrl = isCodexAgent
-      ? 'https://learn.chatgpt.com/docs/codex/cli'
-      : 'https://docs.anthropic.com/en/docs/claude-code';
+    const agentDetailsByProfileKind = {
+      claude: {
+        binaryName: 'claude',
+        displayName: 'Claude Code',
+        installationUrl: 'https://docs.anthropic.com/en/docs/claude-code',
+      },
+      'claude-safe': {
+        binaryName: 'claude',
+        displayName: 'Claude Code',
+        installationUrl: 'https://docs.anthropic.com/en/docs/claude-code',
+      },
+      codex: {
+        binaryName: 'codex',
+        displayName: 'Codex',
+        installationUrl: 'https://learn.chatgpt.com/docs/codex/cli',
+      },
+      pi: {
+        binaryName: 'pi',
+        displayName: 'Pi',
+        installationUrl: 'https://pi.dev',
+      },
+    } satisfies Record<
+      AgentTerminalLaunchProfileKind,
+      { binaryName: string; displayName: string; installationUrl: string }
+    >;
+    const {
+      binaryName: agentBinaryName,
+      displayName: agentDisplayName,
+      installationUrl,
+    } = agentDetailsByProfileKind[agentProfileKind];
 
     try {
       await execFileAsync(agentBinaryName, ['--version'], {
@@ -307,10 +346,26 @@ export const createTerminalSessionService = (
       ? request.targetFilePath.trim()
       : await dependencies.ensureCurrentMarkdownFilePath();
 
-    return buildAgentLaunchCommand(
+    const agentLaunchCommand = buildAgentLaunchCommand(
       terminalLaunchProfile.kind,
       buildAgentSystemPromptFromTemplate(activeFilePathForPrompt),
+      {
+        piIdeContextExtensionFilePath:
+          terminalLaunchProfile.kind === 'pi'
+            ? getBundledPiIdeContextExtensionFilePath()
+            : undefined,
+      },
     );
+
+    if (terminalLaunchProfile.kind !== 'pi') {
+      return agentLaunchCommand;
+    }
+
+    return {
+      ...agentLaunchCommand,
+      additionalEnvironmentVariables:
+        dependencies.getPiTerminalEnvironmentVariables(),
+    };
   };
 
   // PTYs are spawned in main so renderers can stream I/O while process creation
@@ -318,8 +373,12 @@ export const createTerminalSessionService = (
   const startTerminalSession = async (
     request: StartTerminalSessionRequest,
   ): Promise<StartTerminalSessionResponse> => {
-    const { command, args, usesClaudeCodeShiftEnterRemap } =
-      await resolveTerminalLaunchCommand(request);
+    const {
+      command,
+      args,
+      usesClaudeCodeShiftEnterRemap,
+      additionalEnvironmentVariables,
+    } = await resolveTerminalLaunchCommand(request);
     const sessionId = createTerminalSessionId();
     const initialPtyGeometry = resolveInitialPtyGeometryForSpawn(request);
 
@@ -330,7 +389,10 @@ export const createTerminalSessionService = (
         // environment through so the spawned CLI starts with familiar PATH/tooling.
         // Before shipping a broader terminal surface, build a sanitized env because
         // this inherits Electron/dev-process vars and any sensitive shell vars.
-        env: terminalRuntimeEnvironmentVariables,
+        env: {
+          ...terminalRuntimeEnvironmentVariables,
+          ...additionalEnvironmentVariables,
+        },
         name: 'xterm-color',
         cols: initialPtyGeometry.cols,
         rows: initialPtyGeometry.rows,
@@ -475,10 +537,17 @@ export const createTerminalSessionService = (
     if (
       terminalLaunchProfile.kind === 'claude' ||
       terminalLaunchProfile.kind === 'claude-safe' ||
-      terminalLaunchProfile.kind === 'codex'
+      terminalLaunchProfile.kind === 'codex' ||
+      terminalLaunchProfile.kind === 'pi'
     ) {
       await ensureAgentCliIsInstalledOrThrow(terminalLaunchProfile.kind);
       await loadBundledAgentSystemPromptMarkdownOrThrow();
+      if (terminalLaunchProfile.kind === 'pi') {
+        await fs.access(
+          getBundledPiIdeContextExtensionFilePath(),
+          fsConstants.R_OK,
+        );
+      }
       return;
     }
 

@@ -1,4 +1,12 @@
-export type AgentTerminalLaunchProfileKind = 'claude' | 'claude-safe' | 'codex';
+export type AgentTerminalLaunchProfileKind =
+  | 'claude'
+  | 'claude-safe'
+  | 'codex'
+  | 'pi';
+
+export type AgentLaunchCommandOptions = {
+  piIdeContextExtensionFilePath?: string;
+};
 
 export type ResolvedAgentLaunchCommand = {
   command: string;
@@ -13,6 +21,7 @@ export type ResolvedAgentLaunchCommand = {
 export const buildAgentLaunchCommand = (
   agentProfileKind: AgentTerminalLaunchProfileKind,
   systemPromptText: string,
+  options: AgentLaunchCommandOptions = {},
 ): ResolvedAgentLaunchCommand => {
   if (agentProfileKind === 'codex') {
     return {
@@ -25,6 +34,23 @@ export const buildAgentLaunchCommand = (
         '--no-alt-screen',
         '-c',
         `developer_instructions=${JSON.stringify(systemPromptText)}`,
+      ],
+      usesClaudeCodeShiftEnterRemap: false,
+    };
+  }
+
+  if (agentProfileKind === 'pi') {
+    if (!options.piIdeContextExtensionFilePath) {
+      throw new Error('Pi requires the Kale IDE context extension file path.');
+    }
+
+    return {
+      command: 'pi',
+      args: [
+        '--append-system-prompt',
+        systemPromptText,
+        '--extension',
+        options.piIdeContextExtensionFilePath,
       ],
       usesClaudeCodeShiftEnterRemap: false,
     };

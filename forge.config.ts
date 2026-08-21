@@ -28,6 +28,10 @@ const LINUX_RUNTIME_WINDOW_ICON_RESOURCE_PATH = path.resolve(
   __dirname,
   'assets/icons/icon.png',
 );
+const PI_INTEGRATION_RESOURCE_DIRECTORY_PATH = path.resolve(
+  __dirname,
+  'integrations/pi',
+);
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -43,7 +47,10 @@ const config: ForgeConfig = {
     icon: PACKAGED_APPLICATION_ICON_BASE_PATH,
     // Linux runtime window icons are provided via BrowserWindow `icon`.
     // Include the PNG in the packaged resources directory for that lookup.
-    extraResource: [LINUX_RUNTIME_WINDOW_ICON_RESOURCE_PATH],
+    extraResource: [
+      LINUX_RUNTIME_WINDOW_ICON_RESOURCE_PATH,
+      PI_INTEGRATION_RESOURCE_DIRECTORY_PATH,
+    ],
     // The Vite plugin normally packages only the generated `/.vite` output.
     // Kale additionally requires:
     // - `/prompts` for terminal startup prompt templates

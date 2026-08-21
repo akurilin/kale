@@ -151,12 +151,13 @@ if [[ ! -d "$BUILD_DIR" ]]; then
   exit 1
 fi
 
-# Why: direct Electron launches resolve app assets from .vite/build, so prompts
-# and data must be copied there each run to keep QA runtime behavior consistent.
+# Why: direct Electron launches resolve app assets from .vite/build, so runtime
+# content must be copied there each run to keep QA behavior consistent.
 echo "Copying runtime assets to build directory..."
-rm -rf "$BUILD_DIR/prompts" "$BUILD_DIR/data"
+rm -rf "$BUILD_DIR/prompts" "$BUILD_DIR/data" "$BUILD_DIR/integrations"
 cp -R "$PROJECT_ROOT/prompts" "$BUILD_DIR/prompts"
 cp -R "$PROJECT_ROOT/data" "$BUILD_DIR/data"
+cp -R "$PROJECT_ROOT/integrations" "$BUILD_DIR/integrations"
 
 CDP_PORT="$(resolve_cdp_port)"
 if ! [[ "$CDP_PORT" =~ ^[0-9]+$ ]]; then

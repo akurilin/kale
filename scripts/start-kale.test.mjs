@@ -32,9 +32,17 @@ describe('parseKaleStartArguments', () => {
     });
   });
 
+  it('accepts Pi as the selected agent', () => {
+    expect(parseKaleStartArguments(['--agent=pi'])).toEqual({
+      agent: 'pi',
+      forwardedArguments: [],
+      wasAgentSpecified: true,
+    });
+  });
+
   it('rejects a missing agent value', () => {
     expect(() => parseKaleStartArguments(['--agent'])).toThrowError(
-      '--agent requires a value. Supported values: claude, codex.',
+      '--agent requires a value. Supported values: claude, codex, pi.',
     );
   });
 
@@ -42,7 +50,7 @@ describe('parseKaleStartArguments', () => {
     expect(() =>
       parseKaleStartArguments(['--agent', 'unknown-agent']),
     ).toThrowError(
-      'Unsupported --agent value "unknown-agent". Supported values: claude, codex.',
+      'Unsupported --agent value "unknown-agent". Supported values: claude, codex, pi.',
     );
   });
 

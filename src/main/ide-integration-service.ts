@@ -2,6 +2,13 @@ import type { IpcMain } from 'electron';
 
 import { startIdeServer } from '../ide-server';
 import type { IdeServerHandle } from '../ide-server';
+import {
+  KALE_PI_EDITOR_CONTEXT_URL_ENVIRONMENT_VARIABLE,
+  KALE_PI_IDE_AUTH_TOKEN_ENVIRONMENT_VARIABLE,
+  buildPiEditorContextSnapshot,
+  startPiIdeServer,
+  type PiIdeServerHandle,
+} from '../pi-ide-server';
 import type {
   EditorSelection,
   IdeSelectionChangedEvent,
@@ -54,7 +61,8 @@ const areWorkspaceFoldersEqual = (
 export const createIdeIntegrationService = (
   dependencies: IdeIntegrationServiceDependencies,
 ) => {
-  let ideServer: IdeServerHandle | null = null;
+  let claudeIdeServer: IdeServerHandle | null = null;
+  let piIdeServer: PiIdeServerHandle | null = null;
   let activeWorkspaceFolders: string[] = [];
   let pendingWorkspaceFolderUpdatePromise: Promise<void> = Promise.resolve();
   let cachedEditorSelection: EditorSelection = null;
@@ -81,15 +89,13 @@ export const createIdeIntegrationService = (
 
   // Centralized shutdown keeps lock-file cleanup consistent whenever workspace
   // updates require replacing an existing IDE WebSocket server instance.
-  const shutdownIdeServerIfRunning = async () => {
-    if (!ideServer) {
-      activeWorkspaceFolders = [];
+  const shutdownClaudeIdeServerIfRunning = async () => {
+    if (!claudeIdeServer) {
       return;
     }
 
-    await ideServer.shutdown();
-    ideServer = null;
-    activeWorkspaceFolders = [];
+    await claudeIdeServer.shutdown();
+    claudeIdeServer = null;
   };
 
   // Workspace-folder changes are reflected via lock-file rewrite, which means
@@ -102,7 +108,8 @@ export const createIdeIntegrationService = (
     }
 
     if (
-      ideServer &&
+      claudeIdeServer &&
+      piIdeServer &&
       areWorkspaceFoldersEqual(
         activeWorkspaceFolders,
         normalizedWorkspaceFolders,
@@ -111,12 +118,24 @@ export const createIdeIntegrationService = (
       return;
     }
 
-    await shutdownIdeServerIfRunning();
-    ideServer = await startIdeServer(
+    // Pi reads this live callback when it needs the current editor state, so
+    // keep the active workspace and cached selection available to the server.
+    activeWorkspaceFolders = normalizedWorkspaceFolders;
+    if (!piIdeServer) {
+      piIdeServer = await startPiIdeServer({
+        getCurrentEditorContext: async () =>
+          buildPiEditorContextSnapshot(
+            dependencies.getCurrentMarkdownFilePath(),
+            cachedEditorSelection,
+          ),
+      });
+    }
+
+    await shutdownClaudeIdeServerIfRunning();
+    claudeIdeServer = await startIdeServer(
       normalizedWorkspaceFolders,
       editorStateProvider,
     );
-    activeWorkspaceFolders = normalizedWorkspaceFolders;
   };
 
   // File-open and startup events can both request workspace updates, so this
@@ -133,7 +152,7 @@ export const createIdeIntegrationService = (
     try {
       await pendingWorkspaceFolderUpdatePromise;
     } catch (error) {
-      console.error('Failed to refresh IDE MCP server workspace:', error);
+      console.error('Failed to refresh IDE integration workspace:', error);
     }
   };
 
@@ -160,7 +179,7 @@ export const createIdeIntegrationService = (
         }
         pendingSelectionNotificationTimeout = setTimeout(() => {
           pendingSelectionNotificationTimeout = null;
-          ideServer?.broadcastNotification({
+          claudeIdeServer?.broadcastNotification({
             jsonrpc: '2.0',
             method: 'selection_changed',
             params: {
@@ -179,8 +198,8 @@ export const createIdeIntegrationService = (
     );
   };
 
-  // MCP server startup is non-fatal so Kale remains usable when Claude Code IDE
-  // integration cannot bind a port or initialize its lock file state.
+  // IDE adapter startup is non-fatal so Kale remains usable when a provider
+  // cannot initialize its local transport or discovery state.
   const startSafely = async (workspaceFolders: string[]) => {
     await enqueueWorkspaceFolderUpdate(workspaceFolders);
   };
@@ -189,6 +208,22 @@ export const createIdeIntegrationService = (
   // so this method keeps lock-file workspace folders aligned with that context.
   const updateWorkspaceFolders = async (workspaceFolders: string[]) => {
     await enqueueWorkspaceFolderUpdate(workspaceFolders);
+  };
+
+  // Pi receives the endpoint only in its child environment, so no renderer or
+  // unrelated terminal profile needs access to the local authentication token.
+  const getPiTerminalEnvironmentVariables = () => {
+    if (!piIdeServer) {
+      throw new Error(
+        'Pi IDE context is not ready. Restart Kale and try the Pi terminal again.',
+      );
+    }
+
+    return {
+      [KALE_PI_EDITOR_CONTEXT_URL_ENVIRONMENT_VARIABLE]:
+        piIdeServer.editorContextUrl,
+      [KALE_PI_IDE_AUTH_TOKEN_ENVIRONMENT_VARIABLE]: piIdeServer.authToken,
+    };
   };
 
   // IDE server shutdown is centralized here so lock-file cleanup and websocket
@@ -203,11 +238,17 @@ export const createIdeIntegrationService = (
       pendingSelectionNotificationTimeout = null;
     }
 
-    await shutdownIdeServerIfRunning();
+    await shutdownClaudeIdeServerIfRunning();
+    if (piIdeServer) {
+      await piIdeServer.shutdown();
+      piIdeServer = null;
+    }
+    activeWorkspaceFolders = [];
   };
 
   return {
     registerIpcHandlers,
+    getPiTerminalEnvironmentVariables,
     startSafely,
     updateWorkspaceFolders,
     shutdown,

@@ -45,4 +45,22 @@ describe('buildAgentLaunchCommand', () => {
       usesClaudeCodeShiftEnterRemap: false,
     });
   });
+
+  it('starts Pi with Kale instructions and the bundled IDE context extension', () => {
+    expect(
+      buildAgentLaunchCommand('pi', 'System prompt', {
+        piIdeContextExtensionFilePath:
+          '/Applications/kale/integrations/pi/kale-ide-context.ts',
+      }),
+    ).toEqual({
+      command: 'pi',
+      args: [
+        '--append-system-prompt',
+        'System prompt',
+        '--extension',
+        '/Applications/kale/integrations/pi/kale-ide-context.ts',
+      ],
+      usesClaudeCodeShiftEnterRemap: false,
+    });
+  });
 });

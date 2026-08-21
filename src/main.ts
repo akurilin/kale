@@ -30,12 +30,14 @@ if (started) {
 }
 
 const markdownFileService = createMarkdownFileService();
+const ideIntegrationService = createIdeIntegrationService({
+  getCurrentMarkdownFilePath: markdownFileService.getCurrentMarkdownFilePath,
+});
 const terminalSessionService = createTerminalSessionService({
   ensureCurrentMarkdownFilePath:
     markdownFileService.ensureCurrentMarkdownFilePath,
-});
-const ideIntegrationService = createIdeIntegrationService({
-  getCurrentMarkdownFilePath: markdownFileService.getCurrentMarkdownFilePath,
+  getPiTerminalEnvironmentVariables:
+    ideIntegrationService.getPiTerminalEnvironmentVariables,
 });
 const removeCurrentMarkdownFilePathChangedListener =
   markdownFileService.onCurrentMarkdownFilePathChanged((nextFilePath) => {
@@ -103,12 +105,12 @@ const startApplication = async () => {
     }
   }
 
-  createMainWindow();
-
-  // Start the IDE MCP server after a window exists so the app remains usable
-  // even if the optional integration fails to initialize. Workspace folders are
-  // sourced from the active markdown file context so they match Claude cwd.
+  // Start IDE context providers before the renderer can launch an agent.
+  // This makes the Pi endpoint available before its terminal can start.
+  // Integration failures stay non-fatal through the service's guarded queue.
   await syncIdeWorkspaceFoldersToCurrentMarkdownFileContext();
+
+  createMainWindow();
 };
 
 // Electron only allows certain APIs after the ready event, so all startup work
